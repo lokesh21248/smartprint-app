@@ -24,6 +24,10 @@ export function Header() {
   const { shop, notificationCount } = useShopStore();
   const { pendingCount } = useOrderStore();
   const title = getPageTitle(pathname);
+  const shopName =
+    (shop as unknown as { shop_name?: string; name?: string } | null)?.shop_name ||
+    (shop as unknown as { shop_name?: string; name?: string } | null)?.name ||
+    "Shop Owner";
 
   const now = new Date();
   const hour = now.getHours();
@@ -37,7 +41,7 @@ export function Header() {
         <h1 className="text-xl font-bold text-[#111827] leading-tight">{title}</h1>
         {pathname === "/dashboard" && (
           <p className="text-xs text-[#6B7280]">
-            {greeting}, {shop?.shop_name ?? "Shop Owner"} 👋
+            {greeting}, {shopName} 👋
           </p>
         )}
       </div>
@@ -71,7 +75,7 @@ export function Header() {
           className="h-9 w-9 rounded-full bg-gradient-to-br from-[#2E8B57] to-[#1F4E79] flex items-center justify-center text-white font-semibold text-sm cursor-pointer select-none"
           aria-label="User menu"
         >
-          {shop?.shop_name?.[0]?.toUpperCase() ?? "S"}
+          {shopName[0]?.toUpperCase() ?? "S"}
         </div>
       </div>
     </header>

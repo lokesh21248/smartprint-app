@@ -122,6 +122,12 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
         ) : (
           orders.slice(0, 5).map((order) => (
             <div key={order.id} className="p-4 hover:bg-[#FAFAFA] transition-colors">
+              {(() => {
+                const fileCount = Array.isArray((order as { files?: unknown[] }).files)
+                  ? ((order as { files?: unknown[] }).files?.length ?? 0)
+                  : 1;
+                const printConfig = (order as { print_config?: Record<string, unknown> }).print_config;
+                return (
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   {/* Order number + time */}
@@ -151,8 +157,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   {/* Config */}
                   <p className="text-xs text-[#6B7280] mb-2">
                     <FileText className="h-3 w-3 inline mr-1" />
-                    {order.files.length} file{order.files.length > 1 ? "s" : ""} ·{" "}
-                    {getPrintConfigLabel(order.print_config)}
+                    {fileCount} file{fileCount > 1 ? "s" : ""} · {getPrintConfigLabel(printConfig)}
                   </p>
 
                   {/* Special instructions */}
@@ -173,6 +178,8 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   <p className="text-xs text-[#9CA3AF]">{order.total_pages} pages</p>
                 </div>
               </div>
+                );
+              })()}
 
               {/* Action buttons */}
               <div className="flex gap-2 mt-3">

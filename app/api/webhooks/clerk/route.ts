@@ -88,7 +88,9 @@ export async function POST(req: Request) {
             shop_id: shopData.id,
             user_id: id,                                     // Clerk user ID (TEXT)
             email: email || '',
-            role: 'owner'
+            role: 'owner',
+            is_active: true,
+            accepted_at: new Date().toISOString()
           })
           
         if (staffError) {
@@ -96,6 +98,30 @@ export async function POST(req: Request) {
           // Don't fail webhook if staff insertion fails
         }
       }
+
+      // ─── NEW: Link staff if they were invited ─────────────────────────────────
+      if (email) {
+        const { data: pendingInvite, error: inviteError } = await supabase
+          .from('shop_staff')
+          .select('id')
+          .eq('email', email)
+          .is('user_id', null)
+          .maybeSingle();
+
+        if (pendingInvite) {
+          await supabase
+            .from('shop_staff')
+            .update({
+              user_id: id,
+              accepted_at: new Date().toISOString(),
+              is_active: true
+            })
+            .eq('id', pendingInvite.id);
+          
+          console.log(`Linked staff member ${email} to shop via invite`);
+        }
+      }
+      // ───────────────────────────────────────────────────────────────────────────
 
     } catch (err) {
       console.error('Supabase error:', err)

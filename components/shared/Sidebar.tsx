@@ -39,6 +39,10 @@ export function Sidebar() {
   const { pendingCount } = useOrderStore();
   const [collapsed, setCollapsed] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const shopName =
+    (shop as unknown as { shop_name?: string; name?: string } | null)?.shop_name ||
+    (shop as unknown as { shop_name?: string; name?: string } | null)?.name ||
+    "Shop Panel";
 
   const handleToggleOpen = async () => {
     setToggling(true);
@@ -71,7 +75,7 @@ export function Sidebar() {
           <div className="flex-1 min-w-0">
             <p className="font-bold text-[15px] text-[#111827] truncate">SmartPrint</p>
             <p className="text-[11px] text-[#6B7280] truncate">
-              {shop?.name ?? "Shop Panel"}
+              {shopName}
             </p>
           </div>
         )}

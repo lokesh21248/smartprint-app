@@ -59,30 +59,52 @@ function LoginForm() {
 
     setIsLoading(true);
     try {
-      const result = await signIn.create({
+      const initialAttempt = await signIn.create({
         identifier: formData.email,
-        password: formData.password,
       });
+
+      let result = initialAttempt;
+      if (initialAttempt.status === "needs_first_factor") {
+        result = await initialAttempt.attemptFirstFactor({
+          strategy: "password",
+          password: formData.password,
+        });
+      }
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        
-        // Provision shop if it's their first time logging in
+
         try {
           await fetch("/api/auth/complete-signup", { method: "POST" });
         } catch (err) {
           console.error("Failed to provision shop:", err);
         }
-
         toast.success("Welcome back!");
         window.location.assign(redirectTo);
+      } else if (result.status === "needs_second_factor") {
+        toast.error("Two-factor authentication is enabled. Complete your second factor to sign in.");
+      } else if (result.status === "needs_identifier") {
+        toast.error("Please enter your email address.");
+      } else if (result.status === "needs_first_factor") {
+        toast.error("Sign-in method not available. Try another method or reset your password.");
       } else {
         console.error(result);
-        toast.error("More steps required to sign in.");
+        toast.error("Sign-in is not complete yet. Please follow the required authentication steps.");
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(err.errors?.[0]?.message || "Invalid email or password");
+      const code = err?.errors?.[0]?.code;
+      const message = err?.errors?.[0]?.message;
+
+      if (code === "form_password_incorrect") {
+        toast.error("Password is incorrect. Try again or use Forgot password.");
+      } else if (code === "form_identifier_not_found") {
+        toast.error("No account found for this email.");
+      } else if (code === "session_exists") {
+        toast.error("You are already signed in.");
+      } else {
+        toast.error(message || "Unable to sign in. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }

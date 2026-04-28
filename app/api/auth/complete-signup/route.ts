@@ -1,5 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
 export async function POST() {
@@ -10,15 +10,14 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { ownerName, shopName, phone, location } = user.unsafeMetadata as {
-    ownerName: string;
+  const { shopName, phone, location } = user.unsafeMetadata as {
     shopName: string;
     phone: string;
     location: string;
   };
 
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     // Check if shop already exists
     const { data: existing } = await supabase

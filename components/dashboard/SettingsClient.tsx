@@ -23,6 +23,21 @@ export function SettingsClient() {
   } = useShopStore();
   const [language, setLanguage] = useState("en");
   const [loggingOut, setLoggingOut] = useState(false);
+  const shopInfo = (shop ?? {}) as {
+    shop_name?: string;
+    name?: string;
+    email?: string;
+    owner_email?: string;
+    city?: string;
+    state?: string;
+    address?: string;
+  };
+  const shopName = shopInfo.shop_name || shopInfo.name || "My Shop";
+  const shopEmail = shopInfo.email || shopInfo.owner_email || "owner@shop.com";
+  const shopLocation =
+    [shopInfo.city, shopInfo.state].filter(Boolean).join(", ") ||
+    shopInfo.address ||
+    "Location not set";
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -190,13 +205,13 @@ export function SettingsClient() {
         <h2 className="text-lg font-bold text-[#111827] mb-4">Account</h2>
         <div className="flex items-center gap-4 p-4 bg-[#F9FAFB] rounded-xl mb-5">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#2E8B57] to-[#1F4E79] flex items-center justify-center text-white font-bold text-lg">
-            {shop?.shop_name?.[0]?.toUpperCase() ?? "S"}
+            {shopName[0]?.toUpperCase() ?? "S"}
           </div>
           <div>
-            <p className="font-bold text-[#111827]">{shop?.shop_name ?? "My Shop"}</p>
-            <p className="text-sm text-[#6B7280]">{shop?.email ?? "owner@shop.com"}</p>
+            <p className="font-bold text-[#111827]">{shopName}</p>
+            <p className="text-sm text-[#6B7280]">{shopEmail}</p>
             <p className="text-xs text-[#9CA3AF] mt-0.5">
-              {shop?.city}, {shop?.state}
+              {shopLocation}
             </p>
           </div>
         </div>

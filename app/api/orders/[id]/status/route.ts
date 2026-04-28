@@ -32,12 +32,20 @@ export async function PATCH(
     // Fetch order to verify ownership and current status
     const { data: order, error: fetchError } = await supabase
       .from("orders")
-      .select("id, order_status, shop_id, status_history, shops!inner(owner_id)")
+      .select("id, order_status, shop_id, status_history, scan_status, customer_name, customer_phone, short_token, shops!inner(owner_id)")
       .eq("id", params.id)
       .single();
 
     if (fetchError || !order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+
+    // Security Check: Virus Scanning
+    if (newStatus === "ACCEPTED" && order.scan_status === "INFECTED") {
+      return NextResponse.json(
+        { error: "Cannot accept order with infected file. Please cancel." },
+        { status: 422 }
+      );
     }
 
     const currentStatus = order.order_status as OrderStatus;
@@ -51,7 +59,8 @@ export async function PATCH(
 
     const newHistoryEntry = {
       status: newStatus,
-      timestamp: new Date().toISOString(),
+      at: new Date().toISOString(),
+      actor: "shop",
       note: rejectionReason ?? undefined,
     };
 
@@ -65,7 +74,7 @@ export async function PATCH(
       status_history: updatedHistory,
       updated_at: new Date().toISOString(),
     };
-    if (rejectionReason) updatePayload.notes = rejectionReason; // Prompt says 'notes' is used for rejection/notes
+    if (rejectionReason) updatePayload.notes = rejectionReason;
 
     const { error: updateError } = await supabase
       .from("orders")
@@ -74,6 +83,21 @@ export async function PATCH(
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    // Send notification to customer
+    try {
+      const { NotificationService } = await import("@/lib/notifications");
+      await NotificationService.sendStatusUpdate({
+        orderId: order.id,
+        phone: order.customer_phone,
+        customerName: order.customer_name,
+        status: newStatus,
+        shortToken: order.short_token,
+      });
+    } catch (notifErr) {
+      console.error("Notification failed:", notifErr);
+      // Don't fail the request if notification fails
     }
 
     return NextResponse.json({ success: true, order_status: newStatus });

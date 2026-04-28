@@ -16,6 +16,22 @@ export function QuickActions({ shop: initialShop }: QuickActionsProps) {
   const { shop, toggleShopOpen } = useShopStore();
   const currentShop = shop ?? initialShop;
   const [toggling, setToggling] = useState(false);
+  const shopRecord = currentShop as unknown as {
+    name?: string;
+    shop_name?: string;
+    city?: string;
+    state?: string;
+    address?: string;
+    rating_avg?: number;
+    total_orders?: number;
+  };
+  const shopName = shopRecord.shop_name || shopRecord.name || "My Shop";
+  const shopLocation =
+    [shopRecord.city, shopRecord.state].filter(Boolean).join(", ") ||
+    shopRecord.address ||
+    "Location not set";
+  const rating = typeof shopRecord.rating_avg === "number" ? shopRecord.rating_avg.toFixed(1) : "N/A";
+  const totalOrders = typeof shopRecord.total_orders === "number" ? shopRecord.total_orders : 0;
 
   const handleToggle = async () => {
     setToggling(true);
@@ -106,11 +122,11 @@ export function QuickActions({ shop: initialShop }: QuickActionsProps) {
 
       {/* Shop info snippet */}
       <div className="p-3 bg-[#FAFAFA] rounded-xl border border-[#E5E7EB] text-sm">
-        <p className="font-semibold text-[#374151]">{currentShop.shop_name}</p>
-        <p className="text-[#6B7280] text-xs mt-0.5">{currentShop.city}, {currentShop.state}</p>
+        <p className="font-semibold text-[#374151]">{shopName}</p>
+        <p className="text-[#6B7280] text-xs mt-0.5">{shopLocation}</p>
         <div className="flex items-center gap-3 mt-2 text-xs text-[#6B7280]">
-          <span>⭐ {currentShop.rating_avg}</span>
-          <span>📦 {currentShop.total_orders} orders</span>
+          <span>⭐ {rating}</span>
+          <span>📦 {totalOrders} orders</span>
         </div>
       </div>
     </div>

@@ -56,10 +56,30 @@ CREATE TABLE IF NOT EXISTS orders (
   total_amount             DECIMAL(8, 2) NOT NULL,
   order_status             TEXT NOT NULL DEFAULT 'DRAFT'
                            CHECK (order_status IN ('DRAFT','PLACED','ACCEPTED','PRINTING','READY','COMPLETED','CANCELLED')),
+  scan_status              TEXT NOT NULL DEFAULT 'PENDING'
+                           CHECK (scan_status IN ('PENDING','CLEAN','INFECTED','SKIPPED')),
+  scan_result              JSONB DEFAULT '{}'::jsonb,
   status_history           JSONB DEFAULT '[]'::jsonb,   -- [{status, at, actor}]
   created_at               TIMESTAMPTZ DEFAULT now(),
   updated_at               TIMESTAMPTZ DEFAULT now()
 ) PARTITION BY RANGE (created_at);
+
+-- Stored procedure to cancel stale orders (> 24h)
+CREATE OR REPLACE FUNCTION cancel_stale_orders()
+RETURNS void AS $$
+BEGIN
+  UPDATE orders
+  SET order_status = 'CANCELLED',
+      status_history = status_history || jsonb_build_object(
+        'status', 'CANCELLED',
+        'at', now(),
+        'actor', 'system',
+        'reason', 'Expired after 24h'
+      )
+  WHERE order_status IN ('DRAFT', 'PLACED')
+    AND created_at < now() - INTERVAL '24 hours';
+END;
+$$ LANGUAGE plpgsql;
 
 -- Partitions for 2026
 CREATE TABLE IF NOT EXISTS orders_2026_04 PARTITION OF orders
@@ -87,11 +107,13 @@ ALTER TABLE orders DISABLE ROW LEVEL SECURITY;
 CREATE TABLE IF NOT EXISTS shop_staff (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id     UUID REFERENCES shops(id) NOT NULL,
-  user_id     TEXT NOT NULL,                        -- Clerk User ID
+  user_id     TEXT,                                 -- Clerk User ID (NULL until they accept)
   email       TEXT NOT NULL,
   role        TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'staff')),
   invited_at  TIMESTAMPTZ DEFAULT now(),
   accepted_at TIMESTAMPTZ,
+  is_active   BOOLEAN DEFAULT true,
+  UNIQUE(shop_id, email),
   UNIQUE(shop_id, user_id)
 );
 

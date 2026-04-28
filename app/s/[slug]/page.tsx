@@ -19,6 +19,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { Shop } from "@/types";
 import { Button } from "@/components/ui/button";
+import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 
 export default function QRLandingPage() {
   const params = useParams();
@@ -82,6 +83,7 @@ export default function QRLandingPage() {
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] pb-20">
+      <ShopStructuredData shop={shop} />
       <div className="max-w-2xl mx-auto pt-12 px-4">
         {/* Hero Section */}
         <div className="text-center mb-10">

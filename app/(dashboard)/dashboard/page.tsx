@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { PendingOrdersBanner } from "@/components/dashboard/PendingOrdersBanner";
 import { NewOrdersFeed } from "@/components/dashboard/NewOrdersFeed";
@@ -30,7 +30,7 @@ async function getDashboardData(userId: string, clerkUser: User | null): Promise
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     let { data: shop } = await supabase
       .from("shops")
       .select("*")
@@ -123,7 +123,22 @@ export default async function DashboardPage() {
     ? await getDashboardData(userId, user) 
     : { stats: DEMO_STATS, newOrders: [], shop: DEMO_SHOP };
 
-  const metadata = user?.unsafeMetadata as any;
+  const metadata = (user?.unsafeMetadata || {}) as Record<string, unknown>;
+  const ownerDisplayName =
+    (typeof metadata.ownerName === "string" && metadata.ownerName.trim()) ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+    user?.username ||
+    "N/A";
+  const shopDisplayName =
+    (typeof metadata.shopName === "string" && metadata.shopName.trim()) ||
+    ((shop as unknown as { shop_name?: string; name?: string }).shop_name ||
+      (shop as unknown as { shop_name?: string; name?: string }).name) ||
+    "N/A";
+  const emailDisplay =
+    user?.emailAddresses?.[0]?.emailAddress ||
+    (shop as unknown as { owner_email?: string; email?: string }).owner_email ||
+    (shop as unknown as { owner_email?: string; email?: string }).email ||
+    "N/A";
 
   return (
     <div className="space-y-6">
@@ -136,7 +151,7 @@ export default async function DashboardPage() {
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[#6B7280] font-bold">Owner</p>
-              <p className="text-sm font-semibold text-[#111827]">{metadata?.ownerName || "N/A"}</p>
+              <p className="text-sm font-semibold text-[#111827]">{ownerDisplayName}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -145,7 +160,7 @@ export default async function DashboardPage() {
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[#6B7280] font-bold">Shop</p>
-              <p className="text-sm font-semibold text-[#111827]">{metadata?.shopName || "N/A"}</p>
+              <p className="text-sm font-semibold text-[#111827]">{shopDisplayName}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -154,7 +169,7 @@ export default async function DashboardPage() {
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[#6B7280] font-bold">Email</p>
-              <p className="text-sm font-semibold text-[#111827]">{user?.emailAddresses[0]?.emailAddress || "N/A"}</p>
+              <p className="text-sm font-semibold text-[#111827]">{emailDisplay}</p>
             </div>
           </div>
         </div>

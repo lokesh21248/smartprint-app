@@ -103,6 +103,7 @@ export async function POST(request: Request) {
         notes: notes || null,
         total_amount: totalAmount,
         order_status: "PLACED",
+        scan_status: "PENDING",
         status_history: [
           {
             status: "PLACED",
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
           },
         ],
       })
-      .select("id")
+      .select("id, customer_name, total_amount, shops(owner_id)")
       .single();
 
     if (error) {
@@ -120,6 +121,16 @@ export async function POST(request: Request) {
         { error: "Failed to create order" },
         { status: 500 }
       );
+    }
+
+    // Trigger owner notification
+    const shopData = data.shops as any;
+    if (shopData?.owner_id) {
+      const { NotificationService } = await import("@/lib/notifications");
+      await NotificationService.alertNewOrder(shopData.owner_id, {
+        customer_name: data.customer_name,
+        total_amount: data.total_amount,
+      });
     }
 
     return NextResponse.json({

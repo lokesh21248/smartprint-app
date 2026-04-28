@@ -1,0 +1,61 @@
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export type NotificationType = "ORDER_PLACED" | "ORDER_ACCEPTED" | "ORDER_READY" | "ORDER_CANCELLED";
+
+interface NotificationParams {
+  orderId: string;
+  phone: string;
+  customerName: string;
+  status: string;
+  shortToken?: string;
+}
+
+export class NotificationService {
+  /**
+   * Send notification to customer about order status
+   */
+  static async sendStatusUpdate(params: NotificationParams) {
+    const { phone, customerName, status, shortToken } = params;
+    
+    const message = `Hi ${customerName}, your order #${shortToken} status is now: ${status}. Track here: https://smartprint.in/order/${shortToken}`;
+    
+    console.log(`[Notification] Sending to ${phone}: ${message}`);
+    
+    // TODO: Integrate with MSG91 or Twilio
+    // await fetch('https://api.msg91.com/...', { ... })
+
+    // Log to DB
+    await supabase.from("notifications").insert({
+      user_id: "system", // Or shop owner ID
+      type: "status_change",
+      title: `Order ${status}`,
+      body: message,
+    });
+    
+    return { success: true };
+  }
+
+  /**
+   * Alert shop owner about a new order
+   */
+  static async alertNewOrder(shopOwnerId: string, orderDetails: any) {
+    const message = `🖨️ New order from ${orderDetails.customer_name}! Amount: ₹${orderDetails.total_amount}`;
+    
+    console.log(`[Notification] Alerting owner ${shopOwnerId}: ${message}`);
+
+    // Log to DB (will trigger real-time dashboard alert)
+    await supabase.from("notifications").insert({
+      user_id: shopOwnerId,
+      type: "new_order",
+      title: "New Order Received",
+      body: message,
+    });
+
+    return { success: true };
+  }
+}

@@ -76,6 +76,29 @@ export function getNextStatusLabel(status: OrderStatus): string {
   return labels[status] ?? "";
 }
 
+export function getPrintConfigLabel(
+  printConfig?: {
+    color?: string;
+    size?: string;
+    copies?: number;
+    duplex?: boolean;
+    binding?: string;
+  } | null
+): string {
+  if (!printConfig) return "Standard print";
+
+  const color = printConfig.color === "color" ? "Color" : "B/W";
+  const size = printConfig.size ?? "A4";
+  const copies = printConfig.copies ?? 1;
+  const sides = printConfig.duplex ? "Duplex" : "Single-side";
+  const binding =
+    printConfig.binding && printConfig.binding !== "none"
+      ? `${printConfig.binding} binding`
+      : "No binding";
+
+  return `${color} · ${size} · ${copies} ${copies > 1 ? "copies" : "copy"} · ${sides} · ${binding}`;
+}
+
 export function generateShortToken(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No O, 0, I, 1 to avoid confusion
   let result = "";

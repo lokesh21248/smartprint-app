@@ -136,7 +136,23 @@ export function AnalyticsCharts({ analyticsData, stats }: AnalyticsChartsProps) 
       <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-[#111827]">Most Popular Services</h2>
-          <button className="text-sm text-[#2E8B57] font-medium hover:text-[#1F6B42]">
+          <button 
+            onClick={() => {
+              const headers = ["Date", "Orders", "Revenue"];
+              const rows = analyticsData.revenue.map(r => [r.date, r.orders, r.revenue]);
+              const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+              const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+              const link = document.createElement("a");
+              const url = URL.createObjectURL(blob);
+              link.setAttribute("href", url);
+              link.setAttribute("download", `analytics_export_${new Date().toISOString().split('T')[0]}.csv`);
+              link.style.visibility = 'hidden';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
+            className="text-sm text-[#2E8B57] font-medium hover:text-[#1F6B42]"
+          >
             Export CSV ↓
           </button>
         </div>

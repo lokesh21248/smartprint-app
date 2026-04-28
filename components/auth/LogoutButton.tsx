@@ -18,6 +18,7 @@ export function LogoutButton({ className = "", showText = true }: LogoutButtonPr
   const router = useRouter();
 
   const handleLogout = async () => {
+    
     setLoading(true);
     try {
       await signOut();

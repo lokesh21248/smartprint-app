@@ -12,6 +12,7 @@ import { useShopStore } from "@/stores/shopStore";
 import { ShopProfileSchema, type ShopProfileInput } from "@/lib/validators";
 import { createClient } from "@/lib/supabase/client";
 import type { Shop } from "@/types";
+import type { z } from "zod";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
@@ -25,9 +26,27 @@ interface ShopProfileFormProps {
   shop: Shop;
 }
 
+type ShopProfileFormValues = z.input<typeof ShopProfileSchema>;
+
 export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const { shop: storeShop, setShop, toggleShopOpen } = useShopStore();
   const shop = storeShop ?? initialShop;
+  const shopRecord = shop as unknown as {
+    id: string;
+    name?: string;
+    shop_name?: string;
+    address?: string;
+    phone?: string;
+    owner_email?: string;
+    email?: string;
+    price_bw_per_page?: number;
+    price_color_per_page?: number;
+    opening_time?: string;
+    closing_time?: string;
+    working_days?: string[];
+    services?: string[];
+    is_open?: boolean;
+  };
 
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -39,36 +58,52 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
     formState: { errors },
     setValue,
     watch,
-  } = useForm<ShopProfileInput>({
+  } = useForm<ShopProfileFormValues>({
     resolver: zodResolver(ShopProfileSchema),
     defaultValues: {
-      name: shop?.name || "",
-      address: shop?.address || "",
-      phone: shop?.phone || "",
-      owner_email: shop?.owner_email || "",
-      price_bw_per_page: shop?.price_bw_per_page || 1,
-      price_color_per_page: shop?.price_color_per_page || 5,
-      opening_time: shop?.opening_time || "09:00",
-      closing_time: shop?.closing_time || "21:00",
-      working_days: shop?.working_days || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-      services: shop?.services || [],
+      name: shopRecord.name || shopRecord.shop_name || "",
+      address: shopRecord.address || "",
+      phone: shopRecord.phone || "",
+      owner_email: shopRecord.owner_email || shopRecord.email || "",
+      price_bw_per_page: shopRecord.price_bw_per_page || 1,
+      price_color_per_page: shopRecord.price_color_per_page || 5,
+      opening_time: shopRecord.opening_time || "09:00",
+      closing_time: shopRecord.closing_time || "21:00",
+      working_days: shopRecord.working_days || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+      services: shopRecord.services || [],
     },
   });
 
   const currentServices = watch("services") || [];
   const currentDays = watch("working_days") || [];
 
-  const handleSave = async (data: ShopProfileInput) => {
+  const handleSave = async (data: ShopProfileFormValues) => {
     setSaving(true);
     try {
       const supabase = createClient();
+      const normalizedData = ShopProfileSchema.parse(data) as ShopProfileInput;
+      const payload: Record<string, unknown> = {
+        ...normalizedData,
+        updated_at: new Date().toISOString(),
+      };
+      if (shopRecord.shop_name !== undefined) {
+        payload.shop_name = normalizedData.name;
+      } else {
+        payload.name = normalizedData.name;
+      }
+      if (shopRecord.email !== undefined && !shopRecord.owner_email) {
+        payload.email = normalizedData.owner_email;
+      } else {
+        payload.owner_email = normalizedData.owner_email;
+      }
+
       const { error } = await supabase
         .from("shops")
-        .update({ ...data, updated_at: new Date().toISOString() })
-        .eq("id", shop.id);
+        .update(payload)
+        .eq("id", shopRecord.id);
 
       if (error) throw error;
-      setShop({ ...shop, ...data });
+      setShop({ ...shop, ...payload } as Shop);
       toast.success("✅ Shop profile updated!");
     } catch (err) {
       toast.error("Failed to save. Please try again.");
@@ -101,26 +136,26 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
     <div className="space-y-6">
       {/* Open/Closed hero toggle */}
       <div className={`rounded-2xl p-6 flex items-center justify-between gap-4 ${
-        shop.is_open
+        shopRecord.is_open
           ? "bg-gradient-to-r from-emerald-600 to-emerald-800 text-white shadow-lg"
           : "bg-gradient-to-r from-gray-600 to-gray-800 text-white shadow-lg"
       }`}>
         <div>
           <p className="text-2xl font-black">
-            {shop.is_open ? "🟢 Shop is Open" : "🔴 Shop is Closed"}
+            {shopRecord.is_open ? "🟢 Shop is Open" : "🔴 Shop is Closed"}
           </p>
           <p className="text-sm opacity-80 mt-1">
-            {shop.is_open
+            {shopRecord.is_open
               ? "Customers can place orders right now"
               : "Toggle to start accepting orders"}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium opacity-90">
-            {shop.is_open ? "Open" : "Closed"}
+            {shopRecord.is_open ? "Open" : "Closed"}
           </span>
           <Switch
-            checked={shop.is_open}
+            checked={shopRecord.is_open ?? true}
             onCheckedChange={handleToggleOpen}
             disabled={toggling}
             aria-label="Toggle shop open/closed"
