@@ -1,0 +1,192 @@
+"use client";
+
+import { useState } from "react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, BarChart, Bar,
+} from "recharts";
+import { formatCurrency } from "@/lib/utils";
+import type { DashboardStats } from "@/types";
+import type { DEMO_ANALYTICS } from "@/lib/demo-data";
+
+interface AnalyticsChartsProps {
+  analyticsData: typeof DEMO_ANALYTICS;
+  stats: DashboardStats;
+}
+
+const DATE_RANGES = [
+  { label: "7 Days", value: "7d" },
+  { label: "30 Days", value: "30d" },
+  { label: "This Month", value: "month" },
+];
+
+export function AnalyticsCharts({ analyticsData, stats }: AnalyticsChartsProps) {
+  const [dateRange, setDateRange] = useState("7d");
+
+  const totalRevenue = analyticsData.revenue.reduce((s, r) => s + r.revenue, 0);
+  const totalOrders = analyticsData.revenue.reduce((s, r) => s + r.orders, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Header with date range */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#111827]">Business Analytics</h1>
+          <p className="text-sm text-[#6B7280]">Track your shop performance</p>
+        </div>
+        <div className="flex gap-1 bg-[#F3F4F6] rounded-xl p-1">
+          {DATE_RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setDateRange(r.value)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                dateRange === r.value
+                  ? "bg-white text-[#111827] shadow-sm"
+                  : "text-[#6B7280] hover:text-[#111827]"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Revenue", value: formatCurrency(totalRevenue), emoji: "💰" },
+          { label: "Total Orders", value: totalOrders.toString(), emoji: "📦" },
+          { label: "Avg per Order", value: formatCurrency(totalRevenue / Math.max(totalOrders, 1)), emoji: "📊" },
+          { label: "Avg Completion", value: `${stats.avgCompletionMins} min`, emoji: "⏱️" },
+        ].map((card) => (
+          <div key={card.label} className="bg-white rounded-2xl border border-[#E5E7EB] p-5">
+            <p className="text-2xl mb-1">{card.emoji}</p>
+            <p className="text-xl font-black text-[#111827]">{card.value}</p>
+            <p className="text-sm text-[#6B7280]">{card.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Revenue line chart */}
+      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
+        <h2 className="text-lg font-bold text-[#111827] mb-4">Revenue Trend</h2>
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={analyticsData.revenue}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+            <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#9CA3AF" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#9CA3AF" }} tickFormatter={(v) => `₹${v}`} />
+            <Tooltip
+              formatter={(val) => [formatCurrency(Number(val)), "Revenue"]}
+              contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 13 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="revenue"
+              stroke="#2E8B57"
+              strokeWidth={2.5}
+              dot={{ fill: "#2E8B57", r: 4 }}
+              activeDot={{ r: 6 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Orders by status pie */}
+        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
+          <h2 className="text-lg font-bold text-[#111827] mb-4">Orders by Status</h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie
+                data={analyticsData.statusBreakdown}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={90}
+                paddingAngle={4}
+                dataKey="value"
+                label={({ name, value }) => `${name} ${value}%`}
+                labelLine={false}
+              >
+                {analyticsData.statusBreakdown.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB" }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Peak hours */}
+        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
+          <h2 className="text-lg font-bold text-[#111827] mb-4">Peak Hours</h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={analyticsData.peakHours} barSize={16}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+              <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "#9CA3AF" }} />
+              <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} />
+              <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 13 }} />
+              <Bar dataKey="orders" fill="#2E8B57" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Top services */}
+      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[#111827]">Most Popular Services</h2>
+          <button className="text-sm text-[#2E8B57] font-medium hover:text-[#1F6B42]">
+            Export CSV ↓
+          </button>
+        </div>
+        <div className="space-y-3">
+          {analyticsData.services.map((svc, i) => {
+            const max = Math.max(...analyticsData.services.map((s) => s.count));
+            const pct = (svc.count / max) * 100;
+            return (
+              <div key={svc.name} className="flex items-center gap-3">
+                <span className="text-sm font-medium text-[#6B7280] w-4">{i + 1}</span>
+                <span className="text-sm font-medium text-[#374151] w-32 flex-shrink-0">{svc.name}</span>
+                <div className="flex-1 bg-[#F3F4F6] rounded-full h-2.5">
+                  <div
+                    className="h-2.5 rounded-full bg-[#2E8B57] transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-sm font-bold text-[#111827] w-10 text-right">{svc.count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Ratings */}
+      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 flex items-center gap-8">
+        <div className="text-center">
+          <p className="text-5xl font-black text-[#111827]">4.6</p>
+          <div className="flex justify-center gap-0.5 mt-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span key={i} className={i < 5 ? "text-yellow-400" : "text-gray-300"}>⭐</span>
+            ))}
+          </div>
+          <p className="text-sm text-[#6B7280] mt-1">128 reviews</p>
+        </div>
+        <div className="flex-1 space-y-2">
+          {[5, 4, 3, 2, 1].map((star) => {
+            const pct = star === 5 ? 72 : star === 4 ? 18 : star === 3 ? 6 : star === 2 ? 2 : 2;
+            return (
+              <div key={star} className="flex items-center gap-2 text-sm">
+                <span className="text-[#6B7280] w-4">{star}★</span>
+                <div className="flex-1 bg-[#F3F4F6] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-yellow-400 transition-all duration-500" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-[#9CA3AF] w-8 text-right text-xs">{pct}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

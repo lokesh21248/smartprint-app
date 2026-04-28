@@ -1,0 +1,11 @@
+-- ============================================================
+-- ⚠️ WARNING: DO NOT RUN THIS SCRIPT ⚠️
+-- ============================================================
+-- This migration script was designed for Supabase Auth.
+-- Because we have migrated to Clerk Authentication, running this
+-- script will BREAK your database by enabling RLS policies that
+-- rely on `auth.uid()`, which is incompatible with Clerk.
+-- 
+-- Please run the `reset-schema.sql` file instead, which has been
+-- specifically designed to work with Clerk and Service Role keys.
+-- ============================================================
