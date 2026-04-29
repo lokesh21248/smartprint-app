@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { upsertShop } from "@/lib/supabase/shop";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { PendingOrdersBanner } from "@/components/dashboard/PendingOrdersBanner";
 import { NewOrdersFeed } from "@/components/dashboard/NewOrdersFeed";
@@ -40,20 +41,22 @@ async function getDashboardData(userId: string, clerkUser: User | null): Promise
 
     if (!shop && clerkUser) {
       const meta = (clerkUser.unsafeMetadata || {}) as any;
-      const { data: newShop, error: createError } = await supabase.from("shops").insert({
-        owner_id: userId,
-        name: meta.shopName || clerkUser.firstName + "'s Shop" || "My Shop",
-        address: meta.location || "TBD",
-        phone: meta.phone || "TBD",
-        owner_email: clerkUser.emailAddresses?.[0]?.emailAddress,
-        is_approved: true,
-        is_active: true,
-        price_bw_per_page: 1,
-        price_color_per_page: 5,
-      }).select().single();
+      const email = clerkUser.emailAddresses?.[0]?.emailAddress || "";
       
-      if (!createError && newShop) {
-        shop = newShop;
+      try {
+        const newShop = await upsertShop(supabase, {
+          userId,
+          email,
+          name: meta.shopName || clerkUser.firstName + "'s Shop",
+          address: meta.location,
+          phone: meta.phone,
+        });
+        
+        if (newShop) {
+          shop = newShop;
+        }
+      } catch (err) {
+        console.error("Dashboard shop creation failed:", err);
       }
     }
 
@@ -129,16 +132,8 @@ export default async function DashboardPage() {
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
     user?.username ||
     "N/A";
-  const shopDisplayName =
-    (typeof metadata.shopName === "string" && metadata.shopName.trim()) ||
-    ((shop as unknown as { shop_name?: string; name?: string }).shop_name ||
-      (shop as unknown as { shop_name?: string; name?: string }).name) ||
-    "N/A";
-  const emailDisplay =
-    user?.emailAddresses?.[0]?.emailAddress ||
-    (shop as unknown as { owner_email?: string; email?: string }).owner_email ||
-    (shop as unknown as { owner_email?: string; email?: string }).email ||
-    "N/A";
+  const shopDisplayName = shop?.name || "N/A";
+  const emailDisplay = user?.emailAddresses?.[0]?.emailAddress || shop?.owner_email || "N/A";
 
   return (
     <div className="space-y-6">

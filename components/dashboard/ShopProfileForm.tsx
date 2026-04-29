@@ -34,11 +34,9 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const shopRecord = shop as unknown as {
     id: string;
     name?: string;
-    shop_name?: string;
     address?: string;
     phone?: string;
     owner_email?: string;
-    email?: string;
     price_bw_per_page?: number;
     price_color_per_page?: number;
     opening_time?: string;
@@ -61,10 +59,10 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   } = useForm<ShopProfileFormValues>({
     resolver: zodResolver(ShopProfileSchema),
     defaultValues: {
-      name: shopRecord.name || shopRecord.shop_name || "",
+      name: shopRecord.name || "",
       address: shopRecord.address || "",
       phone: shopRecord.phone || "",
-      owner_email: shopRecord.owner_email || shopRecord.email || "",
+      owner_email: shopRecord.owner_email || "",
       price_bw_per_page: shopRecord.price_bw_per_page || 1,
       price_color_per_page: shopRecord.price_color_per_page || 5,
       opening_time: shopRecord.opening_time || "09:00",
@@ -86,16 +84,6 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
         ...normalizedData,
         updated_at: new Date().toISOString(),
       };
-      if (shopRecord.shop_name !== undefined) {
-        payload.shop_name = normalizedData.name;
-      } else {
-        payload.name = normalizedData.name;
-      }
-      if (shopRecord.email !== undefined && !shopRecord.owner_email) {
-        payload.email = normalizedData.owner_email;
-      } else {
-        payload.owner_email = normalizedData.owner_email;
-      }
 
       const { error } = await supabase
         .from("shops")

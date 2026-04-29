@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { upsertShop } from "@/lib/supabase/shop";
 import { NextResponse } from "next/server";
 
 export async function POST() {
@@ -31,28 +32,14 @@ export async function POST() {
       return NextResponse.json({ ok: true, shopId: existing.id });
     }
 
-    // Create shop
-    const { data, error } = await supabase
-      .from("shops")
-      .insert({
-        owner_id: userId,
-        shop_name: shopName || "My Shop",
-        address: location || "TBD",
-        city: "TBD",
-        state: "TBD",
-        pincode: "000000",
-        phone: phone || "TBD",
-        email: user.emailAddresses[0].emailAddress,
-        is_approved: true, // Auto-approve for this refactor demo
-        is_active: true,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error creating shop:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    // Create shop using centralized service
+    const data = await upsertShop(supabase, {
+      userId,
+      email: user.emailAddresses[0].emailAddress,
+      name: shopName,
+      address: location,
+      phone: phone,
+    });
 
     return NextResponse.json({ ok: true, shopId: data.id });
   } catch (err) {

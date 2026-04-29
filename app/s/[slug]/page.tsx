@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Shop } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
+import { formatCurrency } from "@/lib/utils";
 
 export default function QRLandingPage() {
   const params = useParams();
@@ -115,11 +116,11 @@ export default function QRLandingPage() {
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-6 border border-white/10">
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100 mb-2">Black & White</p>
-                <p className="text-3xl font-black">₹{Number(shop.price_bw_per_page).toFixed(0)}<span className="text-xs font-medium ml-1">/page</span></p>
+                <p className="text-3xl font-black">{formatCurrency(Number(shop.price_bw_per_page))}<span className="text-xs font-medium ml-1">/page</span></p>
               </div>
               <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-6 border border-white/10">
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100 mb-2">Color Print</p>
-                <p className="text-3xl font-black text-orange-200">₹{Number(shop.price_color_per_page).toFixed(0)}<span className="text-xs font-medium ml-1">/page</span></p>
+                <p className="text-3xl font-black text-orange-200">{formatCurrency(Number(shop.price_color_per_page))}<span className="text-xs font-medium ml-1">/page</span></p>
               </div>
             </div>
           </div>

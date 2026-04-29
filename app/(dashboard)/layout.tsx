@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { upsertShop } from "@/lib/supabase/shop";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Header } from "@/components/shared/Header";
 import { ShopStoreInitializer } from "@/components/shared/ShopStoreInitializer";
@@ -28,24 +29,14 @@ async function getShopData(userId: string): Promise<Shop | null> {
     if (!user) return null;
 
     const meta = (user.unsafeMetadata || {}) as Record<string, unknown>;
-    const { data: createdShop, error } = await supabase
-      .from("shops")
-      .insert({
-        owner_id: userId,
-        name:
-          (typeof meta.shopName === "string" && meta.shopName.trim()) ||
-          `${user.firstName || "My"}'s Shop`,
-        slug: userId.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 20) || `shop${Date.now()}`,
-        address:
-          (typeof meta.location === "string" && meta.location.trim()) || "TBD",
-        phone: (typeof meta.phone === "string" && meta.phone.trim()) || "TBD",
-        owner_email: user.emailAddresses?.[0]?.emailAddress || "unknown@example.com",
-        is_approved: true,
-      })
-      .select("*")
-      .single();
+    const createdShop = await upsertShop(supabase, {
+      userId,
+      email: user.emailAddresses?.[0]?.emailAddress || "unknown@example.com",
+      name: (typeof meta.shopName === "string" && meta.shopName.trim()) || `${user.firstName || "My"}'s Shop`,
+      address: (typeof meta.location === "string" && meta.location.trim()) || "TBD",
+      phone: (typeof meta.phone === "string" && meta.phone.trim()) || "TBD",
+    });
 
-    if (error) return null;
     return createdShop as Shop;
   } catch {
     return null;

@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSignUp, useUser } from "@clerk/nextjs";
-import { Mail, Lock, User, Store, Phone, MapPin, ArrowRight, Loader2 } from "lucide-react";
+import { Mail, Lock, User, Store, Phone, MapPin, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AuthLayout, AuthLoader } from "@/components/auth/AuthLayout";
+import { validateEmail } from "@/lib/utils";
 import Link from "next/link";
 
 export default function SignupPage() {
@@ -40,24 +42,14 @@ export default function SignupPage() {
 
   // Prevent UI flicker while checking auth state
   if (!isMounted || !userLoaded || user) {
-    return (
-      <div className="flex w-full min-h-[400px] items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2E8B57]" />
-      </div>
-    );
+    return <AuthLoader />;
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.id]: e.target.value }));
   };
 
-  const validateEmail = (email: string) => {
-    return String(email)
-      .toLowerCase()
-      .match(
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
-      );
-  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,17 +98,21 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-lg border border-[#E5E7EB] p-8 animate-slide-in-up w-full max-w-md mx-auto">
-      <div className="mb-7">
-        <div className="w-12 h-12 rounded-2xl bg-[#E8F5EE] flex items-center justify-center mb-4">
-          <Store className="h-6 w-6 text-[#2E8B57]" />
+    <AuthLayout
+      icon={<Store className="h-6 w-6 text-[#2E8B57]" />}
+      title="Create your shop"
+      description="Join SmartPrint and start managing your orders."
+      footer={
+        <div className="mt-6 text-center">
+          <p className="text-sm text-[#6B7280]">
+            Already have an account?{" "}
+            <Link href="/login" className="text-[#2E8B57] font-semibold hover:underline">
+              Sign in
+            </Link>
+          </p>
         </div>
-        <h2 className="text-2xl font-bold text-[#111827]">Create your shop</h2>
-        <p className="text-[#6B7280] mt-1">
-          Join SmartPrint and start managing your orders.
-        </p>
-      </div>
-
+      }
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 gap-4">
           <Input
@@ -207,15 +203,6 @@ export default function SignupPage() {
           )}
         </Button>
       </form>
-
-      <div className="mt-6 text-center">
-        <p className="text-sm text-[#6B7280]">
-          Already have an account?{" "}
-          <Link href="/login" className="text-[#2E8B57] font-semibold hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }

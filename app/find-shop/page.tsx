@@ -35,12 +35,12 @@ export default function FindShopPage() {
 
       const shop = data[0];
       
-      if (!shop.is_active) {
+      if (!shop.is_approved) {
         toast.error('This shop is currently unavailable');
         return;
       }
 
-      router.push(`/shop/${shop.id}`);
+      router.push(`/s/${shop.slug}`);
     } catch (err: unknown) {
       toast.error('Failed to find shop: ' + ((err as Error).message || 'Try again'));
     } finally {

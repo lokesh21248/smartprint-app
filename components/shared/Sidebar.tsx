@@ -39,10 +39,7 @@ export function Sidebar() {
   const { pendingCount } = useOrderStore();
   const [collapsed, setCollapsed] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const shopName =
-    (shop as unknown as { shop_name?: string; name?: string } | null)?.shop_name ||
-    (shop as unknown as { shop_name?: string; name?: string } | null)?.name ||
-    "Shop Panel";
+  const shopName = shop?.name || "Shop Panel";
 
   const handleToggleOpen = async () => {
     setToggling(true);

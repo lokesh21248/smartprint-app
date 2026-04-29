@@ -34,7 +34,7 @@ export class NotificationService {
       user_id: "system", // Or shop owner ID
       type: "status_change",
       title: `Order ${status}`,
-      body: message,
+      message: message,
     });
     
     return { success: true };
@@ -53,7 +53,7 @@ export class NotificationService {
       user_id: shopOwnerId,
       type: "new_order",
       title: "New Order Received",
-      body: message,
+      message: message,
     });
 
     return { success: true };

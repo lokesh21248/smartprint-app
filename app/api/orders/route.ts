@@ -23,8 +23,25 @@ const supabase = createClient(
  *   customerPhone: string
  * }
  */
+import { rateLimit } from "@/lib/ratelimit";
+
+/**
+ * POST /api/orders
+ * Create a new order (guest endpoint)
+ */
 export async function POST(request: Request) {
   try {
+    // 1. Rate Limiting (Prevent spam)
+    const ip = request.headers.get("x-forwarded-for") || "anonymous";
+    const { success, remaining } = await rateLimit(`order_spam_${ip}`, 5, 3600);
+
+    if (!success) {
+      return NextResponse.json(
+        { error: "Too many orders from this IP. Please try again in an hour." },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const {
       shopId,

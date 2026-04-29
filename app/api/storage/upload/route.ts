@@ -7,8 +7,21 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+import { rateLimit } from "@/lib/ratelimit";
+
 export async function POST(request: Request) {
   try {
+    // 1. Rate Limiting (Prevent storage spam)
+    const ip = request.headers.get("x-forwarded-for") || "anonymous";
+    const { success } = await rateLimit(`upload_spam_${ip}`, 3, 300); // 3 uploads per 5 mins
+
+    if (!success) {
+      return NextResponse.json(
+        { error: "Too many uploads. Please try again in 5 minutes." },
+        { status: 429 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const shopId = formData.get("shopId") as string | null;
@@ -27,9 +40,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file.size > 25 * 1024 * 1024) {
+    if (file.size > 50 * 1024 * 1024) {
       return NextResponse.json(
-        { error: `File too large: ${file.name} (max 25MB)` },
+        { error: `File too large: ${file.name} (max 50MB)` },
         { status: 400 }
       );
     }

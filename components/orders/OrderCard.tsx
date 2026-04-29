@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   FileText, Phone, Clock, ChevronRight,
   Check, X, Printer, Package, CheckCircle, AlertTriangle
@@ -16,6 +14,7 @@ import {
   formatCurrency, formatTimeAgo, formatDateTime,
   getStatusLabel, getStatusColor, getNextStatus, getNextStatusLabel,
 } from "@/lib/utils";
+import { useOrderStatus } from "@/lib/hooks/useOrderStatus";
 import type { Order, OrderStatus } from "@/types";
 
 interface OrderCardProps {
@@ -34,50 +33,17 @@ const STATUS_ICONS: Record<OrderStatus, React.ReactNode> = {
 };
 
 export function OrderCard({ order, onStatusChange }: OrderCardProps) {
-  const queryClient = useQueryClient();
-  const [processing, setProcessing] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const { updateStatus, processing } = useOrderStatus(order.id, {
+    onSuccess: onStatusChange ? (newStatus) => onStatusChange(order.id, newStatus) : undefined,
+  });
 
   const currentStatus = order.order_status;
   const nextStatus = getNextStatus(currentStatus);
   const nextLabel = getNextStatusLabel(currentStatus);
 
-  const handleAction = async (
-    newStatus: OrderStatus,
-    reason?: string
-  ) => {
-    setProcessing(true);
-    onStatusChange?.(order.id, newStatus); // optimistic
 
-    try {
-      const res = await fetch(`/api/orders/${order.id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newStatus, rejectionReason: reason }),
-      });
-
-      if (!res.ok) throw new Error("Failed");
-
-      toast.success(
-        newStatus === "ACCEPTED" ? "✅ Order accepted!"
-          : newStatus === "PRINTING" ? "🖨️ Started printing"
-          : newStatus === "READY" ? "📦 Marked as ready"
-          : newStatus === "COMPLETED" ? "✅ Order completed!"
-          : "Order updated"
-      );
-
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["new-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-    } catch {
-      toast.error("Action failed. Please try again.");
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-    } finally {
-      setProcessing(false);
-      setShowRejectDialog(false);
-    }
-  };
 
   return (
     <>
@@ -169,7 +135,7 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
               id={`action-${order.id}`}
               className="flex-1"
               disabled={processing}
-              onClick={() => handleAction(nextStatus)}
+              onClick={() => updateStatus(nextStatus)}
               size="default"
             >
               {nextStatus === "ACCEPTED" && <Check className="h-4 w-4" />}
@@ -187,7 +153,8 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
               variant="outline"
               className="border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
               disabled={processing}
-              onClick={() => setShowRejectDialog(true)}
+                onClick={() => setShowRejectDialog(true)}
+                disabled={processing}
             >
               <X className="h-4 w-4" />
               Reject
@@ -201,7 +168,8 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
               variant="outline"
               className="border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
               disabled={processing}
-              onClick={() => handleAction("CANCELLED")}
+              onClick={() => updateStatus("CANCELLED")}
+              disabled={processing}
             >
               <X className="h-4 w-4" />
               Cancel
@@ -246,7 +214,7 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
                 variant="destructive"
                 className="flex-1"
                 disabled={processing}
-                onClick={() => handleAction("CANCELLED", rejectReason || undefined)}
+                 onClick={() => updateStatus("CANCELLED", rejectReason || undefined)}
               >
                 Confirm Rejection
               </Button>

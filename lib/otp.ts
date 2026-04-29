@@ -46,7 +46,6 @@ export async function verifyOtp(phone: string, code: string) {
     .from("otp_verifications")
     .select("*")
     .eq("phone", phone)
-    .eq("code_hash", hashOtp(code))
     .eq("verified", false)
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false })
@@ -54,6 +53,24 @@ export async function verifyOtp(phone: string, code: string) {
     .single();
 
   if (error || !data) return false;
+
+  // Prevent brute-force (3 attempts max)
+  if (data.attempts >= 3) {
+    console.warn(`[OTP] Max attempts reached for ${phone}`);
+    return false;
+  }
+
+  // Check code
+  const isCorrect = data.code_hash === hashOtp(code);
+
+  if (!isCorrect) {
+    // Increment attempts
+    await supabase
+      .from("otp_verifications")
+      .update({ attempts: (data.attempts || 0) + 1 })
+      .eq("id", data.id);
+    return false;
+  }
 
   // Mark as verified
   await supabase

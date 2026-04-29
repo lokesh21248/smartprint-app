@@ -3,10 +3,11 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSignIn, useUser } from "@clerk/nextjs";
-import { Mail, Lock, LogIn, ArrowRight, Loader2, Store } from "lucide-react";
+import { Mail, Lock, LogIn, ArrowRight, Store } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AuthLayout, AuthLoader } from "@/components/auth/AuthLayout";
 import Link from "next/link";
 
 function LoginForm() {
@@ -42,11 +43,7 @@ function LoginForm() {
 
   // Prevent UI flicker while checking auth state or during hydration
   if (!isMounted || !userLoaded || user) {
-    return (
-      <div className="flex w-full min-h-[400px] items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2E8B57]" />
-      </div>
-    );
+    return <AuthLoader />;
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,15 +108,21 @@ function LoginForm() {
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-lg border border-[#E5E7EB] p-8 animate-slide-in-up w-full max-w-md mx-auto">
-      <div className="mb-8">
-        <div className="w-12 h-12 rounded-2xl bg-[#E8F5EE] flex items-center justify-center mb-4">
-          <Store className="h-6 w-6 text-[#2E8B57]" />
+    <AuthLayout
+      icon={<Store className="h-6 w-6 text-[#2E8B57]" />}
+      title="Welcome back"
+      description="Sign in to manage your shop"
+      footer={
+        <div className="mt-8 pt-6 border-t border-[#E5E7EB] text-center">
+          <p className="text-sm text-[#6B7280]">
+            Don't have an account?{" "}
+            <Link href="/signup" className="text-[#2E8B57] font-semibold hover:underline">
+              Create a shop
+            </Link>
+          </p>
         </div>
-        <h2 className="text-2xl font-bold text-[#111827] mb-2">Welcome back</h2>
-        <p className="text-[#6B7280]">Sign in to manage your shop</p>
-      </div>
-
+      }
+    >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-4">
           <Input
@@ -173,26 +176,13 @@ function LoginForm() {
           )}
         </Button>
       </form>
-
-      <div className="mt-8 pt-6 border-t border-[#E5E7EB] text-center">
-        <p className="text-sm text-[#6B7280]">
-          Don't have an account?{" "}
-          <Link href="/signup" className="text-[#2E8B57] font-semibold hover:underline">
-            Create a shop
-          </Link>
-        </p>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="flex w-full min-h-[400px] items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2E8B57]" />
-      </div>
-    }>
+    <Suspense fallback={<AuthLoader />}>
       <LoginForm />
     </Suspense>
   );

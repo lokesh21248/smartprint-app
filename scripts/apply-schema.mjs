@@ -52,7 +52,7 @@ if (!DB_PASSWORD) {
 // Connection string using Supabase's transaction pooler (port 6543)
 const connectionString = `postgresql://postgres.${PROJECT_REF}:${DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres`;
 
-const SQL = readFileSync('supabase/FULL_SETUP.sql', 'utf8');
+const SQL = readFileSync('supabase/CLERK_SCHEMA.sql', 'utf8');
 
 const client = new Client({ connectionString });
 

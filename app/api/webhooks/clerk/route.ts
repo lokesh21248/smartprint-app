@@ -2,6 +2,8 @@ import { Webhook } from 'svix'
 import { headers } from 'next/headers'
 import { WebhookEvent } from '@clerk/nextjs/server'
 import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from "@/lib/supabase/admin"
+import { upsertShop } from "@/lib/supabase/shop"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -56,52 +58,21 @@ export async function POST(req: Request) {
 
   if (eventType === 'user.created') {
     const { id, email_addresses, public_metadata } = evt.data
-    const email = email_addresses && email_addresses.length > 0 ? email_addresses[0].email_address : null
+    const email = email_addresses?.[0]?.email_address || ''
     
     try {
-      // Insert into shops table with Clerk user ID (TEXT)
-      const { data: shopData, error: shopError } = await supabase
-        .from('shops')
-        .insert({
-          owner_id: id,                                      // Clerk user ID (TEXT)
-          owner_email: email || '',
-          name: (public_metadata?.shopName as string) || 'My Shop',
-          slug: `shop-${Date.now()}`,                       // Generate unique slug
-          phone: (public_metadata?.phone as string) || '',
-          address: (public_metadata?.location as string) || 'TBD',
-          is_approved: false,
-          is_open: true,
-        })
-        .select()
-        .single()
+      const supabase = createAdminClient();
+      await upsertShop(supabase, {
+        userId: id,
+        email: email,
+        name: (public_metadata?.shopName as string),
+        address: (public_metadata?.location as string),
+        phone: (public_metadata?.phone as string),
+      });
 
-      if (shopError) {
-        console.error('Error inserting shop into Supabase:', shopError)
-        return new Response('Error inserting shop', { status: 500 })
-      }
-
-      // Insert into shop_staff table for the owner
-      if (shopData) {
-        const { error: staffError } = await supabase
-          .from('shop_staff')
-          .insert({
-            shop_id: shopData.id,
-            user_id: id,                                     // Clerk user ID (TEXT)
-            email: email || '',
-            role: 'owner',
-            is_active: true,
-            accepted_at: new Date().toISOString()
-          })
-          
-        if (staffError) {
-          console.error('Error inserting shop staff into Supabase:', staffError)
-          // Don't fail webhook if staff insertion fails
-        }
-      }
-
-      // ─── NEW: Link staff if they were invited ─────────────────────────────────
+      // Handle any pending staff invitations
       if (email) {
-        const { data: pendingInvite, error: inviteError } = await supabase
+        const { data: pendingInvite } = await supabase
           .from('shop_staff')
           .select('id')
           .eq('email', email)
@@ -117,15 +88,26 @@ export async function POST(req: Request) {
               is_active: true
             })
             .eq('id', pendingInvite.id);
-          
-          console.log(`Linked staff member ${email} to shop via invite`);
         }
       }
-      // ───────────────────────────────────────────────────────────────────────────
-
     } catch (err) {
-      console.error('Supabase error:', err)
-      return new Response('Database error', { status: 500 })
+      console.error('Webhook error:', err)
+      return new Response('Error processing user.created', { status: 500 })
+    }
+  }
+
+  // Handle user.updated to sync metadata changes
+  if (eventType === 'user.updated') {
+    const { id, public_metadata } = evt.data
+    if (public_metadata?.shopName || public_metadata?.location) {
+      await supabase
+        .from('shops')
+        .update({
+          name: (public_metadata?.shopName as string),
+          address: (public_metadata?.location as string),
+          updated_at: new Date().toISOString()
+        })
+        .eq('owner_id', id)
     }
   }
 
