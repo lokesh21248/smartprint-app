@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     console.log("[POST /api/orders] ✅ Insert Success:", data);
 
     // Trigger owner notification
-    const shopData = data.shops as any;
+    const shopData = data.shops as Record<string, unknown>;
     if (shopData?.owner_id) {
       const { NotificationService } = await import("@/lib/notifications");
       await NotificationService.alertNewOrder(shopData.owner_id, {

@@ -9,14 +9,14 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { 
-      shopId, 
-      customerName, 
-      customerPhone, 
-      files, 
-      printConfig, 
-      totalPages, 
-      totalAmount 
+    const {
+      shopId,
+      customerName,
+      customerPhone,
+      files,
+      printConfig,
+      totalPages,
+      totalAmount
     } = body;
 
     // 1. Fetch the shop pricing securely
@@ -31,20 +31,20 @@ export async function POST(request: Request) {
     }
 
     // 2. Calculate the total securely
-    const pricing = shop.pricing as any;
+    const pricing = shop.pricing as Record<string, number>;
     const copies = printConfig.copies || 1;
-    const rate = printConfig.color === "bw" 
-      ? (pricing.bw_a4 ?? 2) 
+    const rate = printConfig.color === "bw"
+      ? (pricing.bw_a4 ?? 2)
       : (pricing.color_a4 ?? 10);
-    
+
     let secureTotalAmount = totalPages * copies * rate;
-    
+
     if (printConfig.binding === "spiral") secureTotalAmount += (pricing.binding_spiral ?? 30);
     if (printConfig.binding === "soft") secureTotalAmount += (pricing.binding_soft ?? 50);
 
     // Generate Order Number: SP-XXXXXX
     const orderNumber = `SP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    
+
     // Generate Short Token for guest tracking
     const shortToken = Math.random().toString(36).substring(2, 10);
 
@@ -70,10 +70,10 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       orderId: data.id,
-      shortToken: shortToken 
+      shortToken: shortToken
     });
   } catch (err: unknown) {
     console.error("Order creation error:", err);

@@ -80,7 +80,7 @@ export function useRealtimeOrders(shopId: string | null) {
       incrementNotifications();
 
       if (soundEnabled) playNotificationSound();
-      showBrowserNotification({ ...order, total_amount: order.total_amount / 100 } as any);
+      showBrowserNotification({ ...order, total_amount: order.total_amount / 100 } as unknown as Order);
 
       // Visual flash & Tab title change
       if (typeof window !== "undefined") {
