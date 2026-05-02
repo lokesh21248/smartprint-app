@@ -146,20 +146,19 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
             </Button>
           )}
 
-          {/* Reject (only for placed) */}
-          {currentStatus === "PLACED" && (
-            <Button
-              id={`reject-${order.id}`}
-              variant="outline"
-              className="border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
-              disabled={processing}
-                onClick={() => setShowRejectDialog(true)}
-                disabled={processing}
-            >
-              <X className="h-4 w-4" />
-              Reject
-            </Button>
-          )}
+           {/* Reject (only for placed) */}
+           {currentStatus === "PLACED" && (
+             <Button
+               id={`reject-${order.id}`}
+               variant="outline"
+               className="border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
+               disabled={processing}
+               onClick={() => setShowRejectDialog(true)}
+             >
+               <X className="h-4 w-4" />
+               Reject
+             </Button>
+           )}
 
           {/* Cancel (for accepted/printing) */}
           {(currentStatus === "ACCEPTED" || currentStatus === "PRINTING") && (
@@ -169,7 +168,6 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
               className="border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
               disabled={processing}
               onClick={() => updateStatus("CANCELLED")}
-              disabled={processing}
             >
               <X className="h-4 w-4" />
               Cancel

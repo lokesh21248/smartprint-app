@@ -1,9 +1,9 @@
 "use client";
 
 import { Suspense, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useSignIn, useUser } from "@clerk/nextjs";
-import { Mail, Lock, LogIn, ArrowRight, Store } from "lucide-react";
+import { Mail, Lock, LogIn, Store, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,41 +13,37 @@ import Link from "next/link";
 function LoginForm() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const { user, isLoaded: userLoaded } = useUser();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  
-  // Safely parse redirect URL
+
   let redirectTo = searchParams.get("redirect_url") || "/dashboard";
-  if (redirectTo.includes("/login") || redirectTo.includes("/signup") || redirectTo.includes("/verify-email")) {
+  if (
+    redirectTo.includes("/login") ||
+    redirectTo.includes("/signup") ||
+    redirectTo.includes("/verify-email")
+  ) {
     redirectTo = "/dashboard";
   }
 
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
 
-  // Handle hydration safely
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  useEffect(() => { setIsMounted(true); }, []);
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (userLoaded && user) {
       window.location.assign(redirectTo);
     }
   }, [user, userLoaded, redirectTo]);
 
-  // Prevent UI flicker while checking auth state or during hydration
   if (!isMounted || !userLoaded || user) {
     return <AuthLoader />;
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.id]: e.target.value }));
+    setError("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,52 +51,33 @@ function LoginForm() {
     if (!isLoaded) return;
 
     setIsLoading(true);
+    setError("");
     try {
-      const initialAttempt = await signIn.create({
+      const result = await signIn.create({
         identifier: formData.email,
+        password: formData.password,
       });
-
-      let result = initialAttempt;
-      if (initialAttempt.status === "needs_first_factor") {
-        result = await initialAttempt.attemptFirstFactor({
-          strategy: "password",
-          password: formData.password,
-        });
-      }
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-
-        try {
-          await fetch("/api/auth/complete-signup", { method: "POST" });
-        } catch (err) {
-          console.error("Failed to provision shop:", err);
-        }
         toast.success("Welcome back!");
         window.location.assign(redirectTo);
-      } else if (result.status === "needs_second_factor") {
-        toast.error("Two-factor authentication is enabled. Complete your second factor to sign in.");
-      } else if (result.status === "needs_identifier") {
-        toast.error("Please enter your email address.");
-      } else if (result.status === "needs_first_factor") {
-        toast.error("Sign-in method not available. Try another method or reset your password.");
       } else {
-        console.error(result);
-        toast.error("Sign-in is not complete yet. Please follow the required authentication steps.");
+        setError("Sign-in could not be completed. Please try again.");
       }
-    } catch (err: any) {
-      console.error(err);
-      const code = err?.errors?.[0]?.code;
-      const message = err?.errors?.[0]?.message;
+    } catch (err: unknown) {
+      const clerkErr = err as { errors?: Array<{ code?: string; message?: string }> };
+      const code = clerkErr.errors?.[0]?.code;
+      const message = clerkErr.errors?.[0]?.message;
 
       if (code === "form_password_incorrect") {
-        toast.error("Password is incorrect. Try again or use Forgot password.");
+        setError("Incorrect password. Try again or reset your password.");
       } else if (code === "form_identifier_not_found") {
-        toast.error("No account found for this email.");
+        setError("No account found for this email.");
       } else if (code === "session_exists") {
-        toast.error("You are already signed in.");
+        window.location.assign(redirectTo);
       } else {
-        toast.error(message || "Unable to sign in. Please try again.");
+        setError(message || "Unable to sign in. Please try again.");
       }
     } finally {
       setIsLoading(false);
@@ -115,7 +92,7 @@ function LoginForm() {
       footer={
         <div className="mt-8 pt-6 border-t border-[#E5E7EB] text-center">
           <p className="text-sm text-[#6B7280]">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/signup" className="text-[#2E8B57] font-semibold hover:underline">
               Create a shop
             </Link>
@@ -157,12 +134,11 @@ function LoginForm() {
           </div>
         </div>
 
-        <Button
-          type="submit"
-          className="w-full mt-6"
-          size="lg"
-          disabled={isLoading}
-        >
+        {error && (
+          <p className="text-sm text-red-600 font-medium">{error}</p>
+        )}
+
+        <Button type="submit" className="w-full mt-2" size="lg" disabled={isLoading}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

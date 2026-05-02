@@ -35,7 +35,7 @@ if (!DB_PASSWORD) {
   console.log('');
   console.log('To automatically apply the database schema, do this:');
   console.log('');
-  console.log('  1. Go to: https://supabase.com/dashboard/project/eqbqbtpxzbondzxqsncy/settings/database');
+  console.log('  1. Go to: https://supabase.com/dashboard/project/ngreyymhgnzcakfnfcuh/settings/database');
   console.log('  2. Copy your "Database Password"');
   console.log('  3. Add this line to your .env.local file:');
   console.log('');
@@ -44,7 +44,7 @@ if (!DB_PASSWORD) {
   console.log('  4. Then run: node scripts/apply-schema.mjs');
   console.log('');
   console.log('  OR: Copy supabase/FULL_SETUP.sql and paste it into:');
-  console.log('  https://supabase.com/dashboard/project/eqbqbtpxzbondzxqsncy/sql/new');
+  console.log('  https://supabase.com/dashboard/project/ngreyymhgnzcakfnfcuh/sql/new');
   console.log('');
   process.exit(1);
 }

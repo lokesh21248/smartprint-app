@@ -41,18 +41,17 @@ export default async function AnalyticsPage() {
     .select("*")
     .eq("shop_id", shop.id);
 
-  const orders = (ordersData as Order[]) || [];
+  const rawOrders = (ordersData ?? []);
 
   // ─── Calculate Stats ────────────────────────────────────────────────────────
   const todayStr = new Date().toISOString().split("T")[0];
-  let pendingOrders = 0;
-  let ordersToday = 0;
-  let revenueToday = 0;
-  let completedToday = 0;
-  let activeCustomersSet = new Set<string>();
+  let pendingOrdersCount = 0;
+  let ordersTodayCount = 0;
+  let revenueTodayCount = 0;
+  let completedTodayCount = 0;
+  const activeCustomersSet = new Set<string>();
 
   const statusCount: Record<string, number> = {
-    DRAFT: 0,
     PLACED: 0,
     ACCEPTED: 0,
     PRINTING: 0,
@@ -67,24 +66,26 @@ export default async function AnalyticsPage() {
   let bwCount = 0;
   let colorCount = 0;
 
-  for (const o of orders) {
+  for (const o of rawOrders) {
+    const status = o.status || "PLACED";
+    
     // Stats
-    if (o.order_status !== "COMPLETED" && o.order_status !== "CANCELLED" && o.order_status !== "DRAFT") {
-      pendingOrders++;
+    if (status !== "COMPLETED" && status !== "CANCELLED") {
+      pendingOrdersCount++;
     }
     
     const createdDate = new Date(o.created_at).toISOString().split("T")[0];
     if (createdDate === todayStr) {
-      ordersToday++;
-      revenueToday += Number(o.total_amount) || 0;
-      if (o.order_status === "COMPLETED") completedToday++;
+      ordersTodayCount++;
+      revenueTodayCount += Number(o.total_amount) || 0;
+      if (status === "COMPLETED") completedTodayCount++;
     }
 
     if (o.customer_phone) activeCustomersSet.add(o.customer_phone);
 
     // Status Breakdown
-    if (statusCount[o.order_status] !== undefined) {
-      statusCount[o.order_status]++;
+    if (statusCount[status] !== undefined) {
+      statusCount[status]++;
     }
 
     // Revenue Trend (group by YYYY-MM-DD)
@@ -100,15 +101,15 @@ export default async function AnalyticsPage() {
     peakHoursCount[hourStr] = (peakHoursCount[hourStr] || 0) + 1;
 
     // Services
-    if (o.color) colorCount++;
+    if (o.is_color) colorCount++;
     else bwCount++;
   }
 
   const stats: DashboardStats = {
-    pendingOrders,
-    ordersToday,
-    revenueToday,
-    completedToday,
+    pendingOrders: pendingOrdersCount,
+    ordersToday: ordersTodayCount,
+    revenueToday: revenueTodayCount,
+    completedToday: completedTodayCount,
     activeCustomers: activeCustomersSet.size,
     avgCompletionMins: 45, // Hardcoded for now
   };
@@ -121,16 +122,15 @@ export default async function AnalyticsPage() {
     READY: "#10B981",
     COMPLETED: "#059669",
     CANCELLED: "#EF4444",
-    DRAFT: "#9CA3AF",
   };
 
-  const statusBreakdown = Object.entries(statusCount)
-    .filter(([_, count]) => count > 0)
-    .map(([status, count]) => ({
-      name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
-      value: count,
-      color: STATUS_COLORS[status] || "#9CA3AF",
-    }));
+   const statusBreakdown = Object.entries(statusCount)
+     .filter(([status, count]) => count > 0)
+     .map(([status, count]) => ({
+       name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
+       value: count,
+       color: STATUS_COLORS[status] || "#9CA3AF",
+     }));
 
   const revenueTrend = Object.entries(revenueByDate)
     .map(([date, data]) => ({ date, ...data }))

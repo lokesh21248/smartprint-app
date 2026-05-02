@@ -80,7 +80,7 @@ export function useRealtimeOrders(shopId: string | null) {
       incrementNotifications();
 
       if (soundEnabled) playNotificationSound();
-      showBrowserNotification(order);
+      showBrowserNotification({ ...order, total_amount: order.total_amount / 100 } as any);
 
       // Visual flash & Tab title change
       if (typeof window !== "undefined") {
@@ -101,7 +101,7 @@ export function useRealtimeOrders(shopId: string | null) {
       toast.success(
         `🖨️ New order from ${order.customer_name || "Guest"}`,
         {
-          description: `₹${order.total_amount} · ${order.page_count} pages × ${order.copies} copies`,
+          description: `₹${(order.total_amount / 100).toFixed(2)} · ${order.page_count} pages × ${order.copies} copies`,
           duration: 10000,
           action: { label: "View", onClick: () => window.location.href = `/orders/${order.id}` },
         }

@@ -1,6 +1,14 @@
-import type { Shop } from "@/types";
+interface ShopDisplayData {
+  name?: string;
+  address?: string;
+  phone?: string;
+  slug?: string;
+  opening_time?: string;
+  closing_time?: string;
+  [key: string]: unknown;
+}
 
-export function ShopStructuredData({ shop }: { shop: Partial<Shop> }) {
+export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
   if (!shop || !shop.name) return null;
 
   const jsonLd = {
@@ -10,9 +18,9 @@ export function ShopStructuredData({ shop }: { shop: Partial<Shop> }) {
     "address": {
       "@type": "PostalAddress",
       "streetAddress": shop.address,
-      "addressLocality": "City", // Placeholder
-      "addressRegion": "State", // Placeholder
-      "postalCode": "000000", // Placeholder
+      "addressLocality": "City",
+      "addressRegion": "State",
+      "postalCode": "000000",
       "addressCountry": "IN"
     },
     "telephone": shop.phone,

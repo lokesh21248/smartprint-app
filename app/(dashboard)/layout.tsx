@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertShop } from "@/lib/supabase/shop";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Header } from "@/components/shared/Header";
 import { ShopStoreInitializer } from "@/components/shared/ShopStoreInitializer";
@@ -20,25 +19,20 @@ async function getShopData(userId: string): Promise<Shop | null> {
     const { data: existingShop } = await supabase
       .from("shops")
       .select("*")
-      .eq("owner_id", userId)
+      .eq("clerk_owner_id", userId)
       .limit(1)
       .maybeSingle();
-    if (existingShop) return existingShop as Shop;
 
-    const user = await currentUser();
-    if (!user) return null;
-
-    const meta = (user.unsafeMetadata || {}) as Record<string, unknown>;
-    const createdShop = await upsertShop(supabase, {
-      userId,
-      email: user.emailAddresses?.[0]?.emailAddress || "unknown@example.com",
-      name: (typeof meta.shopName === "string" && meta.shopName.trim()) || `${user.firstName || "My"}'s Shop`,
-      address: (typeof meta.location === "string" && meta.location.trim()) || "TBD",
-      phone: (typeof meta.phone === "string" && meta.phone.trim()) || "TBD",
-    });
-
-    return createdShop as Shop;
-  } catch {
+    if (existingShop) {
+      return {
+        ...existingShop,
+        pricing: existingShop.pricing || { bw: 200, color: 1000 },
+        timings: existingShop.timings || {},
+      } as unknown as Shop;
+    }
+    return null;
+  } catch (err) {
+    console.error("[getShopData] ❌ Error:", err);
     return null;
   }
 }
@@ -49,12 +43,17 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { userId } = await auth();
-  
+
   if (!IS_DEMO && !userId) {
     redirect("/login");
   }
 
   const shop = userId ? await getShopData(userId) : null;
+
+  // Logged-in but no shop yet → send to the shop-creation flow.
+  if (userId && !shop) {
+    redirect("/create-shop");
+  }
 
   return (
     <>

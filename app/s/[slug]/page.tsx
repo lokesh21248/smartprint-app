@@ -17,8 +17,21 @@ import {
   Smartphone
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { Shop } from "@/types";
 import { Button } from "@/components/ui/button";
+
+interface ShopDisplay {
+  id?: string;
+  name?: string;
+  address?: string;
+  phone?: string;
+  is_open?: boolean;
+  price_bw_per_page?: number;
+  price_color_per_page?: number;
+  opening_time?: string;
+  closing_time?: string;
+  slug?: string;
+  [key: string]: unknown;
+}
 import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 import { formatCurrency } from "@/lib/utils";
 
@@ -27,7 +40,7 @@ export default function QRLandingPage() {
   const router = useRouter();
   const slug = params.slug as string;
 
-  const [shop, setShop] = useState<Partial<Shop> | null>(null);
+  const [shop, setShop] = useState<ShopDisplay | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +50,7 @@ export default function QRLandingPage() {
         const supabase = createClient();
         const { data, error: fetchError } = await supabase
           .from("shops")
-          .select("id, name, address, phone, is_open, price_bw_per_page, price_color_per_page, opening_time, closing_time")
+          .select("id, shop_name, address, phone, is_open, pricing, timings")
           .eq("slug", slug)
           .maybeSingle();
 
@@ -47,7 +60,20 @@ export default function QRLandingPage() {
           return;
         }
 
-        setShop(data);
+        // Map DB fields to UI state
+        const mappedData = {
+          id: data.id,
+          name: data.shop_name,
+          address: data.address,
+          phone: data.phone,
+          is_open: data.is_open,
+          price_bw_per_page: data.pricing?.price_bw_per_page || 0,
+          price_color_per_page: data.pricing?.price_color_per_page || 0,
+          opening_time: data.timings?.opening_time || "09:00",
+          closing_time: data.timings?.closing_time || "21:00",
+        };
+
+        setShop(mappedData);
         setIsLoading(false);
       } catch (err) {
         setError("Failed to load shop information");

@@ -4,35 +4,57 @@ export type UserRole = "owner" | "manager" | "staff";
 
 export interface Shop {
   id: string;
-  name: string;
+  owner_id: string;
+  shop_name: string;
   slug: string;
-  owner_id: string;                 // Clerk User ID (TEXT)
-  owner_email: string;
-  phone: string;
+  shop_code?: string;
   address: string;
-  lat?: number;
-  lng?: number;
-  price_bw_per_page: number;
-  price_color_per_page: number;
-  opening_time?: string;
-  closing_time?: string;
-  working_days?: string[];
-  services?: string[];
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email?: string;
+  pricing: {
+    bw: number;
+    color: number;
+    bw_a4?: number;
+    color_a4?: number;
+    binding_spiral?: number;
+    binding_soft?: number;
+  };
+  timings: Record<string, string>;
+  services: string[];
+  qr_code_url?: string;
+  qr_scan_count?: number;
+  code_use_count?: number;
+  rating_avg?: number;
+  total_reviews?: number;
+  total_orders?: number;
   is_approved: boolean;
   is_open: boolean;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface StatusHistoryEntry {
+  status: OrderStatus;
+  timestamp: string;
+  updated_by?: string;
+  notes?: string;
 }
 
 export interface Order {
   id: string;
   short_token: string;
+  order_number?: string;
   shop_id: string;
   customer_name: string;
   customer_phone: string;
   customer_phone_verified: boolean;
   file_s3_key: string;
-  file_name?: string;
+  file_name: string;
+  file_size_bytes?: number;
   page_count: number;
   copies: number;
   color: boolean;
@@ -40,14 +62,31 @@ export interface Order {
   notes?: string;
   total_amount: number;
   order_status: OrderStatus;
-  status_history: Array<{
-    status: OrderStatus;
-    at: string;
-    actor?: string;
-  }>;
+  status_history: StatusHistoryEntry[];
+  placed_at?: string;
+  accepted_at?: string;
+  printing_at?: string;
+  ready_at?: string;
+  completed_at?: string;
+  cancelled_at?: string;
   created_at: string;
   updated_at: string;
-  shops?: Shop;                      // Relation
+  shops?: Shop;
+}
+
+export interface PrintConfig {
+  color: "bw" | "color";
+  size: string;
+  copies: number;
+  binding: "none" | "spiral" | "soft";
+  duplex: boolean;
+}
+
+export interface OrderFile {
+  name: string;
+  size: number;
+  pages: number;
+  url: string;
 }
 
 export interface ShopStaff {

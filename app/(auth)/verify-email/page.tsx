@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSignUp, useUser } from "@clerk/nextjs";
-import { ShieldCheck, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AuthLayout, AuthLoader } from "@/components/auth/AuthLayout";
@@ -11,7 +11,7 @@ import { OtpInput } from "@/components/auth/OtpInput";
 import { ResendTimer } from "@/components/auth/ResendTimer";
 
 export default function VerifyEmailPage() {
-  const { isLoaded, signUp } = useSignUp();
+  const { isLoaded, signUp, setActive } = useSignUp();
   const { user, isLoaded: userLoaded } = useUser();
   const router = useRouter();
 
@@ -38,46 +38,69 @@ export default function VerifyEmailPage() {
     return <AuthLoader />;
   }
 
-  const handleVerify = async (codeToVerify: string) => {
-    if (!isLoaded || !signUp || codeToVerify.length !== 6) return;
+   const handleVerify = async (codeToVerify: string) => {
+     if (!isLoaded || !signUp || codeToVerify.length !== 6) return;
 
-    setIsLoading(true);
-    setError("");
+     setIsLoading(true);
+     setError("");
 
-    try {
-      const completeSignUp = await signUp.attemptEmailAddressVerification({
-        code: codeToVerify,
-      });
+     try {
+       const completeSignUp = await signUp.attemptEmailAddressVerification({
+         code: codeToVerify,
+       });
 
-      if (completeSignUp.status === "complete") {
-        // Requirement 5: Redirect to Login page after verification
-        toast.success("Email verified successfully! Please sign in.");
-        router.push("/login");
-      } else {
-        console.error(JSON.stringify(completeSignUp, null, 2));
-        setError("Verification incomplete. Please try again.");
-      }
-    } catch (err: any) {
+       if (completeSignUp.status === "complete" && completeSignUp.createdSessionId) {
+         await setActive({ session: completeSignUp.createdSessionId });
+
+         const meta = (signUp.unsafeMetadata || {}) as Record<string, string>;
+         if (meta.shopName) {
+           try {
+             await fetch("/api/shop/create", {
+               method: "POST",
+               headers: { "Content-Type": "application/json" },
+               body: JSON.stringify({
+                 shopName: meta.shopName,
+                 ownerName: meta.ownerName,
+                 phone: meta.phone,
+                 addressLine1: meta.address,
+                 city: meta.city,
+                 state: meta.state,
+                 pincode: meta.pincode,
+               }),
+             });
+           } catch (shopErr) {
+             console.error("[verify-email] Shop creation failed:", shopErr);
+           }
+         }
+
+         toast.success("Email verified! Welcome aboard.");
+         window.location.assign("/dashboard");
+       } else {
+         console.error(JSON.stringify(completeSignUp, null, 2));
+         setError("Verification incomplete. Please try again.");
+       }
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.errors?.[0]?.message || "Invalid code. Please try again.");
-      toast.error("Verification failed");
-      setCode(""); // Clear on error
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      const clerkErr = err as { errors?: Array<{ message?: string }> };
+      setError(clerkErr.errors?.[0]?.message || "Invalid code. Please try again.");
+       toast.error("Verification failed");
+       setCode(""); // Clear on error
+     } finally {
+       setIsLoading(false);
+     }
+   };
 
-  const handleResend = async () => {
-    if (!isLoaded || !signUp) return;
-    try {
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      toast.success("New code sent!");
-      setCode("");
-      setResetKey(k => k + 1);
-    } catch (err: any) {
-      toast.error("Failed to resend code");
-    }
-  };
+   const handleResend = async () => {
+     if (!isLoaded || !signUp) return;
+     try {
+       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+       toast.success("New code sent!");
+       setCode("");
+       setResetKey(k => k + 1);
+    } catch (err) {
+       toast.error("Failed to resend code");
+     }
+   };
 
   return (
     <AuthLayout

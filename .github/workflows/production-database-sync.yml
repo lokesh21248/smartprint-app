@@ -1,0 +1,54 @@
+name: Production Database Sync
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  database-sync:
+    name: Sync Database Schema
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Supabase CLI
+        run: npx supabase --version
+
+      - name: Apply DB Migrations
+        # Only push migrations on main branch merges, not on PRs
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: npx supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Validate Schema Runtime
+        # This runs on PRs as well to ensure the code changes match the DB state
+        run: npm run db:validate
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # NOTE: For Vercel, to ensure this runs BEFORE deployment:
+      # Option A: In Vercel settings, set "Ignored Build Step" to:
+      # `git log -1 --pretty=%B | grep -q 'skip-vercel' || exit 1`
+      # and trigger Vercel deployment manually from this GitHub Action using Vercel CLI.
+      #
+      # Option B: Add `npm run db:validate` to your package.json "build" script:
+      # `"build": "npm run db:validate && next build"`
+      # This ensures Vercel fails the build if the database is out of sync.

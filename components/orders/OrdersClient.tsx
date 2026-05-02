@@ -187,11 +187,11 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
                 <p className="font-semibold text-[#374151] text-lg">
                   No {tab.label.toLowerCase()} orders
                 </p>
-                <p className="text-[#9CA3AF] text-sm mt-1">
-                  {tab.value === "placed"
-                    ? "All new orders have been handled."
-                    : `No orders in ${tab.label.toLowerCase()} status right now.`}
-                </p>
+                 <p className="text-[#9CA3AF] text-sm mt-1">
+                   {tab.value === "PLACED"
+                     ? "All new orders have been handled."
+                     : `No orders in ${tab.label.toLowerCase()} status right now.`}
+                 </p>
               </div>
             ) : (
               <Virtuoso

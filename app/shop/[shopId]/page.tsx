@@ -17,7 +17,11 @@ export default async function ShopLandingPage({ params }: { params: { shopId: st
   }
 
   // Track scan in DB
-  await supabase.rpc('increment_qr_scan', { p_shop_id: params.shopId });
+  try {
+    await supabase.rpc('increment_qr_scan', { p_shop_id: params.shopId });
+  } catch (e) {
+    console.error("Failed to increment scan count", e);
+  }
 
   if (!shop.is_active) {
     return <UnavailableShop />;

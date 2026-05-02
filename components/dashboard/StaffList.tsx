@@ -52,8 +52,9 @@ export function StaffList({ initialStaff }: StaffListProps) {
       setStaff((prev) => [result.staff, ...prev]);
       toast.success(`📧 Invitation sent to ${data.email}!`);
       reset();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to invite staff");
+    } catch (err: unknown) {
+      const error = err as Error;
+      toast.error(error.message || "Failed to invite staff");
     } finally {
       setInviting(false);
     }
@@ -74,8 +75,9 @@ export function StaffList({ initialStaff }: StaffListProps) {
 
       setStaff((prev) => prev.filter((s) => s.id !== staffId));
       toast.success("Staff member removed");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to remove staff");
+    } catch (err: unknown) {
+      const error = err as Error;
+      toast.error(error.message || "Failed to remove staff");
     }
   };
 

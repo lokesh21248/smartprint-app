@@ -8,20 +8,18 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function validateEmail(email: string): boolean {
-  return String(email)
-    .toLowerCase()
-    .match(
-      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
-    ) !== null;
+  if (!email) return false;
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(email.trim().toLowerCase());
 }
 
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amountPaise: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(amountPaise / 100);
 }
 
 export function formatTimeAgo(dateStr: string): string {
@@ -86,30 +84,22 @@ export function getNextStatusLabel(status: OrderStatus): string {
 }
 
 export function getPrintConfigLabel(
-  printConfig?: {
-    color?: string;
-    size?: string;
-    copies?: number;
-    duplex?: boolean;
-    binding?: string;
-  } | null
+  order: {
+    is_color: boolean;
+    page_count: number;
+    copies: number;
+    is_double_sided: boolean;
+  }
 ): string {
-  if (!printConfig) return "Standard print";
+  const color = order.is_color ? "Color" : "B/W";
+  const copies = order.copies ?? 1;
+  const sides = order.is_double_sided ? "Double-sided" : "Single-side";
 
-  const color = printConfig.color === "color" ? "Color" : "B/W";
-  const size = printConfig.size ?? "A4";
-  const copies = printConfig.copies ?? 1;
-  const sides = printConfig.duplex ? "Duplex" : "Single-side";
-  const binding =
-    printConfig.binding && printConfig.binding !== "none"
-      ? `${printConfig.binding} binding`
-      : "No binding";
-
-  return `${color} · ${size} · ${copies} ${copies > 1 ? "copies" : "copy"} · ${sides} · ${binding}`;
+  return `${color} · ${order.page_count}pg · ${copies} ${copies > 1 ? "copies" : "copy"} · ${sides}`;
 }
 
 export function generateShortToken(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No O, 0, I, 1 to avoid confusion
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; 
   let result = "";
   for (let i = 0; i < 8; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -121,11 +111,10 @@ export function calculateTotal(params: {
   pageCount: number;
   copies: number;
   color: boolean;
-  pricePerPageBW: number;
-  pricePerPageColor: number;
+  pricePerPageBW: number; // in paise
+  pricePerPageColor: number; // in paise
 }): number {
   const { pageCount, copies, color, pricePerPageBW, pricePerPageColor } = params;
   const rate = color ? pricePerPageColor : pricePerPageBW;
-  const total = pageCount * copies * rate;
-  return Math.round(total * 100) / 100;
+  return pageCount * copies * rate; // returns total in paise
 }

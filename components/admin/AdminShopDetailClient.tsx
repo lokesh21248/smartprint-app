@@ -11,9 +11,16 @@ import Link from "next/link";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+import { Shop, Order } from "@/types";
+
+interface AdminShop extends Shop {
+  name: string; // The component uses .name instead of .shop_name
+  owner_email?: string;
+}
+
 interface AdminShopDetailClientProps {
-  shop: any;
-  orders: any[];
+  shop: AdminShop;
+  orders: Order[];
 }
 
 export function AdminShopDetailClient({ shop, orders }: AdminShopDetailClientProps) {

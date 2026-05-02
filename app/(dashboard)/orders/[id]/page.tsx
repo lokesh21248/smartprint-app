@@ -23,7 +23,33 @@ async function getOrder(id: string): Promise<Order | null> {
       .eq("id", id)
       .limit(1)
       .maybeSingle();
-    return data as Order | null;
+
+    if (!data) return null;
+
+    // Map DB fields back to flat structure
+    const mappedOrder: Order = {
+      id: data.id,
+      short_token: data.short_token,
+      order_number: data.order_number,
+      shop_id: data.shop_id,
+      customer_name: data.customer_name,
+      customer_phone: data.customer_phone,
+      customer_phone_verified: data.customer_phone_verified || false,
+      file_s3_key: data.file_s3_key,
+      file_name: data.file_name,
+      page_count: data.page_count,
+      copies: data.copies,
+      color: data.is_color,
+      double_sided: data.is_double_sided,
+      notes: data.notes,
+      total_amount: data.total_amount,
+      status: data.status,
+      status_history: data.status_history || [],
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    } as unknown as Order;
+
+    return mappedOrder;
   } catch {
     return null;
   }

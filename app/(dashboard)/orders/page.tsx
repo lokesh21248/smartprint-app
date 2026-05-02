@@ -29,24 +29,48 @@ async function getInitialOrders(userId: string): Promise<{ orders: Order[]; shop
       .select(`
         id,
         short_token,
+        order_number,
         customer_name,
         customer_phone,
+        file_s3_key,
+        file_name,
         page_count,
         copies,
-        color,
-        double_sided,
+        is_color,
+        is_double_sided,
         notes,
         total_amount,
-        order_status,
+        status,
+        status_history,
         created_at,
         updated_at
       `)
       .eq("shop_id", shop.id)
-      .in("order_status", ["PLACED", "ACCEPTED", "PRINTING"])
+      .in("status", ["PLACED", "ACCEPTED", "PRINTING"])
       .order("created_at", { ascending: false })
       .limit(50);
 
-    return { orders: (data ?? []) as Order[], shopId: shop.id };
+    const mappedOrders = (data ?? []).map((ord) => ({
+      id: ord.id as string,
+      short_token: ord.short_token as string,
+      order_number: ord.order_number as string,
+      customer_name: ord.customer_name as string,
+      customer_phone: ord.customer_phone as string,
+      file_s3_key: ord.file_s3_key as string,
+      file_name: ord.file_name as string,
+      page_count: ord.page_count as number,
+      copies: ord.copies as number,
+      color: ord.is_color as boolean,
+      double_sided: ord.is_double_sided as boolean,
+      notes: ord.notes as string,
+      total_amount: ord.total_amount as number,
+      order_status: ord.status as Order["order_status"],
+      status_history: (ord.status_history as Order["status_history"]) || [],
+      created_at: ord.created_at as string,
+      updated_at: ord.updated_at as string,
+    }));
+
+    return { orders: mappedOrders as unknown as Order[], shopId: shop.id };
   } catch {
     return { orders: DEMO_ORDERS, shopId: DEMO_SHOP.id };
   }

@@ -86,7 +86,7 @@ export default function ProfilePage() {
     (typeof window !== "undefined" ? window.location.origin : "");
   const qrUrl =
     shop.qr_code_url ??
-    (shop.shop_code ? `${appUrl}/s/${shop.shop_code}` : "") ??
+    (shop.shop_code ? `${appUrl}/s/${shop.shop_code}` : null) ??
     (shop.slug ? `${appUrl}/s/${shop.slug}` : "");
 
   const copyShopCode = async () => {

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, FileText, Phone, Download, Printer, Clock,
-  Check, Package, CheckCircle, X, AlertTriangle, IndianRupee,
+  ArrowLeft, FileText, Phone, Download, Printer,
+  Check, Package, Circle, X, AlertTriangle, IndianRupee,
   User, Calendar
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -185,7 +185,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                 {nextStatus === "ACCEPTED" && <Check className="h-5 w-5" />}
                 {nextStatus === "PRINTING" && <Printer className="h-5 w-5" />}
                 {nextStatus === "READY" && <Package className="h-5 w-5" />}
-                {nextStatus === "COMPLETED" && <CheckCircle className="h-5 w-5" />}
+                 {nextStatus === "COMPLETED" && <Circle className="h-5 w-5" />}
                 {getNextStatusLabel(order.order_status)}
               </Button>
             )}
@@ -285,7 +285,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
             </h2>
             <div className="relative pl-5 space-y-4">
               <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-[#E5E7EB]" />
-              {(order.status_history || []).slice().reverse().map((entry: any, i: number) => (
+              {(order.status_history || []).slice().reverse().map((entry, i) => (
                 <div key={i} className="relative flex items-start gap-3">
                   <div className={`absolute -left-5 w-3.5 h-3.5 rounded-full border-2 ${
                     i === 0 ? "bg-[#2E8B57] border-[#2E8B57]" : "bg-white border-[#D1D5DB]"

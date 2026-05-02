@@ -111,9 +111,14 @@ export async function GET() {
       `ALTER PUBLICATION supabase_realtime ADD TABLE orders`
     ];
 
+    interface SQLError {
+      sql: string;
+      error: string;
+    }
+
     let success = 0;
     let failed = 0;
-    const errors: any[] = [];
+    const errors: SQLError[] = [];
 
     for (const sql of STATEMENTS) {
       const resp = await fetch(`${SUPABASE_URL}/rest/v1/`, {
@@ -166,7 +171,8 @@ export async function GET() {
       message: `Schema setup complete: ${success} OK, ${failed} Failed`,
       errors
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const error = err as Error;
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

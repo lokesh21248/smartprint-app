@@ -24,19 +24,17 @@ export function SettingsClient() {
   const [language, setLanguage] = useState("en");
   const [loggingOut, setLoggingOut] = useState(false);
   const shopInfo = (shop ?? {}) as {
-    shop_name?: string;
     name?: string;
-    email?: string;
     owner_email?: string;
     city?: string;
     state?: string;
-    address?: string;
+    address_line1?: string;
   };
-  const shopName = shopInfo.shop_name || shopInfo.name || "My Shop";
-  const shopEmail = shopInfo.email || shopInfo.owner_email || "owner@shop.com";
+  const shopName = shopInfo.name || "My Shop";
+  const shopEmail = shopInfo.owner_email || "owner@shop.com";
   const shopLocation =
     [shopInfo.city, shopInfo.state].filter(Boolean).join(", ") ||
-    shopInfo.address ||
+    shopInfo.address_line1 ||
     "Location not set";
 
   const handleLogout = async () => {

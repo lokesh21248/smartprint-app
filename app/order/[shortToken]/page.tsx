@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { 
   CheckCircle2, Clock, Printer, Package, 
   XCircle, ArrowLeft, Loader2, MapPin, Phone,
-  FileText, RefreshCcw, ExternalLink, AlertCircle
+  FileText, RefreshCcw, ExternalLink, AlertCircle, Store
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -228,14 +228,14 @@ export default function OrderStatusPage() {
                 <Store className="w-8 h-8 text-emerald-600" />
               </div>
               <div>
-                <p className="font-black text-xl text-gray-900">{shop.name}</p>
+                <p className="font-black text-xl text-gray-900">{shop.shop_name}</p>
                 <p className="text-gray-500 font-medium leading-relaxed mt-1">{shop.address}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4">
               <a 
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.name + " " + shop.address)}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.shop_name + " " + shop.address)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex-1"

@@ -26,7 +26,7 @@ interface Shop {
 }
 
 interface ShopsListClientProps {
-  initialShops: any[];
+  initialShops: Shop[];
 }
 
 export function ShopsListClient({ initialShops }: ShopsListClientProps) {

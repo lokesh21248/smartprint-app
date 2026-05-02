@@ -20,16 +20,16 @@ const IS_DEMO =
     process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project"));
 
 async function fetchNewOrders(shopId: string): Promise<Order[]> {
-  if (IS_DEMO) return DEMO_ORDERS.filter((o) => o.status === "placed");
+  if (IS_DEMO) return DEMO_ORDERS.filter((o) => o.order_status === "PLACED");
   const supabase = createClient();
   const { data } = await supabase
     .from("orders")
-    .select("*, customer:customer_id(*)")
+    .select("*")
     .eq("shop_id", shopId)
-    .eq("status", "placed")
+    .eq("status", "PLACED")
     .order("created_at", { ascending: false })
     .limit(5);
-  return (data ?? []) as Order[];
+  return (data ?? []) as unknown as Order[];
 }
 
 interface NewOrdersFeedProps {
@@ -54,7 +54,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
 
   const handleAction = async (
     orderId: string,
-    newStatus: "accepted" | "rejected"
+    newStatus: "ACCEPTED" | "CANCELLED"
   ) => {
     setProcessing((p) => ({ ...p, [orderId]: true }));
 
@@ -67,11 +67,11 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newStatus }),
+        body: JSON.stringify({ newStatus, reason: newStatus === "CANCELLED" ? "Rejected by shop" : undefined }),
       });
       if (!res.ok) throw new Error("Failed");
       toast.success(
-        newStatus === "accepted" ? "✅ Order accepted!" : "Order rejected"
+        newStatus === "ACCEPTED" ? "✅ Order accepted!" : "Order rejected"
       );
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
@@ -122,12 +122,6 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
         ) : (
           orders.slice(0, 5).map((order) => (
             <div key={order.id} className="p-4 hover:bg-[#FAFAFA] transition-colors">
-              {(() => {
-                const fileCount = Array.isArray((order as { files?: unknown[] }).files)
-                  ? ((order as { files?: unknown[] }).files?.length ?? 0)
-                  : 1;
-                const printConfig = (order as { print_config?: Record<string, unknown> }).print_config;
-                return (
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   {/* Order number + time */}
@@ -142,14 +136,14 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
 
                   {/* Customer */}
                   <p className="text-sm font-medium text-[#374151] mb-1">
-                    {order.customer_name ?? order.customer?.user_metadata?.name ?? "Guest"}
-                    {(order.customer_phone || order.customer?.user_metadata?.phone) && (
+                    {order.customer_name || "Guest"}
+                    {order.customer_phone && (
                       <a
-                        href={`tel:${order.customer_phone || order.customer?.user_metadata?.phone}`}
+                        href={`tel:${order.customer_phone}`}
                         className="ml-2 inline-flex items-center gap-1 text-[#2E8B57] text-xs font-normal hover:underline"
                       >
                         <Phone className="h-3 w-3" />
-                        {order.customer_phone || order.customer?.user_metadata?.phone}
+                        {order.customer_phone}
                       </a>
                     )}
                   </p>
@@ -157,14 +151,14 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   {/* Config */}
                   <p className="text-xs text-[#6B7280] mb-2">
                     <FileText className="h-3 w-3 inline mr-1" />
-                    {fileCount} file{fileCount > 1 ? "s" : ""} · {getPrintConfigLabel(printConfig)}
+                    1 file · {order.page_count}pg x {order.copies} copies ({order.color ? "Color" : "B&W"})
                   </p>
 
                   {/* Special instructions */}
-                  {order.special_instructions && (
+                  {order.notes && (
                     <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-lg px-2.5 py-1.5 mb-2">
                       <p className="text-xs text-[#92400E] font-medium">
-                        ⚠️ {order.special_instructions}
+                        ⚠️ {order.notes}
                       </p>
                     </div>
                   )}
@@ -175,11 +169,9 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   <p className="text-xl font-black text-[#111827]">
                     {formatCurrency(order.total_amount)}
                   </p>
-                  <p className="text-xs text-[#9CA3AF]">{order.total_pages} pages</p>
+                  <p className="text-xs text-[#9CA3AF]">{order.page_count * order.copies} total pages</p>
                 </div>
               </div>
-                );
-              })()}
 
               {/* Action buttons */}
               <div className="flex gap-2 mt-3">
@@ -188,7 +180,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   size="sm"
                   className="flex-1"
                   loading={processing[order.id]}
-                  onClick={() => handleAction(order.id, "accepted")}
+                  onClick={() => handleAction(order.id, "ACCEPTED")}
                 >
                   <Check className="h-4 w-4" />
                   Accept
@@ -199,7 +191,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   variant="outline"
                   className="flex-1 border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
                   loading={processing[order.id]}
-                  onClick={() => handleAction(order.id, "rejected")}
+                  onClick={() => handleAction(order.id, "CANCELLED")}
                 >
                   <X className="h-4 w-4" />
                   Reject

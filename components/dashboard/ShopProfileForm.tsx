@@ -81,7 +81,18 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
       const supabase = createClient();
       const normalizedData = ShopProfileSchema.parse(data) as ShopProfileInput;
       const payload: Record<string, unknown> = {
-        ...normalizedData,
+        name: normalizedData.name,
+        owner_email: normalizedData.owner_email,
+        owner_phone: normalizedData.phone,
+        address_line1: normalizedData.address,
+        price_bw_per_page: normalizedData.price_bw_per_page,
+        price_color_per_page: normalizedData.price_color_per_page,
+        business_hours: {
+          opening_time: normalizedData.opening_time,
+          closing_time: normalizedData.closing_time,
+          working_days: normalizedData.working_days,
+          services: normalizedData.services,
+        },
         updated_at: new Date().toISOString(),
       };
 
@@ -91,7 +102,23 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
         .eq("id", shopRecord.id);
 
       if (error) throw error;
-      setShop({ ...shop, ...payload } as Shop);
+      
+      // Map payload back to frontend Shop interface before updating store
+      const updatedShop = {
+        ...shop,
+        name: normalizedData.name,
+        address: normalizedData.address,
+        phone: normalizedData.phone,
+        owner_email: normalizedData.owner_email,
+        price_bw_per_page: normalizedData.price_bw_per_page,
+        price_color_per_page: normalizedData.price_color_per_page,
+        opening_time: normalizedData.opening_time,
+        closing_time: normalizedData.closing_time,
+        working_days: normalizedData.working_days,
+        services: normalizedData.services,
+      };
+      
+      setShop(updatedShop as Shop);
       toast.success("✅ Shop profile updated!");
     } catch (err) {
       toast.error("Failed to save. Please try again.");

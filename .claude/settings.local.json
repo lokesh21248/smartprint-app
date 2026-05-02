@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(do:*)",
+      "Bash(done:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(timeout:*)",
+      "Bash(PORT=3007:*)",
+      "Bash(sleep:*)",
+      "Bash(tail:*)",
+      "Bash(pkill:*)",
+      "Bash(wc:*)",
+      "Bash(rm:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

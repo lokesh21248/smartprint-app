@@ -54,6 +54,7 @@ export async function POST(request: Request) {
       notes,
       customerName,
       customerPhone,
+      fileSize = 1024, // Provide a default for existing clients
     } = body;
 
     // Validate inputs
@@ -96,49 +97,37 @@ export async function POST(request: Request) {
       : shop.price_bw_per_page;
     const totalAmount = pageCount * copies * pricePerPage;
 
-    // Generate short token (8 chars, alphanumeric)
-    const shortToken = Math.random()
-      .toString(36)
-      .substring(2, 10)
-      .toUpperCase();
-
-    // Create order
+    // Create order using service role to bypass RLS and insert directly as PLACED
     const { data, error } = await supabase
       .from("orders")
       .insert({
-        short_token: shortToken,
         shop_id: shopId,
         customer_name: customerName,
         customer_phone: customerPhone,
-        customer_phone_verified: false,
+        customer_ip: ip,
         file_s3_key: filePath,
         file_name: fileName,
+        file_size_bytes: fileSize,
         page_count: pageCount,
-        copies,
-        color,
-        double_sided: doubleSided,
+        copies: copies,
+        is_color: !!color,
+        is_double_sided: !!doubleSided,
         notes: notes || null,
         total_amount: totalAmount,
-        order_status: "PLACED",
-        scan_status: "PENDING",
-        status_history: [
-          {
-            status: "PLACED",
-            at: new Date().toISOString(),
-            actor: "system",
-          },
-        ],
+        status: "PLACED",
       })
-      .select("id, customer_name, total_amount, shops(owner_id)")
+      .select("id, short_token, customer_name, total_amount, shops(owner_id)")
       .single();
 
     if (error) {
-      console.error("[POST /api/orders] Error:", error);
+      console.error("[POST /api/orders] ❌ Insert Error:", error);
       return NextResponse.json(
         { error: "Failed to create order" },
         { status: 500 }
       );
     }
+
+    console.log("[POST /api/orders] ✅ Insert Success:", data);
 
     // Trigger owner notification
     const shopData = data.shops as any;
@@ -153,7 +142,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       orderId: data.id,
-      shortToken,
+      shortToken: data.short_token,
       totalAmount,
     });
   } catch (err) {
@@ -181,34 +170,36 @@ export async function GET(request: Request) {
       );
     }
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select(
-        `
-        id,
-        short_token,
-        customer_name,
-        customer_phone,
-        page_count,
-        copies,
-        color,
-        double_sided,
-        notes,
-        total_amount,
-        order_status,
-        created_at,
-        updated_at,
-        shops!inner(id, name, address, phone, opening_time, closing_time)
-      `
-      )
-      .eq("short_token", shortToken)
-      .single();
+    // Call the RPC function defined in PRODUCTION_SCHEMA.sql
+    const { data, error } = await supabase.rpc('get_order_by_token', { 
+      p_token: shortToken 
+    });
 
-    if (error || !data) {
-      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    if (error || !data || !data.success) {
+      console.warn(`[GET /api/orders] ❌ Order not found or error:`, error?.message || data?.error);
+      return NextResponse.json({ error: data?.error || "Order not found" }, { status: 404 });
     }
 
-    return NextResponse.json(data);
+    console.log(`[GET /api/orders] ✅ Fetch Success for ${shortToken}:`, data);
+
+    // Map RPC response back to the format the frontend expects
+    const mappedOrder = {
+      short_token: shortToken,
+      customer_name: data.customer_name,
+      page_count: data.page_count,
+      copies: data.copies,
+      color: data.is_color,
+      double_sided: data.is_double_sided,
+      total_amount: data.total_amount,
+      order_status: data.status,
+      shops: {
+        name: data.shop_name,
+        address: data.shop_address,
+        phone: data.shop_phone,
+      }
+    };
+
+    return NextResponse.json(mappedOrder);
   } catch (err) {
     console.error("[GET /api/orders]", err);
     return NextResponse.json(

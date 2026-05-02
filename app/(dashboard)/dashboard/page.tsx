@@ -8,7 +8,7 @@ import { NewOrdersFeed } from "@/components/dashboard/NewOrdersFeed";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { DEMO_STATS, DEMO_ORDERS, DEMO_SHOP } from "@/lib/demo-data";
 import type { DashboardStats, Order, Shop } from "@/types";
-import { User, Store, Mail } from "lucide-react";
+import { User as UserIcon, Store, Mail } from "lucide-react";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -17,7 +17,9 @@ const IS_DEMO =
   !process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project");
 
-async function getDashboardData(userId: string, clerkUser: User | null): Promise<{
+type ClerkUser = Awaited<ReturnType<typeof currentUser>>;
+
+async function getDashboardData(userId: string, clerkUser: ClerkUser): Promise<{
   stats: DashboardStats;
   newOrders: Order[];
   shop: Shop;
@@ -35,32 +37,20 @@ async function getDashboardData(userId: string, clerkUser: User | null): Promise
     let { data: shop } = await supabase
       .from("shops")
       .select("*")
-      .eq("owner_id", userId)
+      .eq("clerk_owner_id", userId)
       .limit(1)
       .maybeSingle();
 
-    if (!shop && clerkUser) {
-      const meta = (clerkUser.unsafeMetadata || {}) as any;
-      const email = clerkUser.emailAddresses?.[0]?.emailAddress || "";
-      
-      try {
-        const newShop = await upsertShop(supabase, {
-          userId,
-          email,
-          name: meta.shopName || clerkUser.firstName + "'s Shop",
-          address: meta.location,
-          phone: meta.phone,
-        });
-        
-        if (newShop) {
-          shop = newShop;
-        }
-      } catch (err) {
-        console.error("Dashboard shop creation failed:", err);
-      }
+    if (!shop) {
+      console.warn(`[getDashboardData] ⚠️ No shop found for user ${userId}. Waiting for webhook sync...`);
+      return { stats: DEMO_STATS, newOrders: [], shop: DEMO_SHOP };
     }
 
-    if (!shop) return { stats: DEMO_STATS, newOrders: [], shop: DEMO_SHOP };
+    const mappedShop: Shop = {
+      ...shop,
+      pricing: shop.pricing || { bw: 200, color: 1000 },
+      timings: shop.timings || {},
+    } as unknown as Shop;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -68,23 +58,23 @@ async function getDashboardData(userId: string, clerkUser: User | null): Promise
     const [ordersResult, newOrdersResult] = await Promise.all([
       supabase
         .from("orders")
-        .select("total_amount, order_status, created_at, updated_at, customer_id, customer_phone")
+        .select("total_amount, status, created_at, updated_at, customer_phone")
         .eq("shop_id", shop.id)
         .gte("created_at", today.toISOString()),
       supabase
         .from("orders")
         .select("*")
         .eq("shop_id", shop.id)
-        .eq("order_status", "PLACED")
+        .eq("status", "PLACED")
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
 
-    const orders = ordersResult.data ?? [];
-    const totalRevenue = orders
-      .filter((o) => o.order_status === "COMPLETED")
+    const rawOrders = ordersResult.data ?? [];
+    const totalRevenue = rawOrders
+      .filter((o) => o.status === "COMPLETED")
       .reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-    const completedOrders = orders.filter((o) => o.order_status === "COMPLETED");
+    const completedOrders = rawOrders.filter((o) => o.status === "COMPLETED");
     const avgMins =
       completedOrders.length > 0
         ? completedOrders.reduce((sum, o) => {
@@ -97,20 +87,40 @@ async function getDashboardData(userId: string, clerkUser: User | null): Promise
         : 0;
 
     const uniqueCustomers = new Set(
-      orders.map((o) => o.customer_phone || "anonymous")
+      rawOrders.map((o) => o.customer_phone || "anonymous")
     ).size;
+
+    const mappedNewOrders = (newOrdersResult.data ?? []).map((ord) => ({
+      id: ord.id as string,
+      short_token: ord.short_token as string,
+      order_number: (ord.order_number as string) || undefined,
+      customer_name: ord.customer_name as string,
+      customer_phone: ord.customer_phone as string,
+      file_s3_key: ord.file_s3_key as string,
+      file_name: ord.file_name as string,
+      page_count: (ord.page_count as number) || 0,
+      copies: (ord.copies as number) || 1,
+      color: (ord.color as boolean) || false,
+      double_sided: (ord.double_sided as boolean) || false,
+      notes: (ord.notes as string) || undefined,
+      total_amount: ord.total_amount as number,
+      order_status: (ord.order_status as string || ord.status as string) as Order["order_status"],
+      status_history: (ord.status_history as Order["status_history"]) || [],
+      created_at: ord.created_at as string,
+      updated_at: ord.updated_at as string,
+    }));
 
     return {
       stats: {
-        pendingOrders: orders.filter((o) => o.order_status === "PLACED").length,
-        ordersToday: orders.length,
+        pendingOrders: rawOrders.filter((o) => o.status === "PLACED").length,
+        ordersToday: rawOrders.length,
         revenueToday: totalRevenue,
         avgCompletionMins: Math.round(avgMins),
         activeCustomers: uniqueCustomers,
         completedToday: completedOrders.length,
       },
-      newOrders: (newOrdersResult.data ?? []) as Order[],
-      shop: shop as Shop,
+      newOrders: mappedNewOrders as unknown as Order[],
+      shop: mappedShop,
     };
   } catch (err) {
     console.error("Dashboard error:", err);
@@ -132,8 +142,8 @@ export default async function DashboardPage() {
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
     user?.username ||
     "N/A";
-  const shopDisplayName = shop?.name || "N/A";
-  const emailDisplay = user?.emailAddresses?.[0]?.emailAddress || shop?.owner_email || "N/A";
+  const shopDisplayName = shop?.shop_name || "N/A";
+  const emailDisplay = user?.emailAddresses?.[0]?.emailAddress || shop?.email || "N/A";
 
   return (
     <div className="space-y-6">
@@ -142,7 +152,7 @@ export default async function DashboardPage() {
         <div className="flex gap-6">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] flex items-center justify-center">
-              <User className="h-4 w-4 text-[#2E8B57]" />
+              <UserIcon className="h-4 w-4 text-[#2E8B57]" />
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[#6B7280] font-bold">Owner</p>

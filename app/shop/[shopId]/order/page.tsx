@@ -65,12 +65,11 @@ export default function OrderFlowPage() {
     if (!shop) return 0;
     const totalPages = files.reduce((sum, f) => sum + f.pages, 0);
     const rate = config.color === "bw" 
-      ? (shop.pricing.bw_a4 ?? 2) 
-      : (shop.pricing.color_a4 ?? 10);
+      ? (shop.pricing.bw_a4 ?? shop.pricing.bw ?? 2) 
+      : (shop.pricing.color_a4 ?? shop.pricing.color ?? 10);
     
     let total = totalPages * config.copies * rate;
     
-    // Add binding cost
     if (config.binding === "spiral") total += (shop.pricing.binding_spiral ?? 30);
     if (config.binding === "soft") total += (shop.pricing.binding_soft ?? 50);
     
@@ -336,8 +335,8 @@ export default function OrderFlowPage() {
                 <p className="text-sm font-bold text-gray-500 uppercase tracking-wider">Color Mode</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { id: "bw", label: "Black & White", icon: "⚫", price: shop?.pricing.bw_a4 },
-                    { id: "color", label: "Color Print", icon: "🌈", price: shop?.pricing.color_a4 }
+                    { id: "bw", label: "Black & White", icon: "⚫", price: shop?.pricing.bw_a4 ?? shop?.pricing.bw },
+                    { id: "color", label: "Color Print", icon: "🌈", price: shop?.pricing.color_a4 ?? shop?.pricing.color }
                   ].map(opt => (
                     <button
                       key={opt.id}

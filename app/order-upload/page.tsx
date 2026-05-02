@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Loader2,
@@ -25,20 +25,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import type { Shop } from "@/types";
+
+interface ShopDisplay {
+  id?: string;
+  name?: string;
+  address?: string;
+  is_open?: boolean;
+  price_bw_per_page?: number;
+  price_color_per_page?: number;
+}
 import * as pdfjs from "pdfjs-dist";
 import { formatCurrency } from "@/lib/utils";
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-export default function OrderUploadPage() {
+function OrderUploadPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const shopSlug = searchParams.get("shopSlug");
 
   // State
-  const [shop, setShop] = useState<Partial<Shop> | null>(null);
+  const [shop, setShop] = useState<ShopDisplay | null>(null);
   const [isLoadingShop, setIsLoadingShop] = useState(true);
 
   const [step, setStep] = useState(1);
@@ -72,7 +80,7 @@ export default function OrderUploadPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("shops")
-        .select("id, name, price_bw_per_page, price_color_per_page, is_open, address")
+        .select("id, shop_name, address, pricing, is_open")
         .eq("slug", shopSlug)
         .maybeSingle();
 
@@ -81,7 +89,17 @@ export default function OrderUploadPage() {
         return;
       }
 
-      setShop(data);
+      // Map DB row to flat structure for UI
+      const mappedData = {
+        id: data.id,
+        name: data.shop_name,
+        address: data.address,
+        price_bw_per_page: data.pricing?.price_bw_per_page || 0,
+        price_color_per_page: data.pricing?.price_color_per_page || 0,
+        is_open: data.is_open,
+      };
+
+      setShop(mappedData);
       setIsLoadingShop(false);
     };
 
@@ -492,5 +510,13 @@ export default function OrderUploadPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function OrderUploadPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-emerald-600" /></div>}>
+      <OrderUploadPageInner />
+    </Suspense>
   );
 }

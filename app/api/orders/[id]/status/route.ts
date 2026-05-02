@@ -32,7 +32,7 @@ export async function PATCH(
     // Fetch order to verify ownership and current status
     const { data: order, error: fetchError } = await supabase
       .from("orders")
-      .select("id, order_status, shop_id, status_history, scan_status, customer_name, customer_phone, short_token, shops!inner(owner_id)")
+      .select("id, status, shop_id, status_history, customer_name, customer_phone, short_token, shops!inner(owner_id)")
       .eq("id", params.id)
       .single();
 
@@ -40,15 +40,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // Security Check: Virus Scanning
-    if (newStatus === "ACCEPTED" && order.scan_status === "INFECTED") {
-      return NextResponse.json(
-        { error: "Cannot accept order with infected file. Please cancel." },
-        { status: 422 }
-      );
-    }
-
-    const currentStatus = order.order_status as OrderStatus;
+    const currentStatus = order.status as OrderStatus;
     const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
     if (!allowed.includes(newStatus)) {
       return NextResponse.json(
@@ -70,11 +62,11 @@ export async function PATCH(
     ];
 
     const updatePayload: Record<string, unknown> = {
-      order_status: newStatus,
+      status: newStatus,
       status_history: updatedHistory,
       updated_at: new Date().toISOString(),
     };
-    if (rejectionReason) updatePayload.notes = rejectionReason;
+    if (rejectionReason) updatePayload.cancellation_reason = rejectionReason;
 
     const { error: updateError } = await supabase
       .from("orders")

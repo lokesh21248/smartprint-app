@@ -10,106 +10,61 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function POST(req: Request) {
-  // You can find this in the Clerk Dashboard -> Webhooks -> choose the webhook
-  const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
+  const headerPayload = await headers();
+  const svix_id = headerPayload.get("svix-id");
+  const svix_timestamp = headerPayload.get("svix-timestamp");
+  const svix_signature = headerPayload.get("svix-signature");
 
-  if (!WEBHOOK_SECRET) {
-    throw new Error('Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local')
-  }
-
-  // Get the headers
-  const headerPayload = await headers()
-  const svix_id = headerPayload.get('svix-id')
-  const svix_timestamp = headerPayload.get('svix-timestamp')
-  const svix_signature = headerPayload.get('svix-signature')
-
-  // If there are no headers, error out
+  // 1. Security Check
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response('Error occured -- no svix headers', {
-      status: 400,
-    })
+    return new Response("Missing headers", { status: 400 });
   }
 
-  // Get the body
-  const payload = await req.json()
-  const body = JSON.stringify(payload)
+  const payload = await req.json();
+  const body = JSON.stringify(payload);
+  const wh = new Webhook(process.env.CLERK_WEBHOOK_SECRET!);
+  let evt: WebhookEvent;
 
-  // Create a new Svix instance with your secret.
-  const wh = new Webhook(WEBHOOK_SECRET)
-
-  let evt: WebhookEvent
-
-  // Verify the payload with the headers
   try {
     evt = wh.verify(body, {
-      'svix-id': svix_id,
-      'svix-timestamp': svix_timestamp,
-      'svix-signature': svix_signature,
-    }) as WebhookEvent
-  } catch (err) {
-    console.error('Error verifying webhook:', err)
-    return new Response('Error occured', {
-      status: 400,
-    })
+      "svix-id": svix_id,
+      "svix-timestamp": svix_timestamp,
+      "svix-signature": svix_signature,
+    }) as WebhookEvent;
+  } catch (err: unknown) {
+    return new Response("Invalid signature", { status: 401 });
   }
 
-  // Handle the webhook
-  const eventType = evt.type
+  // 2. Queue the Job (Atomic Idempotency)
+  const supabase = createAdminClient();
+  const { error: queueError } = await supabase
+    .from("webhook_jobs")
+    .insert({
+      id: svix_id,
+      payload: payload,
+      status: "pending",
+      next_retry_at: new Date().toISOString()
+    });
 
-  if (eventType === 'user.created') {
-    const { id, email_addresses, public_metadata } = evt.data
-    const email = email_addresses?.[0]?.email_address || ''
-    
-    try {
-      const supabase = createAdminClient();
-      await upsertShop(supabase, {
-        userId: id,
-        email: email,
-        name: (public_metadata?.shopName as string),
-        address: (public_metadata?.location as string),
-        phone: (public_metadata?.phone as string),
-      });
-
-      // Handle any pending staff invitations
-      if (email) {
-        const { data: pendingInvite } = await supabase
-          .from('shop_staff')
-          .select('id')
-          .eq('email', email)
-          .is('user_id', null)
-          .maybeSingle();
-
-        if (pendingInvite) {
-          await supabase
-            .from('shop_staff')
-            .update({
-              user_id: id,
-              accepted_at: new Date().toISOString(),
-              is_active: true
-            })
-            .eq('id', pendingInvite.id);
-        }
-      }
-    } catch (err) {
-      console.error('Webhook error:', err)
-      return new Response('Error processing user.created', { status: 500 })
+  if (queueError) {
+    if (queueError.code === "23505") {
+      // Duplicate event - already queued or processed
+      return new Response("OK", { status: 200 });
     }
+    console.error(JSON.stringify({ status: "queue_error", error: queueError.message, eventId: svix_id }));
+    return new Response("Database Error", { status: 500 });
   }
 
-  // Handle user.updated to sync metadata changes
-  if (eventType === 'user.updated') {
-    const { id, public_metadata } = evt.data
-    if (public_metadata?.shopName || public_metadata?.location) {
-      await supabase
-        .from('shops')
-        .update({
-          name: (public_metadata?.shopName as string),
-          address: (public_metadata?.location as string),
-          updated_at: new Date().toISOString()
-        })
-        .eq('owner_id', id)
-    }
-  }
+  console.log(JSON.stringify({
+    status: "queued",
+    event: evt.type,
+    eventId: svix_id,
+    timestamp: new Date().toISOString()
+  }));
 
-  return new Response('', { status: 200 })
+  // 3. Trigger worker asynchronously (Fire and forget)
+  const workerUrl = new URL("/api/webhooks/clerk/worker", req.url);
+  fetch(workerUrl, { method: "POST" }).catch(() => {});
+
+  return new Response("OK", { status: 200 });
 }

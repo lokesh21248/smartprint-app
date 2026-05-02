@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { Order } from "@/types";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,8 +44,9 @@ export class NotificationService {
   /**
    * Alert shop owner about a new order
    */
-  static async alertNewOrder(shopOwnerId: string, orderDetails: any) {
-    const message = `🖨️ New order from ${orderDetails.customer_name}! Amount: ₹${orderDetails.total_amount}`;
+  static async alertNewOrder(shopOwnerId: string, orderDetails: Pick<Order, "total_amount" | "customer_name">) {
+    const amountInRupees = (orderDetails.total_amount / 100).toFixed(2);
+    const message = `🖨️ New order from ${orderDetails.customer_name}! Amount: ₹${amountInRupees}`;
     
     console.log(`[Notification] Alerting owner ${shopOwnerId}: ${message}`);
 

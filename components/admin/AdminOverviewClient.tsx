@@ -12,11 +12,15 @@ import {
   ArrowUpRight,
   ArrowDownRight
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { Order } from "@/types";
 
 interface AdminOverviewClientProps {
-  stats: any;
-  orders: any[];
+  stats: {
+    totalRevenue: number;
+    activeShops: number;
+    totalOrders: number;
+  };
+  orders: Order[];
 }
 
 export function AdminOverviewClient({ stats, orders }: AdminOverviewClientProps) {

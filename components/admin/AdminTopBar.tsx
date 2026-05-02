@@ -5,7 +5,7 @@ import { UserButton } from "@clerk/nextjs";
 import { Search, Bell } from "lucide-react";
 
 interface AdminTopBarProps {
-  user: any;
+  user: UserResource | null;
 }
 
 export function AdminTopBar({ user }: AdminTopBarProps) {

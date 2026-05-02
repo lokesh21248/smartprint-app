@@ -8,7 +8,7 @@ export default async function AdminDashboardPage() {
   const supabase = await createClient();
 
   // Fetch global stats
-  const { data: shops } = await supabase.from("shops").select("id, is_active");
+  const { data: shops } = await supabase.from("shops").select("id, is_active, is_approved");
   const { data: orders } = await supabase.from("orders").select("total_amount, order_status, created_at");
 
   const totalShops = shops?.length || 0;
