@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+/** @type {import('next').NextConfig} */
 
 const ContentSecurityPolicy = `
   default-src 'self';
@@ -10,8 +10,8 @@ const ContentSecurityPolicy = `
   frame-src https://challenges.cloudflare.com;
 `;
 
-const nextConfig: NextConfig = {
-  poweredByHeader: false, // Don't expose X-Powered-By: Next.js header
+const nextConfig = {
+  poweredByHeader: false,
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -50,4 +50,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
