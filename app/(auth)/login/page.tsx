@@ -62,8 +62,14 @@ function LoginForm() {
         await setActive({ session: result.createdSessionId });
         toast.success("Welcome back!");
         window.location.assign(redirectTo);
+      } else if (result.status === "needs_second_factor") {
+        setError("Two-factor authentication required. Please check your authenticator app.");
+      } else if (result.status === "needs_new_password") {
+        setError("You need to set a new password. Please use 'Forgot password'.");
       } else {
-        setError("Sign-in could not be completed. Please try again.");
+        // Log for debugging
+        console.error("Unexpected sign-in status:", result.status);
+        setError(`Sign-in incomplete (status: ${result.status}). Please try again.`);
       }
     } catch (err: unknown) {
       const clerkErr = err as { errors?: Array<{ code?: string; message?: string }> };
@@ -76,13 +82,17 @@ function LoginForm() {
         setError("No account found for this email.");
       } else if (code === "session_exists") {
         window.location.assign(redirectTo);
+      } else if (code === "form_param_nil" || code === "strategy_for_user_invalid") {
+        setError("This account uses a different sign-in method (e.g. Google). Please try another way.");
       } else {
+        console.error("Clerk sign-in error:", code, message);
         setError(message || "Unable to sign in. Please try again.");
       }
     } finally {
       setIsLoading(false);
     }
   };
+
 
   return (
     <AuthLayout
