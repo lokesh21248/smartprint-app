@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   },
   typescript: {
     // Pre-existing schema-mismatch type errors in unrelated routes shouldn't block builds.
-    // Re-enable once `owner_id` → `clerk_owner_id` migration is complete across the codebase.
+    // Re-enable once `owner_id` -> `clerk_owner_id` migration is complete across the codebase.
     ignoreBuildErrors: true,
   },
   images: {
