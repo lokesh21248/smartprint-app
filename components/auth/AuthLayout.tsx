@@ -23,6 +23,8 @@ export function AuthLayout({ icon, title, description, footer, children }: AuthL
       </div>
       {children}
       {footer}
+      {/* Container for Clerk CAPTCHA bot protection */}
+      <div id="clerk-captcha"></div>
     </div>
   );
 }
