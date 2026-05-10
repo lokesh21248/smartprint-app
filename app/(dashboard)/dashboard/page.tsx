@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Suspense } from "react";
+
 import type { DashboardStats, Order, Shop } from "@/types";
 import { User as UserIcon, Store, Mail } from "lucide-react";
 import { LogoutButton } from "@/components/auth/LogoutButton";
@@ -17,7 +17,7 @@ export const revalidate = 60; // Cache dashboard data for 60 seconds
 
 type ClerkUser = Awaited<ReturnType<typeof currentUser>>;
 
-async function getDashboardData(userId: string, clerkUser: ClerkUser): Promise<{
+async function getDashboardData(userId: string): Promise<{
   stats: DashboardStats;
   newOrders: Order[];
   shop: Shop | null;
@@ -31,7 +31,7 @@ async function getDashboardData(userId: string, clerkUser: ClerkUser): Promise<{
       return { stats: { pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }, newOrders: [], shop: null };
     }
 
-    const mappedShop: Shop = shop;
+
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -120,7 +120,7 @@ export default async function DashboardPage() {
   const { userId } = authData;
   
   const data = userId && user
-    ? await getDashboardData(userId, user)
+    ? await getDashboardData(userId)
     : { stats: { pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }, newOrders: [], shop: null };
 
   if (!data.shop) return <div>Shop not found. Please log in properly.</div>;

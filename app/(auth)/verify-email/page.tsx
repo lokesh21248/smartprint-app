@@ -97,7 +97,7 @@ export default function VerifyEmailPage() {
        toast.success("New code sent!");
        setCode("");
        setResetKey(k => k + 1);
-    } catch (err) {
+    } catch {
        toast.error("Failed to resend code");
      }
    };

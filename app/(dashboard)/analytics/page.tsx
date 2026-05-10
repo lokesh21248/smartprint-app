@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 
-import type { Order, DashboardStats } from "@/types";
+import type { DashboardStats } from "@/types";
 
 export const metadata: Metadata = { title: "Analytics" };
 
@@ -121,13 +121,13 @@ export default async function AnalyticsPage() {
     CANCELLED: "#EF4444",
   };
 
-   const statusBreakdown = Object.entries(statusCount)
-     .filter(([status, count]) => count > 0)
-     .map(([status, count]) => ({
-       name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
-       value: count,
-       color: STATUS_COLORS[status] || "#9CA3AF",
-     }));
+  const statusBreakdown = Object.entries(statusCount)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => ({
+      name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
+      value: count,
+      color: STATUS_COLORS[status] || "#9CA3AF",
+    }));
 
   const revenueTrend = Object.entries(revenueByDate)
     .map(([date, data]) => ({ date, ...data }))

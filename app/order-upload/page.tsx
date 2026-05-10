@@ -134,23 +134,17 @@ function OrderUploadPageInner() {
     console.log(`[PDF Upload] Name: ${selectedFile.name}, Size: ${selectedFile.size}, Type: ${selectedFile.type}`);
 
     try {
-      // Lazy load PDF.js for better bundle splitting
-      const pdfjs = await import("pdfjs-dist");
-
-      // Use official CDN worker matching the exact version to prevent worker mismatch errors on Vercel
-      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
       console.log(`[PDF Parsing] Reading ArrayBuffer...`);
       const arrayBuffer = await selectedFile.arrayBuffer();
 
-      console.log(`[PDF Parsing] Initializing PDF.js document...`);
-      // Mobile-safe parsing: only load basic metadata, not all pages
-      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-      const pdf = await loadingTask.promise;
+      console.log(`[PDF Parsing] Initializing PDF-lib document...`);
+      const { PDFDocument } = await import("pdf-lib");
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      const numPages = pdfDoc.getPageCount();
 
-      console.log(`[PDF Parsing] Success. Pages: ${pdf.numPages}`);
-      setPageCount(pdf.numPages);
-      toast.success(`PDF analyzed: ${pdf.numPages} pages detected`);
+      console.log(`[PDF Parsing] Success. Pages: ${numPages}`);
+      setPageCount(numPages);
+      toast.success(`PDF analyzed: ${numPages} pages detected`);
     } catch (err) {
       console.error("[PDF Parsing] Failed:", err);
       // Fallback: allow direct upload even if preview/parsing fails
