@@ -14,6 +14,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/storage/presign",   // Public signed upload URL request
   "/api/shop/public",       // Public shop metadata lookup
   "/api/cron(.*)",          // Vercel Cron jobs (protected by CRON_SECRET, not Clerk)
+  "/monitoring(.*)",        // Sentry tunnel — must be public or error reports are blocked
 ]);
 
 
