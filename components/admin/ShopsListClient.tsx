@@ -16,13 +16,14 @@ import { formatDateTime } from "@/lib/utils";
 interface Shop {
   id: string;
   name: string;
-  slug: string;
-  address_line1: string;
-  owner_phone: string;
+  slug?: string;
+  address_line1?: string;
+  owner_email?: string;
+  owner_phone?: string;
   is_approved: boolean;
-  is_active: boolean;
-  is_open: boolean;
-  created_at: string;
+  is_active?: boolean;
+  is_open?: boolean;
+  created_at?: string;
 }
 
 interface ShopsListClientProps {
@@ -50,7 +51,7 @@ export function ShopsListClient({ initialShops }: ShopsListClientProps) {
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-gray-400 font-bold uppercase tracking-widest mt-0.5">
                   <span className={shop.is_active ? "text-emerald-500" : "text-red-500"}>
-                    {shop.is_active ? "Active" : "Inactive"}
+                    {shop.is_active !== false ? "Active" : "Inactive"}
                   </span>
                   <span>·</span>
                   <span className={shop.is_open ? "text-emerald-500" : "text-gray-400"}>
@@ -70,28 +71,30 @@ export function ShopsListClient({ initialShops }: ShopsListClientProps) {
           <div className="mt-6 grid grid-cols-2 gap-4">
             <div className="flex items-center gap-2.5 text-gray-500">
               <MapPin className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span className="text-sm truncate">{shop.address_line1}</span>
+              <span className="text-sm truncate">{shop.address_line1 || "—"}</span>
             </div>
             <div className="flex items-center gap-2.5 text-gray-500">
               <Phone className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span className="text-sm truncate">{shop.owner_phone}</span>
+              <span className="text-sm truncate">{shop.owner_phone || "—"}</span>
             </div>
           </div>
 
           <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-gray-400">
               <Clock className="h-3.5 w-3.5" />
-              Joined {formatDateTime(shop.created_at)}
+              Joined {shop.created_at ? formatDateTime(shop.created_at) : "—"}
             </div>
             <div className="flex items-center gap-3">
-              <a 
-                href={`/s/${shop.slug}`} 
-                target="_blank" 
-                className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
-              >
-                Public Link
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              {shop.slug && (
+                <a 
+                  href={`/s/${shop.slug}`} 
+                  target="_blank" 
+                  className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
+                >
+                  Public Link
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
           </div>
         </div>

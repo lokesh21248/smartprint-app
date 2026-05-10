@@ -93,7 +93,7 @@ export function AdminShopDetailClient({ shop, stats, latestOrders }: AdminShopDe
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Joined Date</p>
-                    <p className="text-sm font-semibold text-gray-800">{formatDateTime(shop.created_at)}</p>
+                    <p className="text-sm font-semibold text-gray-800">{formatDateTime(shop.created_at || "")}</p>
                   </div>
                 </div>
               </div>
