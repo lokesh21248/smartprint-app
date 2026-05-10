@@ -29,6 +29,7 @@ interface ShopDisplay {
   id?: string;
   name?: string;
   address?: string;
+  phone?: string;
   is_open?: boolean;
   price_bw_per_page?: number;
   price_color_per_page?: number;
@@ -74,23 +75,30 @@ function OrderUploadPageInner() {
     }
 
     const loadShop = async () => {
-      const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
+      try {
+        const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
 
-      if (!res.ok) {
-        toast.error("Shop not found");
-        return;
+        if (!res.ok) {
+          toast.error("Shop not found or unavailable");
+          setIsLoadingShop(false);
+          return;
+        }
+
+        const data = await res.json();
+        setShop({
+          id: data.id,
+          name: data.name,
+          address: data.address,
+          phone: data.phone,
+          price_bw_per_page: data.price_bw_per_page,
+          price_color_per_page: data.price_color_per_page,
+          is_open: data.is_open,
+        });
+        setIsLoadingShop(false);
+      } catch {
+        toast.error("Failed to load shop. Check your connection.");
+        setIsLoadingShop(false);
       }
-
-      const data = await res.json();
-      setShop({
-        id: data.id,
-        name: data.name,
-        address: data.address,
-        price_bw_per_page: data.price_bw_per_page,
-        price_color_per_page: data.price_color_per_page,
-        is_open: data.is_open,
-      });
-      setIsLoadingShop(false);
     };
 
     loadShop();
@@ -107,7 +115,10 @@ function OrderUploadPageInner() {
       return;
     }
     
-    if (selectedFile.type !== "application/pdf" && !selectedFile.name.toLowerCase().endsWith(".pdf")) {
+    // Android Chrome often sends PDFs as application/octet-stream or empty type.
+    // Validate by BOTH mime type and file extension to handle all browsers.
+    const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
       toast.error("Please upload a valid PDF file");
       return;
     }
@@ -264,6 +275,7 @@ function OrderUploadPageInner() {
 
       if (res.ok) {
         const { shortToken } = await res.json();
+        // Navigate before clearing isSubmitting — component unmounts cleanly
         router.push(`/order/${shortToken}`);
       } else {
         const { error } = await res.json();
@@ -272,7 +284,7 @@ function OrderUploadPageInner() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error placing order";
       toast.error(message + ". Please try again.");
-      setIsSubmitting(false);
+      setIsSubmitting(false); // Only reset on failure; success navigates away
     }
   };
 
@@ -565,7 +577,7 @@ function OrderUploadPageInner() {
         <div className="max-w-2xl mx-auto flex justify-center">
           <div className="bg-gray-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl pointer-events-auto border border-white/10 transition-all hover:scale-105">
             <Info className="w-4 h-4 text-emerald-400" />
-            <p className="text-[10px] font-black uppercase tracking-widest">Questions? Call {shop?.name} at 1800-SMARTPRINT</p>
+            <p className="text-[10px] font-black uppercase tracking-widest">Questions? Call {shop?.name}{shop?.phone ? ` · ${shop.phone}` : ""}</p>
           </div>
         </div>
       </footer>
