@@ -56,10 +56,6 @@ function OrderUploadPageInner() {
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState("");
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
   const [pdfParseFailed, setPdfParseFailed] = useState(false);
 
@@ -157,49 +153,7 @@ function OrderUploadPageInner() {
     }
   };
 
-  // OTP Handling
-  const handleSendOtp = async () => {
-    if (customerPhone.length < 10) {
-      toast.error("Valid 10-digit phone number required");
-      return;
-    }
-    setIsVerifyingOtp(true);
-    try {
-      const res = await fetch("/api/auth/otp/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: customerPhone }),
-      });
-      if (res.ok) {
-        setOtpSent(true);
-        toast.success("OTP sent to your mobile");
-      } else {
-        toast.error("Failed to send OTP. Try again.");
-      }
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
 
-  const handleVerifyOtp = async () => {
-    if (otp.length !== 6) return;
-    setIsVerifyingOtp(true);
-    try {
-      const res = await fetch("/api/auth/otp/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: customerPhone, otp }),
-      });
-      if (res.ok) {
-        setOtpVerified(true);
-        toast.success("Identity verified!");
-      } else {
-        toast.error("Incorrect OTP code");
-      }
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
 
   // Calculate total
   const totalAmount = useMemo(() => {
@@ -210,7 +164,20 @@ function OrderUploadPageInner() {
 
   // Submit order — direct-to-Supabase upload (bypasses Vercel entirely)
   const handlePlaceOrder = async () => {
-    if (!file || !shop?.id || !otpVerified) return;
+    if (!file || !shop?.id) return;
+
+    if (!customerName || customerName.trim().length < 3) {
+      toast.error("Please enter your name");
+      return;
+    }
+
+    // Capitalize words
+    const formattedName = customerName
+      .trim()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
     setIsSubmitting(true);
 
     try {
@@ -261,7 +228,7 @@ function OrderUploadPageInner() {
           color: isColor,
           doubleSided: isDoubleSided,
           notes,
-          customerName,
+          customerName: formattedName,
           customerPhone,
         }),
       });
@@ -449,16 +416,16 @@ function OrderUploadPageInner() {
           </div>
         </div>
 
-        {/* Step 3: Identity Verification */}
+        {/* Step 3: Customer Details */}
         <div className={`transition-all duration-500 ${step !== 3 ? "hidden" : "opacity-100 scale-100"}`}>
           <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-10">
             <div className="flex items-center gap-4 mb-10">
               <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center shadow-inner">
-                <Smartphone className="w-8 h-8 text-blue-600" />
+                <User className="w-8 h-8 text-blue-600" />
               </div>
               <div>
-                <h2 className="text-3xl font-black text-gray-900 tracking-tight">Identity</h2>
-                <p className="text-sm text-gray-500 font-medium">Verify your phone to place order</p>
+                <h2 className="text-3xl font-black text-gray-900 tracking-tight">Customer Details</h2>
+                <p className="text-sm text-gray-500 font-medium">Enter your name to continue</p>
               </div>
             </div>
 
@@ -476,82 +443,23 @@ function OrderUploadPageInner() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Mobile Number</label>
-                <div className="relative group">
-                  <Phone className="absolute left-5 top-5 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
-                  <Input
-                    type="tel"
-                    placeholder="10-digit number"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    className="pl-14 h-16 rounded-2xl border-gray-100 bg-gray-50 text-lg font-semibold focus:ring-emerald-500"
-                    disabled={otpVerified}
-                  />
-                  {otpVerified && <Check className="absolute right-5 top-5 text-emerald-500 w-6 h-6" />}
-                </div>
-              </div>
-
-              {!otpVerified && (
-                <div className="pt-4">
-                  {!otpSent ? (
-                    <Button
-                      onClick={handleSendOtp}
-                      disabled={isVerifyingOtp || customerPhone.length < 10}
-                      className="w-full h-16 rounded-2xl bg-gray-900 hover:bg-black text-white font-black text-lg shadow-xl shadow-gray-200 transition-all"
-                    >
-                      {isVerifyingOtp ? <Loader2 className="animate-spin w-6 h-6" /> : "Send Verification Code"}
-                    </Button>
-                  ) : (
-                    <div className="space-y-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-                      <div className="bg-blue-50 border border-blue-100 rounded-3xl p-6 flex items-center gap-4">
-                        <Info className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                        <p className="text-sm text-blue-900 font-medium leading-relaxed">
-                          We&apos;ve sent a 6-digit code to <span className="font-black">{customerPhone}</span>. Please enter it below.
-                        </p>
-                      </div>
-                      <div className="flex justify-center">
-                        <Input
-                          type="text"
-                          maxLength={6}
-                          value={otp}
-                          onChange={(e) => setOtp(e.target.value)}
-                          placeholder="0 0 0 0 0 0"
-                          className="w-full max-w-[240px] h-20 text-center text-4xl font-black tracking-[0.4em] rounded-3xl border-gray-200 bg-white shadow-lg"
-                        />
-                      </div>
-                      <Button
-                        onClick={handleVerifyOtp}
-                        disabled={isVerifyingOtp || otp.length < 6}
-                        className="w-full h-16 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-lg shadow-xl shadow-emerald-200 transition-all"
-                      >
-                        {isVerifyingOtp ? <Loader2 className="animate-spin w-6 h-6" /> : "Verify Identity"}
-                      </Button>
-                      <button onClick={() => setOtpSent(false)} className="w-full text-xs font-black text-gray-400 uppercase tracking-widest hover:text-gray-900 transition-colors">Resend Code</button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {otpVerified && (
-                <Button
-                  onClick={handlePlaceOrder}
-                  disabled={isSubmitting || !customerName}
-                  className="w-full h-20 rounded-[1.5rem] bg-emerald-600 hover:bg-emerald-700 text-white font-black text-2xl shadow-2xl shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="animate-spin w-8 h-8" />
-                      Placing Order...
-                    </>
-                  ) : (
-                    <>
-                      Place Order · {formatCurrency(totalAmount)}
-                      <ChevronRight className="w-8 h-8" />
-                    </>
-                  )}
-                </Button>
-              )}
+              <Button
+                onClick={handlePlaceOrder}
+                disabled={isSubmitting || !customerName || customerName.trim().length < 3}
+                className="w-full h-20 rounded-[1.5rem] bg-emerald-600 hover:bg-emerald-700 text-white font-black text-2xl shadow-2xl shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin w-8 h-8" />
+                    Creating Order...
+                  </>
+                ) : (
+                  <>
+                    Continue · {formatCurrency(totalAmount)}
+                    <ChevronRight className="w-8 h-8" />
+                  </>
+                )}
+              </Button>
             </div>
           </div>
 
