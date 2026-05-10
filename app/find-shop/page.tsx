@@ -40,7 +40,7 @@ export default function FindShopPage() {
       }
 
       router.push(`/s/${json.slug}`);
-    } catch (err: unknown) {
+    } catch {
       toast.error('An error occurred. Please try again.');
     } finally {
       setLoading(false);

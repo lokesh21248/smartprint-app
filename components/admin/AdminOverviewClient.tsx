@@ -1,7 +1,7 @@
 "use client";
 
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line
 } from "recharts";
 import { 
@@ -21,7 +21,7 @@ interface AdminOverviewClientProps {
     activeShops: number;
     totalOrders: number;
   };
-  latestOrders: any[];
+  latestOrders: Partial<Order>[];
   chartData: { day: string; revenue: number; orders: number }[];
 }
 

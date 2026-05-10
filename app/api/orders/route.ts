@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
     // 1. Rate Limiting — in-memory, zero DB overhead
     const ip = request.headers.get("x-forwarded-for") || "anonymous";
-    const { success, remaining } = rateLimit(`order_spam_${ip}`, 5, 3600);
+    const { success } = rateLimit(`order_spam_${ip}`, 5, 3600);
 
     if (!success) {
       return NextResponse.json(
@@ -263,7 +263,7 @@ export async function GET(request: Request) {
     // Call the RPC function defined in PRODUCTION_SCHEMA.sql
     const { data, error } = await supabase.rpc('get_order_by_token', { 
       p_token: shortToken 
-    }) as { data: GetOrderByTokenResponse | null, error: any };
+    }) as { data: GetOrderByTokenResponse | null, error: unknown };
 
     if (error || !data || !data.success) {
       console.warn(`[GET /api/orders] ❌ Order not found or error:`, error?.message || data?.error);

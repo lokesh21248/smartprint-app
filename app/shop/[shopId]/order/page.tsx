@@ -36,7 +36,7 @@ export default function OrderFlowPage() {
   });
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [otp, setOtp] = useState("");
-  const [notes, setNotes] = useState("");
+  const [notes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState<{ id: string; token: string } | null>(null);
 
@@ -53,7 +53,7 @@ export default function OrderFlowPage() {
           return;
         }
         setShop(data as unknown as Shop);
-      } catch (err) {
+      } catch {
         toast.error("Failed to load shop details");
       } finally {
         setIsLoading(false);
@@ -189,7 +189,6 @@ export default function OrderFlowPage() {
       const uploadedFiles = await Promise.all(uploadPromises);
 
       // 3. Create Order
-      const totalAmount = calculateTotal();
       const totalPages = files.reduce((sum, f) => sum + f.pages, 0);
       
       const orderRes = await fetch("/api/orders", {

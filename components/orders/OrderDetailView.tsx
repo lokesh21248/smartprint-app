@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, Phone, Download, Printer,
@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
-  formatCurrency, formatDateTime, formatTimeAgo, formatFileSize,
+  formatCurrency, formatDateTime, formatFileSize,
   getStatusColor, getStatusLabel, getNextStatus, getNextStatusLabel,
 } from "@/lib/utils";
 import { useOrderStatus } from "@/lib/hooks/useOrderStatus";

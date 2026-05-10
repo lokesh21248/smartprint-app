@@ -37,7 +37,7 @@ export default async function AdminShopDetailPage({ params }: { params: { id: st
         totalRevenue,
         completedCount
       }}
-      latestOrders={(latestOrdersRes.data || []) as any} 
+      latestOrders={(latestOrdersRes.data || []) as Record<string, unknown>[]} 
     />
   );
 }

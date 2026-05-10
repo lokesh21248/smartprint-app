@@ -8,11 +8,9 @@ import { toast } from "sonner"
 
 export default function QRCodeCard({
   slug,
-  shopCode,
   shopName,
 }: {
   slug?: string
-  shopCode?: string
   shopName?: string
 }) {
   const [mounted, setMounted] = useState(false)

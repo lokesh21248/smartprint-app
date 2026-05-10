@@ -5,11 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import { 
   CheckCircle2, Clock, Printer, Package, 
   XCircle, ArrowLeft, Loader2, MapPin, Phone,
-  FileText, RefreshCcw, ExternalLink, AlertCircle, Store
+  FileText, RefreshCcw, AlertCircle, Store
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/public-client";
-import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
 
 export default function OrderStatusPage() {
@@ -58,7 +58,7 @@ export default function OrderStatusPage() {
           table: "orders",
           filter: `short_token=eq.${shortToken}`,
         },
-        (payload) => {
+        () => {
           loadOrder(false); // Reload to get relations
         }
       )

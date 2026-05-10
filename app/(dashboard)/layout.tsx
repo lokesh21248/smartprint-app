@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Header } from "@/components/shared/Header";
 import { ShopStoreInitializer } from "@/components/shared/ShopStoreInitializer";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
-import type { Shop } from "@/types";
+
 
 import { getShopByUserId } from "@/lib/data/shop";
 

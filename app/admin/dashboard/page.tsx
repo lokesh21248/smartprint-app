@@ -59,7 +59,7 @@ export default async function AdminDashboardPage() {
   return (
     <AdminOverviewClient 
       stats={stats} 
-      latestOrders={(latestOrdersRes.data || []) as any} 
+      latestOrders={(latestOrdersRes.data || []) as Record<string, unknown>[]} 
       chartData={chartData} 
     />
   );

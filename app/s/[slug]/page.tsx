@@ -5,14 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { 
   Loader2, 
   AlertCircle, 
-  Upload, 
-  FileText, 
   Store, 
-  Clock, 
   Zap, 
   ShieldCheck,
   ChevronRight,
-  ArrowRight,
   MapPin,
   Smartphone
 } from "lucide-react";
@@ -55,7 +51,7 @@ export default function QRLandingPage() {
         const data = await res.json();
         setShop(data);
         setIsLoading(false);
-      } catch (err) {
+      } catch {
         setError("Failed to load shop information");
         setIsLoading(false);
       }

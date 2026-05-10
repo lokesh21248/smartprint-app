@@ -61,7 +61,7 @@ export function OtpInput({
         onComplete(newValue);
       }
     },
-    [digits, onChange, onComplete]
+    [digits, OTP_LENGTH, onChange, onComplete]
   );
 
   const handleKeyDown = useCallback(
@@ -87,7 +87,7 @@ export function OtpInput({
         focusInput(index + 1);
       }
     },
-    [digits, onChange]
+    [digits, OTP_LENGTH, onChange]
   );
 
   const handlePaste = useCallback(
@@ -111,7 +111,7 @@ export function OtpInput({
         onComplete(newValue);
       }
     },
-    [onChange, onComplete]
+    [OTP_LENGTH, onChange, onComplete]
   );
 
   return (

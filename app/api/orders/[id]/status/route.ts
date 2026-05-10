@@ -115,7 +115,7 @@ export async function PATCH(
     }
 
     return NextResponse.json({ success: true, order_status: newStatus });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatTimeAgo, formatCurrency, getPrintConfigLabel } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OrderCardSkeleton } from "@/components/ui/skeleton";

@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
     }
 
     // ── 6. Build the update payload ────────────────────────────────────────
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       name: patch.name,
       owner_phone: patch.phone,
       owner_email: patch.owner_email,

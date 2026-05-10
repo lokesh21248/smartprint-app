@@ -11,7 +11,7 @@ import Link from "next/link";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-import { Shop, Order } from "@/types";
+import { Shop } from "@/types";
 
 interface AdminShopDetailClientProps {
   shop: Shop;
@@ -20,10 +20,10 @@ interface AdminShopDetailClientProps {
     totalRevenue: number;
     completedCount: number;
   };
-  latestOrders: any[];
+  latestOrders: Record<string, unknown>[];
 }
 
-export function AdminShopDetailClient({ shop, stats, latestOrders }: AdminShopDetailClientProps) {
+export function AdminShopDetailClient({ shop, stats }: AdminShopDetailClientProps) {
   const [isActive, setIsActive] = useState(shop.is_active);
 
   const totalRevenue = stats.totalRevenue;

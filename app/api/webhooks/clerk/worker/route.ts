@@ -76,14 +76,14 @@ async function processJob(supabase: SupabaseClient, job: WebhookJob): Promise<"s
       if (userData.public_metadata?.phone) updates.owner_phone = userData.public_metadata.phone;
 
       // Sync from standard Clerk profile
-      const rawUser = payload.data as any;
+      const rawUser = payload.data as Record<string, unknown>;
       if (rawUser.first_name || rawUser.last_name) {
         updates.owner_name = [rawUser.first_name, rawUser.last_name].filter(Boolean).join(" ").trim();
       }
       
       if (rawUser.email_addresses && rawUser.primary_email_address_id) {
         const primaryEmail = rawUser.email_addresses.find(
-          (e: any) => e.id === rawUser.primary_email_address_id
+          (e: { id: string; email_address?: string }) => e.id === rawUser.primary_email_address_id
         )?.email_address;
         if (primaryEmail) updates.owner_email = primaryEmail;
       }
@@ -104,7 +104,7 @@ async function processJob(supabase: SupabaseClient, job: WebhookJob): Promise<"s
   }
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   const supabase = createAdminClient();
   const workerStart = Date.now();
 

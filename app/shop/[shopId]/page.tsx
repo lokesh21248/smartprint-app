@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { Store, MapPin, Star, ArrowRight, AlertCircle, Hash } from 'lucide-react';
+import { Store, MapPin, ArrowRight, AlertCircle, Hash } from 'lucide-react';
 
 export default async function ShopLandingPage({ params }: { params: { shopId: string } }) {
   const supabase = createAdminClient();

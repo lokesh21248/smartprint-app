@@ -7,7 +7,6 @@ import {
   Store,
   BarChart2,
   Settings,
-  Printer,
   ShieldCheck
 } from "lucide-react";
 
