@@ -13,6 +13,8 @@ import {
   Smartphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 interface ShopDisplay {
   id?: string;
@@ -38,6 +40,8 @@ export default function QRLandingPage() {
   const [shop, setShop] = useState<ShopDisplay | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [isStartingSession, setIsStartingSession] = useState(false);
 
   useEffect(() => {
     const fetchShop = async () => {
@@ -145,12 +149,58 @@ export default function QRLandingPage() {
               ))}
             </div>
 
-            <Button
-              onClick={() => router.push(`/order-upload?shopSlug=${slug}`)}
-              className="w-full h-20 rounded-[1.5rem] bg-emerald-600 hover:bg-emerald-700 text-white font-black text-2xl shadow-2xl shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
-            >
-              Start Printing <ChevronRight className="w-8 h-8" />
-            </Button>
+            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm mt-6">
+              <div className="mb-6">
+                <h2 className="text-2xl font-black text-gray-900 tracking-tight">Customer Details</h2>
+                <p className="text-sm text-gray-500 font-medium">Enter your name to continue placing your order</p>
+              </div>
+              <div className="space-y-6">
+                <div className="relative group">
+                  <Input
+                    placeholder="Enter your name"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="h-16 rounded-2xl border-gray-100 bg-gray-50 text-lg font-semibold focus:ring-emerald-500 px-6"
+                  />
+                </div>
+                <Button
+                  onClick={async () => {
+                    if (customerName.trim().length < 3) {
+                      toast.error("Please enter a valid name (min 3 characters)");
+                      return;
+                    }
+                    setIsStartingSession(true);
+                    try {
+                      const res = await fetch("/api/sessions", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ customer_name: customerName, shop_slug: slug }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        router.push(`/order-upload?shopSlug=${slug}&sessionId=${data.sessionId}&name=${encodeURIComponent(customerName.trim())}`);
+                      } else {
+                        toast.error(data.error || "Failed to start session");
+                        setIsStartingSession(false);
+                      }
+                    } catch (err) {
+                      toast.error("Something went wrong");
+                      setIsStartingSession(false);
+                    }
+                  }}
+                  disabled={isStartingSession || customerName.trim().length < 3}
+                  className="w-full h-16 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xl shadow-xl shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                >
+                  {isStartingSession ? (
+                    <Loader2 className="animate-spin w-6 h-6" />
+                  ) : (
+                    <>
+                      Continue <ChevronRight className="w-6 h-6" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -159,9 +209,9 @@ export default function QRLandingPage() {
           <h2 className="text-2xl font-black text-gray-900 tracking-tight text-center">Simple 3-Step Process</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              { step: "01", title: "Upload", desc: "Choose your PDF and configuration" },
-              { step: "02", title: "Verify", desc: "Secure OTP via SMS" },
-              { step: "03", title: "Track", desc: "Real-time updates to your phone" },
+              { step: "01", title: "Details", desc: "Enter your name" },
+              { step: "02", title: "Upload", desc: "Choose your PDF" },
+              { step: "03", title: "Pay & Print", desc: "Order is instantly sent to the shop" },
             ].map((item) => (
               <div key={item.step} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm">
                 <p className="text-4xl font-black text-emerald-500/20 mb-4">{item.step}</p>

@@ -9,12 +9,9 @@ import {
   Plus,
   Minus,
   Check,
-  Phone,
   User,
-  Smartphone,
   ShieldCheck,
   Zap,
-  Info,
   Clock,
   Printer,
   ChevronRight
@@ -39,6 +36,8 @@ function OrderUploadPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const shopSlug = searchParams.get("shopSlug");
+  // Name is pre-filled from landing page URL param
+  const nameParam = searchParams.get("name") ?? "";
 
   // State
   const [shop, setShop] = useState<ShopDisplay | null>(null);
@@ -54,11 +53,10 @@ function OrderUploadPageInner() {
   const [isDoubleSided, setIsDoubleSided] = useState(false);
   const [notes, setNotes] = useState("");
 
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  // Pre-filled from landing page; editable as fallback
+  const [customerName, setCustomerName] = useState(nameParam);
 
   const [pdfParseFailed, setPdfParseFailed] = useState(false);
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -229,7 +227,7 @@ function OrderUploadPageInner() {
           doubleSided: isDoubleSided,
           notes,
           customerName: formattedName,
-          customerPhone,
+          customerPhone: "",
         }),
       });
 
@@ -269,8 +267,8 @@ function OrderUploadPageInner() {
             </p>
           </div>
           <div className="flex gap-1">
-            {[1, 2, 3].map((s) => (
-              <div key={s} className={`h-1.5 w-6 rounded-full transition-all duration-500 ${step >= s ? "bg-emerald-500" : "bg-gray-100"}`} />
+            {[1, 2].map((s) => (
+              <div key={s} className={`h-1.5 w-8 rounded-full transition-all duration-500 ${step >= s ? "bg-emerald-500" : "bg-gray-100"}`} />
             ))}
           </div>
         </div>
@@ -401,76 +399,52 @@ function OrderUploadPageInner() {
               </div>
             </div>
 
+            {/* Customer name fallback — shown only if not pre-filled from landing page */}
+            {!nameParam && (
+              <div className="mt-6 p-6 bg-gray-50 rounded-3xl border border-gray-100">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 block">Your Name</label>
+                <div className="relative group">
+                  <User className="absolute left-4 top-4 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
+                  <input
+                    placeholder="Enter your name"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full pl-12 h-14 rounded-2xl border border-gray-200 bg-white text-base font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="bg-emerald-600 rounded-[2rem] p-8 text-white flex items-center justify-between shadow-xl shadow-emerald-600/20">
               <div>
                 <p className="text-emerald-100 font-bold uppercase tracking-widest text-[10px] mb-1">Estimated Total</p>
                 <p className="text-4xl font-black">{formatCurrency(totalAmount)}</p>
+                {customerName && <p className="text-emerald-200 text-xs font-bold mt-1">for {customerName}</p>}
               </div>
-              <button
-                onClick={() => setStep(3)}
-                className="bg-white text-emerald-700 px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg"
-              >
-                Continue <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 3: Customer Details */}
-        <div className={`transition-all duration-500 ${step !== 3 ? "hidden" : "opacity-100 scale-100"}`}>
-          <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-10">
-            <div className="flex items-center gap-4 mb-10">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center shadow-inner">
-                <User className="w-8 h-8 text-blue-600" />
-              </div>
-              <div>
-                <h2 className="text-3xl font-black text-gray-900 tracking-tight">Customer Details</h2>
-                <p className="text-sm text-gray-500 font-medium">Enter your name to continue</p>
-              </div>
-            </div>
-
-            <div className="space-y-8">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Full Name</label>
-                <div className="relative group">
-                  <User className="absolute left-5 top-5 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
-                  <Input
-                    placeholder="Enter your name"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="pl-14 h-16 rounded-2xl border-gray-100 bg-gray-50 text-lg font-semibold focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
               <Button
                 onClick={handlePlaceOrder}
                 disabled={isSubmitting || !customerName || customerName.trim().length < 3}
-                className="w-full h-20 rounded-[1.5rem] bg-emerald-600 hover:bg-emerald-700 text-white font-black text-2xl shadow-2xl shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                className="bg-white text-emerald-700 px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:scale-100"
               >
                 {isSubmitting ? (
-                  <>
-                    <Loader2 className="animate-spin w-8 h-8" />
-                    Creating Order...
-                  </>
+                  <Loader2 className="animate-spin w-5 h-5" />
                 ) : (
-                  <>
-                    Continue · {formatCurrency(totalAmount)}
-                    <ChevronRight className="w-8 h-8" />
-                  </>
+                  <>Place Order <ChevronRight className="w-5 h-5" /></>
                 )}
               </Button>
             </div>
           </div>
+        </div>
 
-          <div className="mt-8 text-center">
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-[0.2em] mb-4">You&apos;re ordering from</p>
+        {/* Shop Badge */}
+        {step === 2 && (
+          <div className="text-center">
             <div className="inline-flex items-center gap-3 bg-white px-6 py-3 rounded-2xl border border-gray-100 shadow-sm">
               <Clock className="w-4 h-4 text-emerald-500" />
               <span className="text-gray-900 font-black text-sm">{shop?.name}</span>
             </div>
           </div>
-        </div>
+        )}
       </main>
 
       {/* Quick Help Footer */}
