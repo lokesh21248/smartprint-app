@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { formatFileSize, formatCurrency } from "@/lib/utils";
 import pLimit from "p-limit";
-import type { Shop, PrintConfig, OrderFile } from "@/types";
+import type { Shop, PrintConfig } from "@/types";
 
 type Step = "upload" | "config" | "details" | "otp" | "success";
 
