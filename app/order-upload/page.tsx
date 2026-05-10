@@ -451,7 +451,7 @@ function OrderUploadPageInner() {
       <footer className="fixed bottom-0 left-0 right-0 p-4 z-50 pointer-events-none">
         <div className="max-w-2xl mx-auto flex justify-center">
           <div className="bg-gray-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl pointer-events-auto border border-white/10 transition-all hover:scale-105">
-            <Info className="w-4 h-4 text-emerald-400" />
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <p className="text-[10px] font-black uppercase tracking-widest">Questions? Call {shop?.name}{shop?.phone ? ` · ${shop.phone}` : ""}</p>
           </div>
         </div>
