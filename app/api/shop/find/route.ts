@@ -24,28 +24,29 @@ export async function POST(request: Request) {
 
     const supabase = createAdminClient();
     
-    // We use RPC for efficient lookup and to keep the query logic in SQL
-    const { data, error } = await supabase.rpc("find_shop_by_code", { p_code: code.toUpperCase() });
+    const { data: shop, error } = await supabase
+      .from("shops")
+      .select("id, name, slug, is_active")
+      .eq("shop_code", code.toUpperCase())
+      .maybeSingle();
 
     if (error) {
-      console.error("[POST /api/shop/find] RPC Error:", error);
+      console.error("[POST /api/shop/find] Query Error:", error);
       return NextResponse.json({ error: "Failed to find shop" }, { status: 500 });
     }
 
-    const shopList = data as Array<{ id: string; shop_name: string; address: string; city: string; is_active: boolean }>;
-    if (!shopList || shopList.length === 0) {
+    if (!shop) {
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
-    const shop = shopList[0];
     if (!shop.is_active) {
       return NextResponse.json({ error: "This shop is currently unavailable" }, { status: 403 });
     }
 
     return NextResponse.json({ 
       id: shop.id,
-      name: shop.shop_name,
-      shop_code: code.toUpperCase()
+      name: shop.name,
+      slug: shop.slug
     });
   } catch (err) {
     console.error("[POST /api/shop/find] Unexpected error:", err);

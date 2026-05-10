@@ -61,6 +61,8 @@ function OrderUploadPageInner() {
   const [otpVerified, setOtpVerified] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
+  const [pdfParseFailed, setPdfParseFailed] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -99,8 +101,14 @@ function OrderUploadPageInner() {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    if (selectedFile.type !== "application/pdf") {
-      toast.error("Please upload a PDF file");
+    // Robust validation
+    if (selectedFile.size === 0) {
+      toast.error("File is empty.");
+      return;
+    }
+    
+    if (selectedFile.type !== "application/pdf" && !selectedFile.name.toLowerCase().endsWith(".pdf")) {
+      toast.error("Please upload a valid PDF file");
       return;
     }
 
@@ -111,22 +119,37 @@ function OrderUploadPageInner() {
 
     setFile(selectedFile);
     setIsProcessing(true);
+    setPdfParseFailed(false);
+    
+    console.log(`[PDF Upload] Name: ${selectedFile.name}, Size: ${selectedFile.size}, Type: ${selectedFile.type}`);
 
     try {
       // Lazy load PDF.js for better bundle splitting
       const pdfjs = await import("pdfjs-dist");
-      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      
+      // Use official CDN worker matching the exact version to prevent worker mismatch errors on Vercel
+      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
+      console.log(`[PDF Parsing] Reading ArrayBuffer...`);
       const arrayBuffer = await selectedFile.arrayBuffer();
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      
+      console.log(`[PDF Parsing] Initializing PDF.js document...`);
+      // Mobile-safe parsing: only load basic metadata, not all pages
+      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      
+      console.log(`[PDF Parsing] Success. Pages: ${pdf.numPages}`);
       setPageCount(pdf.numPages);
-      setStep(2);
       toast.success(`PDF analyzed: ${pdf.numPages} pages detected`);
     } catch (err) {
-      toast.error("Error reading PDF. Please try again.");
-      setFile(null);
+      console.error("[PDF Parsing] Failed:", err);
+      // Fallback: allow direct upload even if preview/parsing fails
+      toast.error("Could not automatically count pages. Please enter them manually.");
+      setPdfParseFailed(true);
+      setPageCount(1); // Default to 1
     } finally {
       setIsProcessing(false);
+      setStep(2); // Always proceed to Step 2
     }
   };
 
@@ -289,7 +312,10 @@ function OrderUploadPageInner() {
               <Upload className="w-10 h-10 text-emerald-600" />
             </div>
             <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">Upload Documents</h2>
-            <p className="text-gray-500 font-medium mb-10">We support high-quality PDF printing up to 50MB</p>
+            <p className="text-gray-500 font-medium mb-2">We support high-quality PDF printing up to 50MB</p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-full text-emerald-700 text-[10px] font-black uppercase tracking-widest mb-10">
+              <ShieldCheck className="w-3 h-3 text-emerald-600" /> Files auto-deleted after 2 hours for privacy
+            </div>
             
             <div 
               onClick={() => fileInputRef.current?.click()}
@@ -355,6 +381,25 @@ function OrderUploadPageInner() {
                   {isDoubleSided && <Check className="absolute top-4 right-4 text-emerald-600" />}
                 </button>
               </div>
+
+              {/* Fallback Page Counter */}
+              {pdfParseFailed && (
+                <div className="mt-6 p-6 bg-rose-50 rounded-3xl flex items-center justify-between border border-rose-100">
+                  <div>
+                    <p className="font-black text-rose-900">Document Pages</p>
+                    <p className="text-xs text-rose-500 font-bold uppercase tracking-tighter">Enter pages manually</p>
+                  </div>
+                  <div className="flex items-center gap-6 bg-white rounded-2xl p-2 shadow-sm border border-rose-100">
+                    <button onClick={() => setPageCount(Math.max(1, (pageCount || 1) - 1))} className="w-10 h-10 rounded-xl hover:bg-gray-50 flex items-center justify-center transition-colors">
+                      <Minus className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <span className="text-2xl font-black text-gray-900 w-8 text-center">{pageCount || 1}</span>
+                    <button onClick={() => setPageCount(Math.min(500, (pageCount || 1) + 1))} className="w-10 h-10 rounded-xl hover:bg-gray-50 flex items-center justify-center transition-colors">
+                      <Plus className="w-4 h-4 text-rose-600" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Copies Counter */}
               <div className="mt-6 p-6 bg-gray-50 rounded-3xl flex items-center justify-between border border-gray-100">

@@ -34,7 +34,12 @@ export default function FindShopPage() {
         return;
       }
 
-      router.push(`/s/${json.shop_code || trimmedCode}`);
+      if (!json.slug) {
+        toast.error('Shop is missing a valid web link. Please contact the shop owner.');
+        return;
+      }
+
+      router.push(`/s/${json.slug}`);
     } catch (err: unknown) {
       toast.error('An error occurred. Please try again.');
     } finally {

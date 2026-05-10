@@ -109,6 +109,13 @@ export async function POST(request: Request) {
         upsert: false 
       });
 
+    // 8. Track upload for auto-cleanup (runs every 2 hours via pg_cron & edge function)
+    if (!signError && signedData) {
+      await supabase.from("uploaded_documents").insert({
+        file_path: storagePath
+      });
+    }
+
     clearTimeout(timeoutId);
 
     if (signError || !signedData) {
