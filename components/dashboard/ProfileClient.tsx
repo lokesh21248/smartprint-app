@@ -60,8 +60,9 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
     .join(", ");
 
   const shopCode = (shop.shop_code || "").toUpperCase();
-  const qrUrl = shop.shop_code
-    ? `${appUrl}/s/${shop.shop_code.toUpperCase()}`
+  // QR always uses slug — the canonical, URL-safe public identifier.
+  const qrUrl = shop.slug?.trim()
+    ? `${appUrl}/s/${shop.slug.trim().toLowerCase()}`
     : "";
 
   const startEdit = () => {
@@ -92,8 +93,8 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
 
 
   const printPoster = async () => {
-    if (!shopCode) {
-      toast.error("Code not ready");
+    if (!shop.slug?.trim()) {
+      toast.error("Slug not ready — please refresh the page");
       return;
     }
 
@@ -388,7 +389,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
             <CardDescription>Customers scan to open your shop</CardDescription>
           </CardHeader>
           <CardContent>
-            <QRCodeCard shopCode={shopCode} slug={shop.slug || undefined} />
+            <QRCodeCard slug={shop.slug || undefined} shopName={shopName} />
           </CardContent>
         </Card>
       </div>

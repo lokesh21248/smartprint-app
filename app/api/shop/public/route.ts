@@ -21,11 +21,18 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug")?.trim();
+    const slugParam = searchParams.get("slug")?.trim().toLowerCase();
     const id = searchParams.get("id")?.trim();
 
-    if (!slug && !id) {
+    if (!slugParam && !id) {
       return NextResponse.json({ error: "slug or id is required" }, { status: 400 });
+    }
+
+    if (slugParam) {
+      // Reject obviously invalid slugs before hitting the DB
+      if (!/^[a-z0-9-]+$/.test(slugParam)) {
+        return NextResponse.json({ error: "Invalid slug format" }, { status: 400 });
+      }
     }
 
     const supabase = createAdminClient();
@@ -37,12 +44,9 @@ export async function GET(request: Request) {
 
     if (id) {
       query = query.eq("id", id);
-    } else if (slug) {
-      // Match either the shop_code (uppercase) or the slug (lowercase).
-      // Use quoted string syntax so hyphens and dots in slugs don't break the filter.
-      query = query.or(
-        `shop_code.eq.${slug.toUpperCase()},slug.eq.${slug.toLowerCase()}`
-      );
+    } else if (slugParam) {
+      // Slug is the canonical public identifier — query only by exact slug match.
+      query = query.eq("slug", slugParam);
     }
 
     const { data, error } = await query.maybeSingle();
@@ -53,7 +57,7 @@ export async function GET(request: Request) {
     }
 
     if (!data) {
-      console.warn(`[GET /api/shop/public] No shop found for slug="${slug}" id="${id}"`);
+      console.warn(`[GET /api/shop/public] No shop found — slug="${slugParam ?? ""}" id="${id ?? ""}"`);
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
