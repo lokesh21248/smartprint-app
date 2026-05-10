@@ -44,11 +44,6 @@ export default function OrderFlowPage() {
   useEffect(() => {
     async function loadShop() {
       try {
-        const res = await fetch(`/api/shop/public?slug=${shopId}`); // shopId is being used as slug in some contexts, but here it's likely UUID. Let's check if api/shop/public supports ID.
-        // Wait, if it's UUID, I might need a different endpoint. 
-        // Let's check api/shop/public again. It takes 'slug'.
-        // If the URL is /shop/[shopId]/order, shopId is the ID.
-        // Let's see if there is an endpoint for public shop by ID.
         const shopRes = await fetch(`/api/shop/public?id=${shopId}`); 
         const data = await shopRes.json();
         
