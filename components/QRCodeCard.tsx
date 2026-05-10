@@ -27,7 +27,7 @@ export default function QRCodeCard({
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
   const finalSlug = slug || shopCode
-  const shopUrl = finalSlug ? `${baseUrl}/shop/${finalSlug}` : ""
+  const shopUrl = finalSlug ? `${baseUrl}/s/${finalSlug}` : ""
 
   if (!finalSlug) {
     return (
