@@ -60,7 +60,13 @@ export default async function AdminDashboardPage() {
   return (
     <AdminOverviewClient 
       stats={stats} 
-      latestOrders={(latestOrdersRes.data || []) as Partial<Order>[]} 
+      latestOrders={(latestOrdersRes.data || []) as {
+        id: string;
+        short_token: string;
+        customer_name: string;
+        status: string;
+        created_at: string;
+      }[]} 
       chartData={chartData} 
     />
   );

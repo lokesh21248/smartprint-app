@@ -21,7 +21,13 @@ interface AdminOverviewClientProps {
     activeShops: number;
     totalOrders: number;
   };
-  latestOrders: Partial<Order>[];
+  latestOrders: {
+    id: string;
+    short_token: string;
+    customer_name: string;
+    status: string;
+    created_at: string;
+  }[];
   chartData: { day: string; revenue: number; orders: number }[];
 }
 
