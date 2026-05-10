@@ -135,7 +135,6 @@ function OrderUploadPageInner() {
 
     try {
       // Lazy load PDF.js for better bundle splitting
-      // @ts-expect-error - pdfjs-dist types are not installed but we only need it for basic page counting
       const pdfjs = await import("pdfjs-dist");
 
       // Use official CDN worker matching the exact version to prevent worker mismatch errors on Vercel
