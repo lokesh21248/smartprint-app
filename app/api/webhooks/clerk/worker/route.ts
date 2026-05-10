@@ -67,11 +67,27 @@ async function processJob(supabase: SupabaseClient, job: WebhookJob): Promise<"s
     if (payload.type === "user.created") {
       // Intentionally no-op: shops are created explicitly via /create-shop.
     } else if (payload.type === "user.updated") {
-      // Sync metadata to existing shop only — never insert a new one here.
+      // Sync metadata and standard profile fields to existing shop only
       const updates: Record<string, string> = { updated_at: new Date().toISOString() };
+      
+      // Sync from public metadata
       if (userData.public_metadata?.shopName) updates.name = userData.public_metadata.shopName;
       if (userData.public_metadata?.location) updates.address_line1 = userData.public_metadata.location;
       if (userData.public_metadata?.phone) updates.owner_phone = userData.public_metadata.phone;
+
+      // Sync from standard Clerk profile
+      const rawUser = payload.data as any;
+      if (rawUser.first_name || rawUser.last_name) {
+        updates.owner_name = [rawUser.first_name, rawUser.last_name].filter(Boolean).join(" ").trim();
+      }
+      
+      if (rawUser.email_addresses && rawUser.primary_email_address_id) {
+        const primaryEmail = rawUser.email_addresses.find(
+          (e: any) => e.id === rawUser.primary_email_address_id
+        )?.email_address;
+        if (primaryEmail) updates.owner_email = primaryEmail;
+      }
+
       if (Object.keys(updates).length > 1) {
         await supabase.from("shops").update(updates).eq("clerk_owner_id", userData.id);
       }

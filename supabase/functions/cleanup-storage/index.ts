@@ -18,10 +18,9 @@ interface CleanupResponse {
   errors?: string[];
 }
 
-// --- Initialization ---
-const supabaseUrl = Deno.env.get("APP_SUPABASE_URL");
-const supabaseServiceKey = Deno.env.get("APP_SUPABASE_SERVICE_ROLE_KEY");
-const cleanupSecret = Deno.env.get("CLEANUP_SECRET");
+const supabaseUrl = Deno.env.get("APP_SUPABASE_URL")?.trim();
+const supabaseServiceKey = Deno.env.get("APP_SUPABASE_SERVICE_ROLE_KEY")?.trim();
+const cleanupSecret = Deno.env.get("CLEANUP_SECRET")?.trim();
 
 // Fail fast if misconfigured
 if (!supabaseUrl || !supabaseServiceKey || !cleanupSecret) {

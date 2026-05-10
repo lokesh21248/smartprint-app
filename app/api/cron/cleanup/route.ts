@@ -11,11 +11,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * - Never crashes: errors are logged, processing continues
  *
  * Protected by CRON_SECRET so only Vercel Cron can trigger it.
- * Schedule: every 1 hour via vercel.json
+ * Schedule: daily at midnight UTC via vercel.json (0 0 * * *)
+ * For more frequent runs, update vercel.json schedule to e.g. "0 * * * *" (hourly)
  */
 
 const SAFE_STATUSES_FOR_DELETION = ["COMPLETED", "CANCELLED"] as const;
-const STORAGE_BUCKET = "orders";
+const STORAGE_BUCKET = "order-files"; // Must match Supabase bucket name exactly
 
 export async function POST(request: Request) {
   // Initialize Supabase admin client (fresh instance per request)
