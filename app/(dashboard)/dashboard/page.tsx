@@ -15,7 +15,7 @@ import { PendingOrdersBanner } from "@/components/dashboard/PendingOrdersBanner"
 export const metadata: Metadata = { title: "Dashboard" };
 export const revalidate = 60; // Cache dashboard data for 60 seconds
 
-type ClerkUser = Awaited<ReturnType<typeof currentUser>>;
+
 
 async function getDashboardData(userId: string): Promise<{
   stats: DashboardStats;
