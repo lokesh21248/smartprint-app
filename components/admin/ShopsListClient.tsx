@@ -104,7 +104,7 @@ export function ShopsListClient({ initialShops }: ShopsListClientProps) {
         <div className="col-span-full py-20 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
           <Store className="h-12 w-12 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500 font-medium">No shops onboarded yet.</p>
-          <p className="text-sm text-gray-400 mt-1">Start by clicking "Onboard New Shop"</p>
+          <p className="text-sm text-gray-400 mt-1">Start by clicking &quot;Onboard New Shop&quot;</p>
         </div>
       )}
     </div>
