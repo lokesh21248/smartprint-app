@@ -12,6 +12,26 @@ interface CreateShopBody {
   pincode?: string;
 }
 
+/** Generates a 6-character alphanumeric shop code (no ambiguous chars like 0/O/1/I). */
+function generateShopCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+/** Converts a shop name to a URL-safe slug, appending a short unique suffix. */
+function generateSlug(name: string, code: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return `${base}-${code.toLowerCase()}`;
+}
+
 export async function POST(req: Request) {
   // 🟡 M3 FIX: Run auth() + currentUser() in parallel.
   // currentUser() is a Clerk API round-trip (~50–100ms); auth() is a fast JWT parse.
@@ -67,6 +87,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, shopId: existing.id, alreadyExists: true });
   }
 
+  // Generate unique shop_code — retry up to 3 times on collision
+  let shopCode = generateShopCode();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: collision } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("shop_code", shopCode)
+      .maybeSingle();
+    if (!collision) break;
+    shopCode = generateShopCode();
+  }
+
+  const slug = generateSlug(name, shopCode);
+
   const { data, error } = await supabase
     .from("shops")
     .insert({
@@ -79,6 +113,8 @@ export async function POST(req: Request) {
       city,
       state,
       pincode,
+      shop_code: shopCode,   // ← always set at creation
+      slug,                  // ← always set at creation
       is_approved: true,
       is_active: true,
       is_open: true,

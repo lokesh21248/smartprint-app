@@ -38,18 +38,22 @@ export async function GET(request: Request) {
     if (id) {
       query = query.eq("id", id);
     } else if (slug) {
-      // Look for a match in either shop_code or slug
-      query = query.or(`shop_code.eq.${slug.toUpperCase()},slug.eq.${slug.toLowerCase()}`);
+      // Match either the shop_code (uppercase) or the slug (lowercase).
+      // Use quoted string syntax so hyphens and dots in slugs don't break the filter.
+      query = query.or(
+        `shop_code.eq.${slug.toUpperCase()},slug.eq.${slug.toLowerCase()}`
+      );
     }
 
     const { data, error } = await query.maybeSingle();
 
     if (error) {
-      console.error("[GET /api/shop/public] Supabase error:", error);
+      console.error("[GET /api/shop/public] Supabase error:", JSON.stringify(error));
       return NextResponse.json({ error: "Failed to fetch shop" }, { status: 500 });
     }
 
     if (!data) {
+      console.warn(`[GET /api/shop/public] No shop found for slug="${slug}" id="${id}"`);
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 

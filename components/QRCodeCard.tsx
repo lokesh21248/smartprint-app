@@ -26,8 +26,10 @@ export default function QRCodeCard({
   if (!mounted) return null
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
-  const finalSlug = slug || shopCode
-  const shopUrl = finalSlug ? `${baseUrl}/s/${finalSlug}` : ""
+  // Prefer slug (lowercase, URL-safe, set at creation).
+  // Fall back to shopCode for legacy shops that pre-date slug generation.
+  const finalSlug = slug?.trim() || shopCode?.trim()
+  const shopUrl = finalSlug ? `${baseUrl}/s/${finalSlug.toLowerCase()}` : ""
 
   if (!finalSlug) {
     return (
