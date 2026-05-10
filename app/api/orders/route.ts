@@ -228,6 +228,21 @@ export async function POST(request: Request) {
   }
 }
 
+interface GetOrderByTokenResponse {
+  success: boolean;
+  error?: string;
+  customer_name: string;
+  page_count: number;
+  copies: number;
+  is_color: boolean;
+  is_double_sided: boolean;
+  total_amount: number;
+  status: string;
+  shop_name: string;
+  shop_address: string;
+  shop_phone: string;
+}
+
 /**
  * GET /api/orders?shortToken=ABC12345
  * Fetch order details for guest tracking
@@ -248,7 +263,7 @@ export async function GET(request: Request) {
     // Call the RPC function defined in PRODUCTION_SCHEMA.sql
     const { data, error } = await supabase.rpc('get_order_by_token', { 
       p_token: shortToken 
-    });
+    }) as { data: GetOrderByTokenResponse | null, error: any };
 
     if (error || !data || !data.success) {
       console.warn(`[GET /api/orders] ❌ Order not found or error:`, error?.message || data?.error);

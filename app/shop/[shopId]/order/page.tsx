@@ -36,6 +36,7 @@ export default function OrderFlowPage() {
   });
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [otp, setOtp] = useState("");
+  const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState<{ id: string; token: string } | null>(null);
 

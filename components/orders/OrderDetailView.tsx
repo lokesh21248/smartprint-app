@@ -315,7 +315,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                       {getStatusLabel(entry.status)}
                     </p>
                     <p className="text-xs text-[#9CA3AF]">
-                      {formatDateTime(entry.at || entry.timestamp)}
+                      {formatDateTime((entry.at || entry.timestamp) || "")}
                     </p>
                     {entry.actor && (
                       <p className="text-xs text-[#6B7280] mt-0.5">By {entry.actor}</p>

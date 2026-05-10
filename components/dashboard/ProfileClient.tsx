@@ -52,7 +52,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
   const isOpen = !!shop.is_open;
   const shopName = shop.name ?? "";
   const ownerEmail =
-    (isLoaded && user?.emailAddresses[0]?.emailAddress) ??
+    (isLoaded ? user?.emailAddresses[0]?.emailAddress : null) ??
     shop.owner_email ??
     "";
   const fullAddress = [shop.address_line1, shop.city, shop.state, shop.pincode]

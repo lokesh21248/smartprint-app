@@ -6,32 +6,32 @@ export interface Shop {
   id: string;
   clerk_owner_id: string;
   name: string;
-  slug: string;
+  slug?: string;
   shop_code?: string;
-  owner_name: string;
+  owner_name?: string;
   owner_email: string;
   owner_phone: string;
   alternate_phone?: string;
-  address_line1: string;
+  address_line1?: string;
   address_line2?: string;
-  city: string;
-  state: string;
-  pincode: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
   lat?: number;
   lng?: number;
-  price_bw_per_page: number;
-  price_color_per_page: number;
+  price_bw_per_page?: number;
+  price_color_per_page?: number;
   price_double_sided_discount_pct?: number;
   shop_photo_url?: string;
   qr_code_url?: string;
-  business_hours: Record<string, unknown>;
+  business_hours?: Record<string, unknown>;
   is_approved: boolean;
-  is_open: boolean;
-  is_active: boolean;
+  is_open?: boolean;
+  is_active?: boolean;
   total_orders?: number;
   qr_scan_count?: number;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface StatusHistoryEntry {
