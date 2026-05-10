@@ -117,7 +117,7 @@ export async function POST(req: Request) {
       city,
       state,
       pincode,
-      shop_code: shopCode,   // keep for legacy admin display — not used for routing
+      shop_code: slug,       // keep for legacy admin display — not used for routing
       slug,                  // ← canonical public identifier, always set at creation
       is_approved: true,
       is_active: true,
