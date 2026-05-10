@@ -76,7 +76,13 @@ async function processJob(supabase: SupabaseClient, job: WebhookJob): Promise<"s
       if (userData.public_metadata?.phone) updates.owner_phone = userData.public_metadata.phone;
 
       // Sync from standard Clerk profile
-      const rawUser = payload.data as Record<string, unknown>;
+      interface ClerkUserPayload {
+        first_name?: string | null;
+        last_name?: string | null;
+        primary_email_address_id?: string | null;
+        email_addresses?: { id: string; email_address: string }[];
+      }
+      const rawUser = payload.data as ClerkUserPayload;
       if (rawUser.first_name || rawUser.last_name) {
         updates.owner_name = [rawUser.first_name, rawUser.last_name].filter(Boolean).join(" ").trim();
       }

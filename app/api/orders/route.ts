@@ -266,7 +266,7 @@ export async function GET(request: Request) {
     }) as { data: GetOrderByTokenResponse | null, error: unknown };
 
     if (error || !data || !data.success) {
-      console.warn(`[GET /api/orders] ❌ Order not found or error:`, error?.message || data?.error);
+      console.warn(`[GET /api/orders] ❌ Order not found or error:`, (error as Error)?.message || data?.error);
       return NextResponse.json({ error: data?.error || "Order not found" }, { status: 404 });
     }
 
