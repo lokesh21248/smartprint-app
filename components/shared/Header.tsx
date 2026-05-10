@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Bell, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useShopStore } from "@/stores/shopStore";
@@ -24,15 +25,16 @@ export function Header() {
   const { shop, notificationCount } = useShopStore();
   const { pendingCount } = useOrderStore();
   const title = getPageTitle(pathname);
-  const shopName =
-    (shop as unknown as { shop_name?: string; name?: string } | null)?.shop_name ||
-    (shop as unknown as { shop_name?: string; name?: string } | null)?.name ||
-    "Shop Owner";
+  const shopName = shop?.name || "Shop Owner";
 
-  const now = new Date();
-  const hour = now.getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const [greeting, setGreeting] = useState("Hello");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
+  }, []);
 
   return (
     <header className="sticky top-0 z-30 h-[64px] bg-white/95 backdrop-blur-sm border-b border-[#E5E7EB] flex items-center justify-between px-6 gap-4">
@@ -41,7 +43,7 @@ export function Header() {
         <h1 className="text-xl font-bold text-[#111827] leading-tight">{title}</h1>
         {pathname === "/dashboard" && (
           <p className="text-xs text-[#6B7280]">
-            {greeting}, {shopName} 👋
+            {mounted ? `${greeting}, ${shopName} 👋` : "Loading..."}
           </p>
         )}
       </div>

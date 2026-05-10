@@ -25,7 +25,7 @@ export function QuickActions({ shop: initialShop }: QuickActionsProps) {
     rating_avg?: number;
     total_orders?: number;
   };
-  const shopName = shopRecord.shop_name || shopRecord.name || "My Shop";
+  const shopName = shopRecord.name || "My Shop";
   const shopLocation =
     [shopRecord.city, shopRecord.state].filter(Boolean).join(", ") ||
     shopRecord.address ||

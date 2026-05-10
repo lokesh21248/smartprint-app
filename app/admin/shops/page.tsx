@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopsListClient } from "@/components/admin/ShopsListClient";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 export const metadata: Metadata = { title: "Manage Shops | Admin" };
 
 export default async function AdminShopsPage() {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data: shops } = await supabase
     .from("shops")
-    .select("*")
+    .select("id, name, owner_email, owner_phone, is_approved, created_at")
     .order("created_at", { ascending: false });
 
   return (

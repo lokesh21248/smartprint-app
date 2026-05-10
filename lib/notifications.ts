@@ -1,10 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Order } from "@/types";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// 🔴 C2 FIX: Removed standalone createClient() — was the 3rd Supabase client instance,
+// wasting a connection slot on every warm serverless function.
+// Now uses the shared admin singleton from lib/supabase/admin.ts.
 
 export type NotificationType = "ORDER_PLACED" | "ORDER_ACCEPTED" | "ORDER_READY" | "ORDER_CANCELLED";
 
@@ -18,46 +17,61 @@ interface NotificationParams {
 
 export class NotificationService {
   /**
-   * Send notification to customer about order status
+   * Send notification to customer about order status.
+   *
+   * 🔴 C2 FIX: Changed from async → void (fire-and-forget).
+   * The DB insert no longer blocks the caller's response.
+   * Errors are caught and logged internally — they never surface to the user.
    */
-  static async sendStatusUpdate(params: NotificationParams) {
-    const { phone, customerName, status, shortToken } = params;
-    
-    const message = `Hi ${customerName}, your order #${shortToken} status is now: ${status}. Track here: https://smartprint.in/order/${shortToken}`;
-    
-    console.log(`[Notification] Sending to ${phone}: ${message}`);
-    
-    // TODO: Integrate with MSG91 or Twilio
-    // await fetch('https://api.msg91.com/...', { ... })
+  static sendStatusUpdate(params: NotificationParams): void {
+    const supabase = createAdminClient();
+    const { customerName, status, shortToken } = params;
 
-    // Log to DB
-    await supabase.from("notifications").insert({
-      user_id: "system", // Or shop owner ID
-      type: "status_change",
-      title: `Order ${status}`,
-      message: message,
-    });
-    
-    return { success: true };
+    const message = `Hi ${customerName}, your order #${shortToken} status is now: ${status}. Track here: https://smartprint.in/order/${shortToken}`;
+
+    console.log(`[Notification] Status update → ${status} for token ${shortToken}`);
+
+    // TODO: Integrate with MSG91 or Twilio
+    // fetch('https://api.msg91.com/...', { ... }).catch(() => {})
+
+    // Fire-and-forget DB log — never awaited
+    void Promise.resolve(
+      supabase
+        .from("notifications")
+        .insert({
+          user_id: "system",
+          type: "status_change",
+          title: `Order ${status}`,
+          body: message,
+        })
+    ).then(null, (err) => console.error("[Notification] sendStatusUpdate insert failed:", err));
   }
 
   /**
-   * Alert shop owner about a new order
+   * Alert shop owner about a new order.
+   *
+   * 🔴 C2 FIX: Changed from async → void (fire-and-forget).
    */
-  static async alertNewOrder(shopOwnerId: string, orderDetails: Pick<Order, "total_amount" | "customer_name">) {
-    const amountInRupees = (orderDetails.total_amount / 100).toFixed(2);
+  static alertNewOrder(
+    shopOwnerId: string,
+    orderDetails: Pick<Order, "total_amount" | "customer_name">
+  ): void {
+    const supabase = createAdminClient();
+    const amountInRupees = orderDetails.total_amount.toFixed(2);
     const message = `🖨️ New order from ${orderDetails.customer_name}! Amount: ₹${amountInRupees}`;
-    
-    console.log(`[Notification] Alerting owner ${shopOwnerId}: ${message}`);
 
-    // Log to DB (will trigger real-time dashboard alert)
-    await supabase.from("notifications").insert({
-      user_id: shopOwnerId,
-      type: "new_order",
-      title: "New Order Received",
-      message: message,
-    });
+    console.log(`[Notification] New order alert → owner ${shopOwnerId}`);
 
-    return { success: true };
+    // Fire-and-forget DB log — triggers real-time dashboard alert
+    void Promise.resolve(
+      supabase
+        .from("notifications")
+        .insert({
+          user_id: shopOwnerId,
+          type: "new_order",
+          title: "New Order Received",
+          body: message,
+        })
+    ).then(null, (err) => console.error("[Notification] alertNewOrder insert failed:", err));
   }
 }

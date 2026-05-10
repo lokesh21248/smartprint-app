@@ -4,50 +4,48 @@ export type UserRole = "owner" | "manager" | "staff";
 
 export interface Shop {
   id: string;
-  owner_id: string;
-  shop_name: string;
+  clerk_owner_id: string;
+  name: string;
   slug: string;
   shop_code?: string;
-  address: string;
+  owner_name: string;
+  owner_email: string;
+  owner_phone: string;
+  alternate_phone?: string;
+  address_line1: string;
+  address_line2?: string;
   city: string;
   state: string;
   pincode: string;
-  phone: string;
-  email?: string;
-  pricing: {
-    bw: number;
-    color: number;
-    bw_a4?: number;
-    color_a4?: number;
-    binding_spiral?: number;
-    binding_soft?: number;
-  };
-  timings: Record<string, string>;
-  services: string[];
+  lat?: number;
+  lng?: number;
+  price_bw_per_page: number;
+  price_color_per_page: number;
+  price_double_sided_discount_pct?: number;
+  shop_photo_url?: string;
   qr_code_url?: string;
-  qr_scan_count?: number;
-  code_use_count?: number;
-  rating_avg?: number;
-  total_reviews?: number;
-  total_orders?: number;
+  business_hours: Record<string, unknown>;
   is_approved: boolean;
   is_open: boolean;
   is_active: boolean;
+  total_orders?: number;
+  qr_scan_count?: number;
   created_at: string;
   updated_at: string;
 }
 
 export interface StatusHistoryEntry {
   status: OrderStatus;
-  timestamp: string;
+  timestamp?: string;
+  at?: string;
   updated_by?: string;
+  actor?: string;
   notes?: string;
 }
 
 export interface Order {
   id: string;
   short_token: string;
-  order_number?: string;
   shop_id: string;
   customer_name: string;
   customer_phone: string;
@@ -71,6 +69,7 @@ export interface Order {
   cancelled_at?: string;
   created_at: string;
   updated_at: string;
+  files?: Array<{ name: string; size: number; pages: number; url: string }>;
   shops?: Shop;
 }
 

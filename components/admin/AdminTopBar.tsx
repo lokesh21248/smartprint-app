@@ -28,7 +28,7 @@ export function AdminTopBar({ user }: AdminTopBarProps) {
         <div className="h-8 w-[1px] bg-gray-200 mx-2" />
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <p className="text-sm font-bold text-gray-900">{user.fullName || "Admin"}</p>
+            <p className="text-sm font-bold text-gray-900">{user?.fullName || "Admin"}</p>
             <p className="text-[10px] text-gray-500 uppercase font-bold tracking-tighter">System Administrator</p>
           </div>
           <UserButton afterSignOutUrl="/sign-in" />

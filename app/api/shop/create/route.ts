@@ -13,12 +13,14 @@ interface CreateShopBody {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
+  // 🟡 M3 FIX: Run auth() + currentUser() in parallel.
+  // currentUser() is a Clerk API round-trip (~50–100ms); auth() is a fast JWT parse.
+  // Neither depends on the other's result, so Promise.all saves ~50ms on every call.
+  const [{ userId }, user] = await Promise.all([auth(), currentUser()]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await currentUser();
   const ownerEmail = user?.emailAddresses?.[0]?.emailAddress;
   if (!ownerEmail) {
     return NextResponse.json({ error: "No email on Clerk account" }, { status: 400 });
@@ -80,6 +82,12 @@ export async function POST(req: Request) {
       is_approved: true,
       is_active: true,
       is_open: true,
+      business_hours: {
+        opening_time: "09:00",
+        closing_time: "21:00",
+        working_days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        services: [],
+      },
     })
     .select("id")
     .single();

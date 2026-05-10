@@ -7,29 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OrderCardSkeleton } from "@/components/ui/skeleton";
 import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { TimeAgo } from "./TimeAgo";
 import { FileText, Phone, Check, X, Printer } from "lucide-react";
 import Link from "next/link";
 import type { Order } from "@/types";
-import { DEMO_ORDERS } from "@/lib/demo-data";
 
-const IS_DEMO =
-  typeof window !== "undefined" &&
-  (!process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project"));
-
+/**
+ * Fetches new orders via the authenticated server API route.
+ * Uses status=PLACED filter and maps DB columns correctly.
+ */
 async function fetchNewOrders(shopId: string): Promise<Order[]> {
-  if (IS_DEMO) return DEMO_ORDERS.filter((o) => o.order_status === "PLACED");
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("shop_id", shopId)
-    .eq("status", "PLACED")
-    .order("created_at", { ascending: false })
-    .limit(5);
-  return (data ?? []) as unknown as Order[];
+  const res = await fetch(`/api/shop/orders-list?shopId=${encodeURIComponent(shopId)}&status=PLACED`, {
+    credentials: "include",
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.orders) ? data.orders.slice(0, 5) : [];
 }
 
 interface NewOrdersFeedProps {
@@ -45,12 +39,12 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
     queryKey: ["new-orders", shopId],
     queryFn: () => fetchNewOrders(shopId),
     initialData: initialOrders,
-    staleTime: 30 * 1000,
-    refetchInterval: 30 * 1000,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
   });
 
   // Subscribe to realtime
-  useRealtimeOrders(IS_DEMO ? null : shopId);
+  useRealtimeOrders(shopId);
 
   const handleAction = async (
     orderId: string,
@@ -127,10 +121,10 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   {/* Order number + time */}
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-bold text-[#111827] text-sm">
-                      {order.order_number}
+                      Order #{order.short_token}
                     </span>
                     <span className="text-xs text-[#9CA3AF]">
-                      {formatTimeAgo(order.created_at)}
+                      <TimeAgo date={order.created_at} />
                     </span>
                   </div>
 

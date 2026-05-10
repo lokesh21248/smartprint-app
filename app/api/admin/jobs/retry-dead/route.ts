@@ -45,6 +45,8 @@ export async function POST(req: Request) {
   }
 
   // 4. Atomic Update for batch
+  // 🔴 C4 FIX: .select() → .select("id, status, retry_count") — avoids returning
+  // full JSONB payload columns (could be 200–500KB for 50 jobs).
   const { data, error } = await supabase
     .from("webhook_jobs")
     .update({ 
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString()
     })
     .in("id", targets.map(t => t.id))
-    .select();
+    .select("id, status, retry_count");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

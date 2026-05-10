@@ -13,6 +13,7 @@ import {
   ArrowDownRight
 } from "lucide-react";
 import { Order } from "@/types";
+import { formatCurrency } from "@/lib/utils";
 
 interface AdminOverviewClientProps {
   stats: {
@@ -20,20 +21,11 @@ interface AdminOverviewClientProps {
     activeShops: number;
     totalOrders: number;
   };
-  orders: Order[];
+  latestOrders: any[];
+  chartData: { day: string; revenue: number; orders: number }[];
 }
 
-export function AdminOverviewClient({ stats, orders }: AdminOverviewClientProps) {
-  // Simple chart data (last 7 days)
-  const chartData = [
-    { day: "Mon", revenue: 4500, orders: 12 },
-    { day: "Tue", revenue: 5200, orders: 15 },
-    { day: "Wed", revenue: 4800, orders: 11 },
-    { day: "Thu", revenue: 6100, orders: 18 },
-    { day: "Fri", revenue: 5900, orders: 16 },
-    { day: "Sat", revenue: 7200, orders: 22 },
-    { day: "Sun", revenue: 6800, orders: 19 },
-  ];
+export function AdminOverviewClient({ stats, latestOrders, chartData }: AdminOverviewClientProps) {
 
   return (
     <div className="space-y-8">
@@ -99,20 +91,24 @@ export function AdminOverviewClient({ stats, orders }: AdminOverviewClientProps)
         <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-6">Recent Activity</h3>
           <div className="space-y-6">
-            {[
-              { type: "shop", text: "New shop 'Vignesh Prints' onboarded", time: "2 hours ago", color: "bg-blue-500" },
-              { type: "order", text: "Daily revenue hit ₹25,000 milestone", time: "5 hours ago", color: "bg-emerald-500" },
-              { type: "system", text: "Database optimization completed", time: "12 hours ago", color: "bg-purple-500" },
-              { type: "shop", text: "Shop 'Kiran Xerox' updated pricing", time: "1 day ago", color: "bg-blue-500" },
-            ].map((item, i) => (
-              <div key={i} className="flex gap-4">
+            {(latestOrders.slice(0, 10).map((o, index) => {
+              const isNew = o.status === "PLACED";
+              return {
+                type: isNew ? "shop" : "order",
+                text: isNew ? `New order #${o.short_token} from ${o.customer_name || 'Guest'}` : `Order #${o.short_token} updated to ${o.status}`,
+                time: new Date(o.created_at).toLocaleString(),
+                color: isNew ? "bg-blue-500" : "bg-emerald-500",
+                id: o.id + index,
+              };
+            })).map((item, i, arr) => (
+              <div key={item.id} className="flex gap-4">
                 <div className="relative">
                   <div className={`w-2.5 h-2.5 rounded-full ${item.color} mt-1.5`} />
-                  {i < 3 && <div className="absolute top-4 left-1 w-[1px] h-10 bg-gray-100" />}
+                  {i < arr.length - 1 && <div className="absolute top-4 left-1 w-[1px] h-10 bg-gray-100" />}
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-800 leading-tight">{item.text}</p>
-                  <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-tighter">{item.time}</p>
+                  <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-tighter" suppressHydrationWarning>{item.time}</p>
                 </div>
               </div>
             ))}

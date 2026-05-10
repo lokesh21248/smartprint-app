@@ -153,9 +153,9 @@ export function StaffList({ initialStaff }: StaffListProps) {
                   </div>
                   <p className="text-sm text-[#6B7280] mt-0.5">{member.user?.email ?? "—"}</p>
                   <p className="text-xs text-[#9CA3AF] mt-0.5">
-                    Joined {new Date(member.created_at).toLocaleDateString("en-IN", {
+                    Joined <span suppressHydrationWarning>{new Date(member.created_at).toLocaleDateString("en-IN", {
                       day: "numeric", month: "short", year: "numeric",
-                    })}
+                    })}</span>
                   </p>
                 </div>
 

@@ -1,3 +1,5 @@
+"use client";
+
 interface ShopDisplayData {
   name?: string;
   address?: string;

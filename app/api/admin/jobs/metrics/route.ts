@@ -10,26 +10,38 @@ export async function GET() {
 
   const supabase = createAdminClient();
 
-  const [counts, logs] = await Promise.all([
-    supabase.from("webhook_jobs").select("status", { count: "exact" }),
-    supabase.from("job_logs").select("*").order("created_at", { ascending: false }).limit(50)
+  // 🔴 C1 FIX: Replaced 3 queries (2 on webhook_jobs + full JS aggregation loop)
+  // with 1 RPC aggregation + 1 parallel log fetch.
+  // Requires the get_webhook_job_counts() function in Supabase (see SQL below).
+  const [countResult, logs] = await Promise.all([
+    supabase.rpc("get_webhook_job_counts"),
+    supabase
+      .from("job_logs")
+      .select("id, action, created_at, user_id, metadata") // precise cols — no select("*")
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
-  // Aggregate counts by status
-  const statusCounts: Record<string, number> = {
-    pending: 0,
-    processing: 0,
-    failed: 0,
-    dead: 0
-  };
-
-  const { data: jobs } = await supabase.from("webhook_jobs").select("status");
-  jobs?.forEach(j => {
-    statusCounts[j.status] = (statusCounts[j.status] || 0) + 1;
-  });
-
   return NextResponse.json({
-    summary: statusCounts,
-    recent_logs: logs.data
+    summary: countResult.data ?? {},
+    recent_logs: logs.data,
   });
 }
+
+/*
+ * ─── ONE-TIME SQL: run once in Supabase SQL Editor ────────────────────────────
+ *
+ * CREATE OR REPLACE FUNCTION get_webhook_job_counts()
+ * RETURNS jsonb
+ * LANGUAGE sql STABLE
+ * AS $$
+ *   SELECT jsonb_object_agg(status, cnt)
+ *   FROM (
+ *     SELECT status, COUNT(*) AS cnt
+ *     FROM webhook_jobs
+ *     GROUP BY status
+ *   ) t;
+ * $$;
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ */

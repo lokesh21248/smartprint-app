@@ -20,7 +20,7 @@ export async function upsertShop(
     // 1. Check for existing shop (Idempotent Fetch)
     const { data: existing, error: fetchError } = await supabase
       .from("shops")
-      .select("*")
+      .select("id, clerk_owner_id, owner_email, name, address_line1, owner_phone")
       .eq("clerk_owner_id", userId)
       .maybeSingle();
 

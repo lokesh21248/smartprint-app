@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, Phone, Download, Printer,
@@ -8,11 +8,13 @@ import {
   User, Calendar
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   formatCurrency, formatDateTime, formatTimeAgo, formatFileSize,
   getStatusColor, getStatusLabel, getNextStatus, getNextStatusLabel,
 } from "@/lib/utils";
 import { useOrderStatus } from "@/lib/hooks/useOrderStatus";
+import { TimeAgo } from "@/components/dashboard/TimeAgo";
 import type { Order, OrderStatus } from "@/types";
 
 interface OrderDetailViewProps {
@@ -23,11 +25,32 @@ const STATUS_STEPS: OrderStatus[] = ["PLACED", "ACCEPTED", "PRINTING", "READY", 
 
 export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
   const [order, setOrder] = useState(initialOrder);
+  const [isOpeningPdf, setIsOpeningPdf] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const { updateStatus, processing } = useOrderStatus(order.id, {
     onSuccess: (newStatus) => setOrder((o) => ({ ...o, order_status: newStatus })),
   });
+
+  const handleOpenPdf = async (path?: string) => {
+    const s3Path = path || order.file_s3_key;
+    if (!s3Path) return;
+    setIsOpeningPdf(true);
+    try {
+      const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${s3Path}`);
+      const data = await res.json();
+      if (data.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      } else {
+        toast.error("Failed to get document access");
+      }
+    } catch (err) {
+      console.error("[OrderDetailView] Signed URL fetch error:", err);
+      toast.error("Error accessing document");
+    } finally {
+      setIsOpeningPdf(false);
+    }
+  };
 
   const nextStatus = getNextStatus(order.order_status);
 
@@ -47,7 +70,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
         <div>
           <h1 className="text-2xl font-bold text-[#111827]">Order #{order.short_token}</h1>
           <p className="text-sm text-[#6B7280]">
-            Placed {formatTimeAgo(order.created_at)}
+            Placed <TimeAgo date={order.created_at} />
           </p>
         </div>
         <span className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold border ${getStatusColor(order.order_status)}`}>
@@ -211,31 +234,33 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
               <FileText className="h-4 w-4" />
               Document
             </h2>
-            <div className="space-y-2">
-              <div className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB]">
-                <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-5 w-5 text-red-600" />
+            <div className="space-y-3">
+              {(order.files && order.files.length > 0 ? order.files : [
+                { name: order.file_name, size: 0, pages: order.page_count, url: order.file_s3_key }
+              ]).map((file, idx) => (
+                <div key={idx} className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB]">
+                  <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
+                    <FileText className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[#374151] truncate">{file.name || "Document.pdf"}</p>
+                    <p className="text-xs text-[#9CA3AF]">
+                      {file.pages} pages {file.size > 0 && `· ${formatFileSize(file.size)}`}
+                    </p>
+                  </div>
+                  {file.url && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-[#6B7280]"
+                      loading={isOpeningPdf}
+                      onClick={() => handleOpenPdf(file.url)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#374151] truncate">{order.file_name || "Document.pdf"}</p>
-                  <p className="text-xs text-[#9CA3AF]">
-                    {order.page_count} pages
-                  </p>
-                </div>
-                {order.file_s3_key && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-[#6B7280]"
-                    onClick={() => {
-                      const url = `https://your-project.supabase.co/storage/v1/object/public/orders/${order.file_s3_key}`;
-                      window.open(url, "_blank");
-                    }}
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+              ))}
             </div>
           </div>
 
@@ -249,10 +274,8 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                 <Button
                   size="sm"
                   className="bg-[#2E8B57] hover:bg-[#1F6B42]"
-                  onClick={() => {
-                    const url = `https://your-project.supabase.co/storage/v1/object/public/orders/${order.file_s3_key}`;
-                    window.open(url, "_blank");
-                  }}
+                  loading={isOpeningPdf}
+                  onClick={() => handleOpenPdf()}
                 >
                   <Printer className="h-4 w-4 mr-2" />
                   Open PDF
@@ -268,10 +291,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                 <p className="text-sm text-[#9CA3AF] mt-1">
                   Ready to print · {order.page_count} pages
                 </p>
-                <Button variant="outline" className="mt-4" onClick={() => {
-                  const url = `https://your-project.supabase.co/storage/v1/object/public/orders/${order.file_s3_key}`;
-                  window.open(url, "_blank");
-                }}>
+                <Button variant="outline" className="mt-4" loading={isOpeningPdf} onClick={() => handleOpenPdf()}>
                   View Full Document
                 </Button>
               </div>

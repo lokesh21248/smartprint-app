@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getSignedUrl } from "@/lib/storage";
 
 /**
@@ -16,14 +16,14 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // ── Params ────────────────────────────────────────────────────────────────
     const { searchParams } = new URL(request.url);
     const bucket = searchParams.get("bucket");
     const path = searchParams.get("path");
     const expiresInParam = searchParams.get("expiresIn");
-    const expiresIn = expiresInParam ? parseInt(expiresInParam, 10) : 3600;
+    const expiresIn = expiresInParam ? parseInt(expiresInParam, 10) : 60;
 
     if (!bucket || !path) {
       return NextResponse.json(
@@ -32,12 +32,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Validate expiresIn (max 7 days)
-    if (isNaN(expiresIn) || expiresIn < 1 || expiresIn > 604800) {
+    // Validate expiresIn (max 60 seconds for production safety)
+    if (isNaN(expiresIn) || expiresIn < 1 || expiresIn > 60) {
       return NextResponse.json(
-        { error: "expiresIn must be between 1 and 604800 seconds" },
+        { error: "expiresIn must be between 1 and 60 seconds" },
         { status: 400 }
       );
+    }
+
+    // ── Ownership Verification ────────────────────────────────────────────────
+    // Path format: "orders/[shopId]/[fileName]"
+    const parts = path.split("/");
+    if (parts[0] !== "orders" || !parts[1]) {
+      return NextResponse.json({ error: "Invalid path format" }, { status: 400 });
+    }
+    const shopIdFromPath = parts[1];
+
+    // Verify the user owns the shop extracted from the file path
+    const { data: shop, error: shopError } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("id", shopIdFromPath)
+      .eq("clerk_owner_id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (shopError || !shop) {
+      // Forbidden: Trying to access another shop's files
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // ── Generate URL ──────────────────────────────────────────────────────────

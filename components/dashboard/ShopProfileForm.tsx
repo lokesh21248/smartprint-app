@@ -10,9 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useShopStore } from "@/stores/shopStore";
 import { ShopProfileSchema, type ShopProfileInput } from "@/lib/validators";
-import { createClient } from "@/lib/supabase/client";
 import type { Shop } from "@/types";
 import type { z } from "zod";
+
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
@@ -34,15 +34,17 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const shopRecord = shop as unknown as {
     id: string;
     name?: string;
-    address?: string;
-    phone?: string;
+    address_line1?: string;
+    owner_phone?: string;
     owner_email?: string;
     price_bw_per_page?: number;
     price_color_per_page?: number;
-    opening_time?: string;
-    closing_time?: string;
-    working_days?: string[];
-    services?: string[];
+    business_hours?: {
+      opening_time?: string;
+      closing_time?: string;
+      working_days?: string[];
+      services?: string[];
+    };
     is_open?: boolean;
   };
 
@@ -60,15 +62,15 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
     resolver: zodResolver(ShopProfileSchema),
     defaultValues: {
       name: shopRecord.name || "",
-      address: shopRecord.address || "",
-      phone: shopRecord.phone || "",
+      address: shopRecord.address_line1 || "",
+      phone: shopRecord.owner_phone || "",
       owner_email: shopRecord.owner_email || "",
       price_bw_per_page: shopRecord.price_bw_per_page || 1,
       price_color_per_page: shopRecord.price_color_per_page || 5,
-      opening_time: shopRecord.opening_time || "09:00",
-      closing_time: shopRecord.closing_time || "21:00",
-      working_days: shopRecord.working_days || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-      services: shopRecord.services || [],
+      opening_time: shopRecord.business_hours?.opening_time || "09:00",
+      closing_time: shopRecord.business_hours?.closing_time || "21:00",
+      working_days: shopRecord.business_hours?.working_days || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+      services: shopRecord.business_hours?.services || [],
     },
   });
 
@@ -78,13 +80,25 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const handleSave = async (data: ShopProfileFormValues) => {
     setSaving(true);
     try {
-      const supabase = createClient();
       const normalizedData = ShopProfileSchema.parse(data) as ShopProfileInput;
-      const payload: Record<string, unknown> = {
+      const res = await fetch("/api/shop/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(normalizedData),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || "Failed to save profile");
+      }
+      
+      // Map payload back to frontend Shop interface before updating store
+      const updatedShop = {
+        ...shop,
         name: normalizedData.name,
-        owner_email: normalizedData.owner_email,
-        owner_phone: normalizedData.phone,
         address_line1: normalizedData.address,
+        owner_phone: normalizedData.phone,
+        owner_email: normalizedData.owner_email,
         price_bw_per_page: normalizedData.price_bw_per_page,
         price_color_per_page: normalizedData.price_color_per_page,
         business_hours: {
@@ -93,35 +107,14 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
           working_days: normalizedData.working_days,
           services: normalizedData.services,
         },
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from("shops")
-        .update(payload)
-        .eq("id", shopRecord.id);
-
-      if (error) throw error;
-      
-      // Map payload back to frontend Shop interface before updating store
-      const updatedShop = {
-        ...shop,
-        name: normalizedData.name,
-        address: normalizedData.address,
-        phone: normalizedData.phone,
-        owner_email: normalizedData.owner_email,
-        price_bw_per_page: normalizedData.price_bw_per_page,
-        price_color_per_page: normalizedData.price_color_per_page,
-        opening_time: normalizedData.opening_time,
-        closing_time: normalizedData.closing_time,
-        working_days: normalizedData.working_days,
-        services: normalizedData.services,
       };
       
       setShop(updatedShop as Shop);
       toast.success("✅ Shop profile updated!");
     } catch (err) {
-      toast.error("Failed to save. Please try again.");
+      console.error("Shop Profile Save Error:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to save. Please try again.";
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

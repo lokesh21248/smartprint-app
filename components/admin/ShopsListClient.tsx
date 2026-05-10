@@ -17,8 +17,8 @@ interface Shop {
   id: string;
   name: string;
   slug: string;
-  address: string;
-  phone: string;
+  address_line1: string;
+  owner_phone: string;
   is_approved: boolean;
   is_active: boolean;
   is_open: boolean;
@@ -70,11 +70,11 @@ export function ShopsListClient({ initialShops }: ShopsListClientProps) {
           <div className="mt-6 grid grid-cols-2 gap-4">
             <div className="flex items-center gap-2.5 text-gray-500">
               <MapPin className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span className="text-sm truncate">{shop.address}</span>
+              <span className="text-sm truncate">{shop.address_line1}</span>
             </div>
             <div className="flex items-center gap-2.5 text-gray-500">
               <Phone className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span className="text-sm truncate">{shop.phone}</span>
+              <span className="text-sm truncate">{shop.owner_phone}</span>
             </div>
           </div>
 

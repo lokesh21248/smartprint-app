@@ -27,7 +27,7 @@ export default async function AdminLayout({
     <div className="flex h-screen bg-[#F9FAFB]">
       <AdminSidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <AdminTopBar user={user} />
+        <AdminTopBar user={user as unknown as import("@clerk/types").UserResource} />
         <main className="flex-1 overflow-y-auto p-6 md:p-10">
           {children}
         </main>

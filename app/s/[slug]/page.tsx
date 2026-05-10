@@ -16,7 +16,6 @@ import {
   MapPin,
   Smartphone
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 interface ShopDisplay {
@@ -47,33 +46,14 @@ export default function QRLandingPage() {
   useEffect(() => {
     const fetchShop = async () => {
       try {
-        const supabase = createClient();
-        const { data, error: fetchError } = await supabase
-          .from("shops")
-          .select("id, shop_name, address, phone, is_open, pricing, timings")
-          .eq("slug", slug)
-          .maybeSingle();
-
-        if (fetchError || !data) {
+        const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(slug)}`);
+        if (!res.ok) {
           setError("Shop not found");
           setIsLoading(false);
           return;
         }
-
-        // Map DB fields to UI state
-        const mappedData = {
-          id: data.id,
-          name: data.shop_name,
-          address: data.address,
-          phone: data.phone,
-          is_open: data.is_open,
-          price_bw_per_page: data.pricing?.price_bw_per_page || 0,
-          price_color_per_page: data.pricing?.price_color_per_page || 0,
-          opening_time: data.timings?.opening_time || "09:00",
-          closing_time: data.timings?.closing_time || "21:00",
-        };
-
-        setShop(mappedData);
+        const data = await res.json();
+        setShop(data);
         setIsLoading(false);
       } catch (err) {
         setError("Failed to load shop information");

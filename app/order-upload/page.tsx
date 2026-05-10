@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
 interface ShopDisplay {
@@ -34,11 +33,7 @@ interface ShopDisplay {
   price_bw_per_page?: number;
   price_color_per_page?: number;
 }
-import * as pdfjs from "pdfjs-dist";
 import { formatCurrency } from "@/lib/utils";
-
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 function OrderUploadPageInner() {
   const searchParams = useSearchParams();
@@ -77,29 +72,22 @@ function OrderUploadPageInner() {
     }
 
     const loadShop = async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("shops")
-        .select("id, shop_name, address, pricing, is_open")
-        .eq("slug", shopSlug)
-        .maybeSingle();
+      const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
 
-      if (error || !data) {
+      if (!res.ok) {
         toast.error("Shop not found");
         return;
       }
 
-      // Map DB row to flat structure for UI
-      const mappedData = {
+      const data = await res.json();
+      setShop({
         id: data.id,
-        name: data.shop_name,
+        name: data.name,
         address: data.address,
-        price_bw_per_page: data.pricing?.price_bw_per_page || 0,
-        price_color_per_page: data.pricing?.price_color_per_page || 0,
+        price_bw_per_page: data.price_bw_per_page,
+        price_color_per_page: data.price_color_per_page,
         is_open: data.is_open,
-      };
-
-      setShop(mappedData);
+      });
       setIsLoadingShop(false);
     };
 
@@ -125,6 +113,10 @@ function OrderUploadPageInner() {
     setIsProcessing(true);
 
     try {
+      // Lazy load PDF.js for better bundle splitting
+      const pdfjs = await import("pdfjs-dist");
+      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
       const arrayBuffer = await selectedFile.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       setPageCount(pdf.numPages);
@@ -189,33 +181,54 @@ function OrderUploadPageInner() {
     return pageCount * copies * rate;
   }, [pageCount, copies, isColor, shop]);
 
-  // Submit order
+  // Submit order — direct-to-Supabase upload (bypasses Vercel entirely)
   const handlePlaceOrder = async () => {
     if (!file || !shop?.id || !otpVerified) return;
     setIsSubmitting(true);
 
     try {
-      // 1. Upload to Storage
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("shopId", shop.id);
-
-      const uploadRes = await fetch("/api/storage/upload", {
+      // ── Step 1: Get a signed upload URL from our server ──────────────────────
+      // This is a tiny JSON request — Vercel only validates, it never touches the file.
+      const presignRes = await fetch("/api/storage/presign", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shopId: shop.id,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+        }),
       });
 
-      if (!uploadRes.ok) throw new Error("File upload failed");
-      const { path: filePath } = await uploadRes.json();
+      if (!presignRes.ok) {
+        const { error } = await presignRes.json();
+        throw new Error(error || "Failed to prepare upload");
+      }
 
-      // 2. Create Order Record
+      const { signedUrl, storagePath } = await presignRes.json();
+
+      // ── Step 2: PUT file DIRECTLY to Supabase Storage ───────────────────────
+      // This request goes browser → Supabase, never touching Vercel.
+      // Works for any file size up to 25 MB with zero Vercel timeout risk.
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error("File upload to storage failed");
+      }
+
+      // ── Step 3: Create order record with just file metadata ──────────────────
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shopId: shop.id,
-          filePath,
+          filePath: storagePath,
           fileName: file.name,
+          fileSize: file.size,
           pageCount,
           copies,
           color: isColor,
@@ -230,10 +243,12 @@ function OrderUploadPageInner() {
         const { shortToken } = await res.json();
         router.push(`/order/${shortToken}`);
       } else {
-        throw new Error("Order creation failed");
+        const { error } = await res.json();
+        throw new Error(error || "Order creation failed");
       }
     } catch (err) {
-      toast.error("Error placing order. Please try again.");
+      const message = err instanceof Error ? err.message : "Error placing order";
+      toast.error(message + ". Please try again.");
       setIsSubmitting(false);
     }
   };

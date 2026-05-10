@@ -7,15 +7,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OrderCard } from "@/components/orders/OrderCard";
 import { OrderFilters } from "@/components/orders/OrderFilters";
 import { OrderCardSkeleton } from "@/components/ui/skeleton";
-import { createClient } from "@/lib/supabase/client";
 import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
-import { DEMO_ORDERS } from "@/lib/demo-data";
 import type { Order, OrderStatus } from "@/types";
-
-const IS_DEMO =
-  typeof window !== "undefined" &&
-  (!process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project"));
 
 const TABS: { value: OrderStatus | "ALL"; label: string }[] = [
   { value: "PLACED", label: "New" },
@@ -28,30 +21,19 @@ const TABS: { value: OrderStatus | "ALL"; label: string }[] = [
 
 
 
+/**
+ * Fetches orders via server API route (uses admin client server-side).
+ * Avoids exposing DB schema to browser; correctly maps is_color → color,
+ * is_double_sided → double_sided, status → order_status.
+ */
 async function fetchOrders(shopId: string): Promise<Order[]> {
-  if (IS_DEMO) return DEMO_ORDERS;
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("orders")
-    .select(`
-      id,
-      short_token,
-      customer_name,
-      customer_phone,
-      page_count,
-      copies,
-      color,
-      double_sided,
-      notes,
-      total_amount,
-      order_status,
-      created_at,
-      updated_at
-    `)
-    .eq("shop_id", shopId)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  return (data ?? []) as Order[];
+  const res = await fetch(`/api/shop/orders-list?shopId=${encodeURIComponent(shopId)}`, {
+    credentials: "include",
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.orders) ? data.orders : [];
 }
 
 interface OrdersClientProps {
@@ -74,7 +56,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     refetchInterval: 30 * 1000,
   });
 
-  useRealtimeOrders(IS_DEMO ? null : shopId);
+  useRealtimeOrders(shopId);
 
   const tabCounts = useMemo(() => {
     return TABS.reduce(

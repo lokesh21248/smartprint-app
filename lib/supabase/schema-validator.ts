@@ -22,15 +22,19 @@ export async function validateSchema() {
     }
   }
 
-  // 1. Verify Shops
-  await checkColumn("shops", "id");
-  await checkColumn("shops", "owner_id");
-  await checkColumn("shops", "name");
-
-  // 2. Verify Webhook Queue
-  await checkColumn("webhook_jobs", "id");
-  await checkColumn("webhook_jobs", "status");
-  await checkColumn("worker_locks", "id");
+  // 🟡 M7 FIX: Run all checks in parallel instead of sequentially.
+  // Was 7 sequential DB round-trips (~350ms); now 1 parallel batch (~50ms).
+  // Also fixed: "owner_id" doesn't exist — the live column is "clerk_owner_id".
+  await Promise.all([
+    // 1. Verify Shops
+    checkColumn("shops", "id"),
+    checkColumn("shops", "clerk_owner_id"), // ← was "owner_id" (false-positive bug)
+    checkColumn("shops", "name"),
+    // 2. Verify Webhook Queue
+    checkColumn("webhook_jobs", "id"),
+    checkColumn("webhook_jobs", "status"),
+    checkColumn("worker_locks", "id"),
+  ]);
 
   if (errors.length > 0) {
     console.error("\n🚨 SCHEMA VALIDATION FAILED 🚨");

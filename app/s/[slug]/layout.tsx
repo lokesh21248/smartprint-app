@@ -1,16 +1,41 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+// ISR: revalidate shop layout data every 5 minutes.
+// Vercel Edge will serve the cached HTML to ALL customers globally
+// without hitting Supabase on every request.
+export const revalidate = 300;
 
 interface LayoutProps {
   children: React.ReactNode;
   params: { slug: string };
 }
 
+/**
+ * Pre-render the top 50 shops at build time.
+ * New / less-visited shops fall back to dynamic rendering.
+ */
+export async function generateStaticParams() {
+  try {
+    const supabase = createAdminClient();
+    const { data: shops } = await supabase
+      .from("shops")
+      .select("slug")
+      .eq("is_approved", true)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    return (shops ?? []).map((s) => ({ slug: s.slug as string }));
+  } catch {
+    // Don’t fail the build if Supabase is unreachable
+    return [];
+  }
+}
+
 export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data: shop } = await supabase
     .from("shops")
-    .select("name, address, slug")
+    .select("name, address_line1, slug")
     .eq("slug", params.slug)
     .maybeSingle();
 
@@ -21,7 +46,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   }
 
   const title = `${shop.name} | Print Online at SmartPrint`;
-  const description = `Order high-quality prints from ${shop.name} at ${shop.address}. Upload PDF, pay via UPI, and pick up when ready.`;
+  const description = `Order high-quality prints from ${shop.name} at ${shop.address_line1}. Upload PDF, pay via UPI, and pick up when ready.`;
 
   return {
     title,

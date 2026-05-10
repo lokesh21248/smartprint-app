@@ -6,15 +6,16 @@ const isPublicRoute = createRouteMatcher([
   "/signup(.*)",
   "/verify-email(.*)",
   "/forgot-password(.*)",
-  "/s/(.*)",
-  "/order/(.*)",
-  "/order-upload(.*)",
-  "/api/webhooks(.*)",
-  "/api/orders(.*)",
-  "/api/auth/otp(.*)",
-  "/api/storage(.*)",
-  "/api/setup-db"
+  "/s/(.*)",               // Public shop QR landing pages
+  "/order/(.*)",           // Public order tracking pages
+  "/api/webhooks(.*)",      // Clerk/Stripe webhooks
+  "/api/orders(.*)",        // Public guest order creation
+  "/api/auth/otp(.*)",      // Public OTP flow
+  "/api/storage/presign",   // Public signed upload URL request
+  "/api/shop/public",       // Public shop metadata lookup
+  "/api/cron(.*)",          // Vercel Cron jobs (protected by CRON_SECRET, not Clerk)
 ]);
+
 
 export default clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {

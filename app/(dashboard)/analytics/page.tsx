@@ -1,45 +1,42 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { AnalyticsCharts } from "@/components/dashboard/AnalyticsCharts";
-import { createClient } from "@/lib/supabase/server";
-import { DEMO_ANALYTICS, DEMO_STATS } from "@/lib/demo-data";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
+
 import type { Order, DashboardStats } from "@/types";
 
 export const metadata: Metadata = { title: "Analytics" };
 
-const IS_DEMO =
-  !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project");
-
 export default async function AnalyticsPage() {
   const { userId } = await auth();
-  
-  if (IS_DEMO) {
-    return <AnalyticsCharts analyticsData={DEMO_ANALYTICS} stats={DEMO_STATS} />;
-  }
 
   if (!userId) redirect("/login");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
-  // Get shop
+  // Get shop — uses idx_shops_clerk_owner_id index
   const { data: shop } = await supabase
     .from("shops")
     .select("id")
-    .eq("owner_id", userId)
+    .eq("clerk_owner_id", userId)  // ← correct column
     .limit(1)
     .maybeSingle();
 
   if (!shop) {
-    return <AnalyticsCharts analyticsData={DEMO_ANALYTICS} stats={DEMO_STATS} />;
+    return <AnalyticsCharts analyticsData={{ revenue: [], statusBreakdown: [], peakHours: [], services: [] }} stats={{ pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }} />;
   }
 
-  // Fetch all orders for this shop
+  // Fetch last 30 days of orders — bounded query, uses idx_orders_shop_status_created
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: ordersData } = await supabase
     .from("orders")
-    .select("*")
-    .eq("shop_id", shop.id);
+    .select("total_amount, status, created_at, customer_phone, is_color")
+    .eq("shop_id", shop.id)
+    .gte("created_at", thirtyDaysAgo)
+    .order("created_at", { ascending: false })
+    .limit(1000); // hard cap: no shop has > 1000 orders in 30 days at launch
 
   const rawOrders = (ordersData ?? []);
 
@@ -67,7 +64,7 @@ export default async function AnalyticsPage() {
   let colorCount = 0;
 
   for (const o of rawOrders) {
-    const status = o.status || "PLACED";
+    const status = o.status || "PLACED"; // ← correct column name
     
     // Stats
     if (status !== "COMPLETED" && status !== "CANCELLED") {
@@ -100,7 +97,7 @@ export default async function AnalyticsPage() {
     const hourStr = `${hour.toString().padStart(2, "0")}:00`;
     peakHoursCount[hourStr] = (peakHoursCount[hourStr] || 0) + 1;
 
-    // Services
+    // Services (use `is_color` column — matches our select)
     if (o.is_color) colorCount++;
     else bwCount++;
   }
@@ -149,10 +146,10 @@ export default async function AnalyticsPage() {
     .sort((a, b) => b.count - a.count);
 
   const analyticsData = {
-    revenue: revenueTrend.length ? revenueTrend : DEMO_ANALYTICS.revenue,
-    statusBreakdown: statusBreakdown.length ? statusBreakdown : DEMO_ANALYTICS.statusBreakdown,
-    peakHours: peakHours.length ? peakHours : DEMO_ANALYTICS.peakHours,
-    services: services.length ? services : DEMO_ANALYTICS.services,
+    revenue: revenueTrend,
+    statusBreakdown: statusBreakdown,
+    peakHours: peakHours,
+    services: services,
   };
 
   return <AnalyticsCharts analyticsData={analyticsData} stats={stats} />;

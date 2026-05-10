@@ -7,6 +7,7 @@ import { useOrderStore } from "@/stores/orderStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { Order } from "@/types";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 let audioCtx: AudioContext | null = null;
 
@@ -45,79 +46,81 @@ function showBrowserNotification(order: Order) {
   }
 }
 
-// Throttle: max N calls per interval
-function createThrottle(fn: (...args: unknown[]) => void, limit: number, interval: number) {
-  let count = 0;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  return (...args: unknown[]) => {
-    if (count < limit) {
-      count++;
-      fn(...args);
-    }
-    if (!timer) {
-      timer = setTimeout(() => {
-        count = 0;
-        timer = null;
-      }, interval);
-    }
-  };
-}
+
 
 export function useRealtimeOrders(shopId: string | null) {
   const queryClient = useQueryClient();
   const { soundEnabled, incrementNotifications } = useShopStore();
   const { addNewOrder, incrementPending, setRealtimeChannel } = useOrderStore();
-  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleNewOrder = useCallback(
-    (order: Order) => {
-      // Update React Query cache
+  // Batch pending order events every 500ms to avoid re-rendering on every
+  // single DB change when a shop is getting 100+ orders/hour.
+  const pendingBatch = useRef<Order[]>([]);
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushBatch = useCallback(() => {
+    const batch = pendingBatch.current.splice(0);
+    if (!batch.length) return;
+    if (batch.length > 0) {
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
+      queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
+    }
 
+    batch.forEach((order) => {
       addNewOrder(order);
       incrementPending();
       incrementNotifications();
-
       if (soundEnabled) playNotificationSound();
-      showBrowserNotification({ ...order, total_amount: order.total_amount / 100 } as unknown as Order);
+      showBrowserNotification(order);
+    });
+    // Single toast summarising the batch
+    if (batch.length === 1) {
+      const order = batch[0];
+      toast.success(`🖨️ New order from ${order.customer_name || "Guest"}`, {
+        description: `₹${order.total_amount.toFixed(2)} · ${order.page_count} pages × ${order.copies} copies`,
+        duration: 10000,
+        action: { label: "View", onClick: () => (window.location.href = `/orders/${order.id}`) },
+      });
+    } else {
+      toast.success(`🖨️ ${batch.length} new orders received`, {
+        description: "Check your orders dashboard",
+        duration: 8000,
+        action: { label: "View All", onClick: () => (window.location.href = "/orders") },
+      });
+    }
+  }, [queryClient, shopId, soundEnabled, addNewOrder, incrementPending, incrementNotifications]);
 
-      // Visual flash & Tab title change
+  const handleNewOrder = useCallback(
+    (order: Order) => {
+      pendingBatch.current.push(order);
+      if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+      batchTimerRef.current = setTimeout(flushBatch, 500); // 500ms debounce
+
+      // Tab title flash is immediate (low cost)
       if (typeof window !== "undefined") {
         const originalTitle = document.title;
         let flashes = 0;
         const flashInterval = setInterval(() => {
           document.title = flashes % 2 === 0 ? "🔔 (1) NEW ORDER!" : originalTitle;
-          document.body.classList.toggle("bg-red-50");
           flashes++;
           if (flashes >= 10) {
             clearInterval(flashInterval);
             document.title = originalTitle;
-            document.body.classList.remove("bg-red-50");
           }
         }, 500);
       }
-
-      toast.success(
-        `🖨️ New order from ${order.customer_name || "Guest"}`,
-        {
-          description: `₹${(order.total_amount / 100).toFixed(2)} · ${order.page_count} pages × ${order.copies} copies`,
-          duration: 10000,
-          action: { label: "View", onClick: () => window.location.href = `/orders/${order.id}` },
-        }
-      );
     },
-    [queryClient, shopId, soundEnabled, addNewOrder, incrementPending, incrementNotifications]
+    [flushBatch]
   );
 
-  const throttledHandler = useRef(
-    createThrottle(handleNewOrder as (...args: unknown[]) => void, 10, 1000)
-  );
-
-  useEffect(() => {
+  const subscribe = useCallback(() => {
     if (!shopId) return;
-
-    const isDemo = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    const isDemo =
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
       process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project");
     if (isDemo) return;
 
@@ -133,17 +136,49 @@ export function useRealtimeOrders(shopId: string | null) {
           filter: `shop_id=eq.${shopId}`,
         },
         (payload) => {
-          throttledHandler.current(payload.new as Order);
+          // Realtime sends raw DB row — must map to Order type
+          // DB column → Order type field mismatches:
+          //   is_color      → color
+          //   is_double_sided → double_sided
+          //   status        → order_status
+          const raw = payload.new as Record<string, unknown>;
+          const mapped: Order = {
+            ...(raw as unknown as Order),
+            color: raw.is_color as boolean,
+            double_sided: raw.is_double_sided as boolean,
+            order_status: raw.status as Order["order_status"],
+          };
+          handleNewOrder(mapped);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          // Reset backoff on successful connection
+          retryCountRef.current = 0;
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          // Exponential backoff: 1s, 2s, 4s, 8s … capped at 30s
+          const delay = Math.min(1000 * 2 ** retryCountRef.current, 30_000);
+          retryCountRef.current += 1;
+          console.warn(`[Realtime] Channel ${status} — retrying in ${delay}ms (attempt ${retryCountRef.current})`);
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = setTimeout(() => {
+            supabase.removeChannel(channel).then(() => subscribe());
+          }, delay);
+        }
+      });
 
     channelRef.current = channel;
     setRealtimeChannel(channel);
+  }, [shopId, handleNewOrder, setRealtimeChannel]);
 
+  useEffect(() => {
+    subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      // Clean up batch timer
+      if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      // Unsubscribe channel via store (which handles the actual unsubscribe call)
       setRealtimeChannel(null);
     };
-  }, [shopId, setRealtimeChannel]);
+  }, [subscribe, setRealtimeChannel]);
 }

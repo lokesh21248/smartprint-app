@@ -10,32 +10,40 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useShopStore } from "@/stores/shopStore";
 import { useClerk } from "@clerk/nextjs";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export function SettingsClient() {
+interface SettingsClientProps {
+  shopName: string;
+  shopEmail: string;
+  shopLocation: string;
+}
+
+export function SettingsClient({ shopName, shopEmail, shopLocation }: SettingsClientProps) {
   const router = useRouter();
   const { signOut } = useClerk();
+  // Only use Zustand for persisted UI preferences — NOT for shop identity data
   const {
     soundEnabled, setSoundEnabled,
     autoAccept, setAutoAccept,
     autoAcceptWindow, setAutoAcceptWindow,
-    shop,
   } = useShopStore();
+  
+  // mounted guard: needed only to prevent hydration mismatch from Zustand-persisted
+  // values (soundEnabled, autoAccept) which may differ between server and client.
+  const [mounted, setMounted] = useState(false);
   const [language, setLanguage] = useState("en");
   const [loggingOut, setLoggingOut] = useState(false);
-  const shopInfo = (shop ?? {}) as {
-    name?: string;
-    owner_email?: string;
-    city?: string;
-    state?: string;
-    address_line1?: string;
-  };
-  const shopName = shopInfo.name || "My Shop";
-  const shopEmail = shopInfo.owner_email || "owner@shop.com";
-  const shopLocation =
-    [shopInfo.city, shopInfo.state].filter(Boolean).join(", ") ||
-    shopInfo.address_line1 ||
-    "Location not set";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <div className="animate-pulse space-y-6 max-w-2xl">
+      <div className="h-48 bg-gray-100 rounded-2xl" />
+      <div className="h-48 bg-gray-100 rounded-2xl" />
+    </div>;
+  }
 
   const handleLogout = async () => {
     setLoggingOut(true);

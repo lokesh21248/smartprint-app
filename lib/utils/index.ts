@@ -13,13 +13,13 @@ export function validateEmail(email: string): boolean {
   return re.test(email.trim().toLowerCase());
 }
 
-export function formatCurrency(amountPaise: number): string {
+export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(amountPaise / 100);
+  }).format(amount);
 }
 
 export function formatTimeAgo(dateStr: string): string {
@@ -111,10 +111,10 @@ export function calculateTotal(params: {
   pageCount: number;
   copies: number;
   color: boolean;
-  pricePerPageBW: number; // in paise
-  pricePerPageColor: number; // in paise
+  pricePerPageBW: number; // in Rupees
+  pricePerPageColor: number; // in Rupees
 }): number {
   const { pageCount, copies, color, pricePerPageBW, pricePerPageColor } = params;
   const rate = color ? pricePerPageColor : pricePerPageBW;
-  return pageCount * copies * rate; // returns total in paise
+  return pageCount * copies * rate; // returns total in Rupees
 }

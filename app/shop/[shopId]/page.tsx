@@ -1,14 +1,14 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Store, MapPin, Star, ArrowRight, AlertCircle, Hash } from 'lucide-react';
 
 export default async function ShopLandingPage({ params }: { params: { shopId: string } }) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: shop, error } = await supabase
     .from('shops')
-    .select('id, shop_name, address, city, phone, is_active, rating_avg, total_reviews, shop_code')
+    .select('id, name, address_line1, city, owner_phone, is_active, shop_code')
     .eq('id', params.shopId)
     .maybeSingle();
 
@@ -49,11 +49,9 @@ function UnavailableShop() {
 
 function ShopWelcome({ shop }: { shop: {
   id: string;
-  shop_name: string;
+  name: string;
   shop_code: string;
-  rating_avg: number;
-  total_reviews: number;
-  address: string;
+  address_line1: string;
   city: string;
 } }) {
   return (
@@ -64,7 +62,7 @@ function ShopWelcome({ shop }: { shop: {
             <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-3">
               <Store className="w-10 h-10" />
             </div>
-            <h1 className="text-2xl font-bold">{shop.shop_name}</h1>
+            <h1 className="text-2xl font-bold">{shop.name}</h1>
             <p className="text-emerald-100 mt-1">Welcome! Place your print order</p>
           </div>
 
@@ -74,17 +72,9 @@ function ShopWelcome({ shop }: { shop: {
               <span className="font-mono font-bold text-emerald-700 tracking-wider">{shop.shop_code}</span>
             </div>
 
-            {shop.rating_avg > 0 && (
-              <div className="flex items-center gap-2 justify-center">
-                <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                <span className="font-semibold">{shop.rating_avg.toFixed(1)}</span>
-                <span className="text-gray-500 text-sm">({shop.total_reviews} reviews)</span>
-              </div>
-            )}
-
             <div className="flex items-start gap-2">
               <MapPin className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
-              <p className="text-gray-700">{shop.address}, {shop.city}</p>
+              <p className="text-gray-700">{shop.address_line1}, {shop.city}</p>
             </div>
 
             <Link

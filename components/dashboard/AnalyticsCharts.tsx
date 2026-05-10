@@ -7,10 +7,16 @@ import {
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
 import type { DashboardStats } from "@/types";
-import type { DEMO_ANALYTICS } from "@/lib/demo-data";
+
+export interface AnalyticsData {
+  revenue: { date: string; revenue: number; orders: number }[];
+  statusBreakdown: { name: string; value: number; color: string }[];
+  peakHours: { hour: string; orders: number }[];
+  services: { name: string; count: number }[];
+}
 
 interface AnalyticsChartsProps {
-  analyticsData: typeof DEMO_ANALYTICS;
+  analyticsData: AnalyticsData;
   stats: DashboardStats;
 }
 
@@ -20,7 +26,7 @@ const DATE_RANGES = [
   { label: "This Month", value: "month" },
 ];
 
-export function AnalyticsCharts({ analyticsData, stats }: AnalyticsChartsProps) {
+export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChartsProps) {
   const [dateRange, setDateRange] = useState("7d");
 
   const totalRevenue = analyticsData.revenue.reduce((s, r) => s + r.revenue, 0);

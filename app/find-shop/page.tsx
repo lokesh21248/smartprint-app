@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { Hash, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -10,7 +9,6 @@ export default function FindShopPage() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,26 +21,22 @@ export default function FindShopPage() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .rpc('find_shop_by_code', { p_code: trimmedCode });
+      const res = await fetch('/api/shop/find', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: trimmedCode }),
+      });
 
-      if (error) throw error;
+      const json = await res.json();
       
-      if (!data || data.length === 0) {
-        toast.error('Shop not found. Please check the code.');
+      if (!res.ok) {
+        toast.error(json.error || 'Shop not found');
         return;
       }
 
-      const shop = data[0];
-      
-      if (!shop.is_approved) {
-        toast.error('This shop is currently unavailable');
-        return;
-      }
-
-      router.push(`/s/${shop.slug}`);
+      router.push(`/s/${json.shop_code || trimmedCode}`);
     } catch (err: unknown) {
-      toast.error('Failed to find shop: ' + ((err as Error).message || 'Try again'));
+      toast.error('An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }

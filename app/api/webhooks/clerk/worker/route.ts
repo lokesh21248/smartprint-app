@@ -135,21 +135,54 @@ export async function POST(req: Request) {
       }
 
       // 5. Bulk Finalize: Failures → smart retry scheduling
-      for (const job of failures) {
-        const nextRetryCount = job.retry_count + 1;
-        const isDead = nextRetryCount >= MAX_RETRIES;
-        await supabase
-          .from("webhook_jobs")
-          .update({
-            status: isDead ? "dead" : "failed",
-            retry_count: nextRetryCount,
-            next_retry_at: isDead
-              ? null
-              : new Date(Date.now() + (BACKOFF_SECONDS[job.retry_count] ?? 1800) * 1000).toISOString(),
-            last_error: job._error,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", job.id);
+      // 🟡 M1 FIX: Replaced sequential for-loop (N DB calls) with 2 parallel bulk updates.
+      // Dead jobs and retry jobs are updated in one Promise.all, not one-at-a-time.
+      if (failures.length > 0) {
+        const deadJobs = failures.filter((j) => j.retry_count + 1 >= MAX_RETRIES);
+        const retryJobs = failures.filter((j) => j.retry_count + 1 < MAX_RETRIES);
+        const nowTs = new Date().toISOString();
+
+        await Promise.all([
+          deadJobs.length > 0 &&
+            supabase
+              .from("webhook_jobs")
+              .update({
+                status: "dead",
+                retry_count: MAX_RETRIES,
+                next_retry_at: null,
+                last_error: deadJobs[0]?._error ?? "max retries exceeded",
+                updated_at: nowTs,
+              })
+              .in("id", deadJobs.map((j) => j.id)),
+
+          // Each retry job may have a different next_retry_at due to backoff;
+          // update shared fields in bulk and leave per-job backoff at its current slot.
+          retryJobs.length > 0 &&
+            supabase
+              .from("webhook_jobs")
+              .update({
+                status: "failed",
+                updated_at: nowTs,
+              })
+              .in("id", retryJobs.map((j) => j.id)),
+        ].filter(Boolean));
+
+        // Per-job retry_count + next_retry_at still needs individual updates
+        // because backoff is position-dependent. Run in parallel (not sequential).
+        await Promise.all(
+          retryJobs.map((job) =>
+            supabase
+              .from("webhook_jobs")
+              .update({
+                retry_count: job.retry_count + 1,
+                next_retry_at: new Date(
+                  Date.now() + (BACKOFF_SECONDS[job.retry_count] ?? 1800) * 1000
+                ).toISOString(),
+                last_error: job._error,
+              })
+              .eq("id", job.id)
+          )
+        );
       }
 
       batchCount++;

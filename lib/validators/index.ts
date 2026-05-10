@@ -32,36 +32,60 @@ export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 
 export const OrderStatusUpdateSchema = z.object({
   orderId: z.string().uuid(),
-  newStatus: z.enum([
-    "DRAFT",
-    "PLACED",
-    "ACCEPTED",
-    "PRINTING",
-    "READY",
-    "COMPLETED",
-    "CANCELLED",
-  ]),
-  rejectionReason: z.string().optional(),
+  // DRAFT is intentionally excluded — shop owners cannot revert an order to draft.
+  // Draft orders are created by the customer flow only.
+  newStatus: z.enum(["PLACED", "ACCEPTED", "PRINTING", "READY", "COMPLETED", "CANCELLED"]),
+  rejectionReason: z.string().max(500).optional(),
 });
 export type OrderStatusUpdateInput = z.infer<typeof OrderStatusUpdateSchema>;
 
-// ─── Shop Profile ─────────────────────────────────────────────────────────────
+// ─── Shop Profile (full — used by ShopProfileForm / Settings tab) ─────────────
 
 export const ShopProfileSchema = z.object({
-  name: z.string().min(2, "Shop name must be at least 2 characters"),
-  address: z.string().min(5),
+  name: z.string().trim().min(2, "Shop name must be at least 2 characters").max(100),
+  address: z.string().trim().min(5).max(300),
   phone: z
     .string()
     .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number"),
   owner_email: z.string().email(),
-  price_bw_per_page: z.coerce.number().min(0),
-  price_color_per_page: z.coerce.number().min(0),
-  opening_time: z.string().optional(),
-  closing_time: z.string().optional(),
-  working_days: z.array(z.string()).optional(),
-  services: z.array(z.string()).optional(),
+  // Minimum 0.01 — prevents free pricing that would create zero-amount orders
+  price_bw_per_page: z.coerce.number().min(0.01, "B&W price must be at least ₹0.01"),
+  price_color_per_page: z.coerce.number().min(0.01, "Color price must be at least ₹0.01"),
+  opening_time: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM format").optional(),
+  closing_time: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM format").optional(),
+  working_days: z.array(z.string()).max(7).optional(),
+  services: z.array(z.string()).max(20).optional(),
 });
 export type ShopProfileInput = z.infer<typeof ShopProfileSchema>;
+
+// ─── Shop Profile Patch (partial — used by Profile page mini-form) ────────────
+// Each field is optional so the caller only sends what changed.
+// When present, the same business rules apply.
+export const ShopProfilePatchSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Shop name must be at least 2 characters")
+    .max(100)
+    .optional(),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number")
+    .optional(),
+  address: z
+    .string()
+    .trim()
+    .min(5, "Address must be at least 5 characters")
+    .max(300)
+    .optional(),
+}).refine((data) => Object.keys(data).length > 0, {
+  message: "At least one field must be provided",
+  // path ensures this error is captured in the fieldErrors extraction loop
+  // (issues with an empty path[] are silently dropped since path[0] is undefined)
+  path: ["_root"],
+});
+export type ShopProfilePatchInput = z.infer<typeof ShopProfilePatchSchema>;
 
 // ─── Staff ────────────────────────────────────────────────────────────────────
 
@@ -70,3 +94,29 @@ export const StaffInviteSchema = z.object({
   role: z.enum(["manager", "staff"]),
 });
 export type StaffInviteInput = z.infer<typeof StaffInviteSchema>;
+
+// ─── Order Create ─────────────────────────────────────────────────────────────
+
+export const OrderCreateSchema = z.object({
+  shopId: z.string().uuid("Invalid shopId"),
+  // Support for multiple files
+  files: z.array(z.object({
+    name: z.string().min(1).max(255),
+    size: z.coerce.number().int().min(1),
+    pages: z.coerce.number().int().min(1),
+    url: z.string().min(1).max(1000),
+  })).min(1, "At least one file is required").optional(),
+  // Legacy single-file fields (optional for backward compatibility)
+  filePath: z.string().trim().min(1).optional(),
+  fileName: z.string().trim().min(1).max(255).optional(),
+  pageCount: z.coerce.number().int().min(1).max(2000),
+  copies: z.coerce.number().int().min(1).max(50),
+  color: z.boolean().optional().default(false),
+  doubleSided: z.boolean().optional().default(false),
+  notes: z.string().max(500).optional(),
+  customerName: z.string().trim().min(1, "Customer name is required").max(100),
+  customerPhone: z.string().regex(/^[6-9]\d{9}$/, "Invalid Indian mobile number"),
+  fileSize: z.coerce.number().int().min(1).max(26_214_400).optional(),
+});
+export type OrderCreateInput = z.infer<typeof OrderCreateSchema>;
+

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function DELETE(
   request: Request,
@@ -12,13 +12,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Get the shop owned by this user
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id")
-      .eq("owner_id", userId)
+      .eq("clerk_owner_id", userId)  // ← correct column
       .single();
 
     if (shopError || !shop) {

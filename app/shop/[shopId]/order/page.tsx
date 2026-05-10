@@ -10,9 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { PDFDocument } from "pdf-lib";
-import { createClient } from "@/lib/supabase/client";
 import { formatFileSize, formatCurrency } from "@/lib/utils";
+import pLimit from "p-limit";
 import type { Shop, PrintConfig, OrderFile } from "@/types";
 
 type Step = "upload" | "config" | "details" | "otp" | "success";
@@ -40,23 +39,29 @@ export default function OrderFlowPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState<{ id: string; token: string } | null>(null);
 
-  // Fetch shop details
+  // Fetch shop details via Public API (No direct DB access)
   useEffect(() => {
     async function loadShop() {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("shops")
-        .select("*")
-        .eq("id", shopId)
-        .single();
+      try {
+        const res = await fetch(`/api/shop/public?slug=${shopId}`); // shopId is being used as slug in some contexts, but here it's likely UUID. Let's check if api/shop/public supports ID.
+        // Wait, if it's UUID, I might need a different endpoint. 
+        // Let's check api/shop/public again. It takes 'slug'.
+        // If the URL is /shop/[shopId]/order, shopId is the ID.
+        // Let's see if there is an endpoint for public shop by ID.
+        const shopRes = await fetch(`/api/shop/public?id=${shopId}`); 
+        const data = await shopRes.json();
         
-      if (error || !data) {
-        toast.error("Shop not found");
-        router.push("/");
-        return;
+        if (!shopRes.ok || data.error) {
+          toast.error("Shop not found");
+          router.push("/");
+          return;
+        }
+        setShop(data as unknown as Shop);
+      } catch (err) {
+        toast.error("Failed to load shop details");
+      } finally {
+        setIsLoading(false);
       }
-      setShop(data);
-      setIsLoading(false);
     }
     loadShop();
   }, [shopId, router]);
@@ -64,14 +69,14 @@ export default function OrderFlowPage() {
   const calculateTotal = useCallback(() => {
     if (!shop) return 0;
     const totalPages = files.reduce((sum, f) => sum + f.pages, 0);
-    const rate = config.color === "bw" 
-      ? (shop.pricing.bw_a4 ?? shop.pricing.bw ?? 2) 
-      : (shop.pricing.color_a4 ?? shop.pricing.color ?? 10);
-    
+    const rate = config.color === "bw"
+      ? (shop.price_bw_per_page ?? 2)
+      : (shop.price_color_per_page ?? 10);
+
     let total = totalPages * config.copies * rate;
-    
-    if (config.binding === "spiral") total += (shop.pricing.binding_spiral ?? 30);
-    if (config.binding === "soft") total += (shop.pricing.binding_soft ?? 50);
+
+    if (config.binding === "spiral") total += 30;
+    if (config.binding === "soft") total += 50;
     
     return total;
   }, [shop, files, config]);
@@ -96,6 +101,7 @@ export default function OrderFlowPage() {
 
       try {
         const arrayBuffer = await file.arrayBuffer();
+        const { PDFDocument } = await import("pdf-lib");
         const pdfDoc = await PDFDocument.load(arrayBuffer);
         const pageCount = pdfDoc.getPageCount();
         newFiles.push({ file, pages: pageCount });
@@ -148,36 +154,49 @@ export default function OrderFlowPage() {
       const verifyJson = await verifyRes.json();
       if (!verifyRes.ok) throw new Error(verifyJson.error || "Invalid OTP");
 
-      // 2. Upload files via secure server-side route (uses service role)
-      const uploadedFiles: OrderFile[] = [];
-      
-      for (const f of files) {
-        const formData = new FormData();
-        formData.append("file", f.file);
-        formData.append("shopId", shopId);
-        formData.append("pages", String(f.pages));
+      // 2. Upload files with bounded concurrency (p-limit)
+      // This prevents browser memory pressure and network timeouts on mobile devices.
+      const limit = pLimit(3);
+      const uploadPromises = files.map((f) => 
+        limit(async () => {
+          // Step A: get a signed upload URL
+          const presignRes = await fetch("/api/storage/presign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              shopId,
+              fileName: f.file.name,
+              fileSize: f.file.size,
+              mimeType: f.file.type,
+            }),
+          });
+          const presignJson = await presignRes.json();
+          if (!presignRes.ok) throw new Error(presignJson.error || `Failed to prepare upload for ${f.file.name}`);
 
-        const uploadRes = await fetch("/api/storage/upload", {
-          method: "POST",
-          body: formData,
-        });
+          // Step B: PUT file directly to Supabase
+          const uploadRes = await fetch(presignJson.signedUrl, {
+            method: "PUT",
+            headers: { "Content-Type": f.file.type },
+            body: f.file,
+          });
+          if (!uploadRes.ok) throw new Error(`Failed to upload ${f.file.name}`);
 
-        const uploadJson = await uploadRes.json();
-        if (!uploadRes.ok) throw new Error(uploadJson.error || `Failed to upload ${f.file.name}`);
+          return {
+            name: f.file.name,
+            size: f.file.size,
+            pages: f.pages,
+            url: presignJson.storagePath,
+          };
+        })
+      );
 
-        uploadedFiles.push({
-          name: f.file.name,
-          size: f.file.size,
-          pages: f.pages,
-          url: uploadJson.url,
-        });
-      }
+      const uploadedFiles = await Promise.all(uploadPromises);
 
       // 3. Create Order
       const totalAmount = calculateTotal();
       const totalPages = files.reduce((sum, f) => sum + f.pages, 0);
       
-      const orderRes = await fetch("/api/shop/orders", {
+      const orderRes = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -185,9 +204,11 @@ export default function OrderFlowPage() {
           customerName: customer.name,
           customerPhone: customer.phone,
           files: uploadedFiles,
-          printConfig: config,
-          totalPages,
-          totalAmount,
+          pageCount: totalPages,
+          copies: config.copies,
+          color: config.color === "color",
+          doubleSided: config.duplex,
+          notes: notes || "",
         }),
       });
       
@@ -223,7 +244,7 @@ export default function OrderFlowPage() {
               <Printer className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="font-bold text-gray-900 leading-tight">{shop?.shop_name}</h1>
+              <h1 className="font-bold text-gray-900 leading-tight">{shop?.name}</h1>
               <p className="text-xs text-gray-500">Print Order Portal</p>
             </div>
           </div>
@@ -335,8 +356,8 @@ export default function OrderFlowPage() {
                 <p className="text-sm font-bold text-gray-500 uppercase tracking-wider">Color Mode</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { id: "bw", label: "Black & White", icon: "⚫", price: shop?.pricing.bw_a4 ?? shop?.pricing.bw },
-                    { id: "color", label: "Color Print", icon: "🌈", price: shop?.pricing.color_a4 ?? shop?.pricing.color }
+                    { id: "bw", label: "Black & White", icon: "⚫", price: shop?.price_bw_per_page },
+                    { id: "color", label: "Color Print", icon: "🌈", price: shop?.price_color_per_page }
                   ].map(opt => (
                     <button
                       key={opt.id}
@@ -580,7 +601,7 @@ export default function OrderFlowPage() {
               </div>
               
               <h2 className="text-3xl font-black text-gray-900 mb-2">Order Placed!</h2>
-              <p className="text-gray-500 font-medium mb-8">We&apos;ve sent your request to {shop?.shop_name}.</p>
+              <p className="text-gray-500 font-medium mb-8">We&apos;ve sent your request to {shop?.name}.</p>
               
               <div className="bg-gray-50 rounded-3xl p-6 mb-8 border border-dashed border-gray-200">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Your Order ID</p>

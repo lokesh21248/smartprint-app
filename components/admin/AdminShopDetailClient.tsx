@@ -13,21 +13,20 @@ import { Button } from "@/components/ui/button";
 
 import { Shop, Order } from "@/types";
 
-interface AdminShop extends Shop {
-  name: string; // The component uses .name instead of .shop_name
-  owner_email?: string;
-}
-
 interface AdminShopDetailClientProps {
-  shop: AdminShop;
-  orders: Order[];
+  shop: Shop;
+  stats: {
+    totalOrders: number;
+    totalRevenue: number;
+    completedCount: number;
+  };
+  latestOrders: any[];
 }
 
-export function AdminShopDetailClient({ shop, orders }: AdminShopDetailClientProps) {
+export function AdminShopDetailClient({ shop, stats, latestOrders }: AdminShopDetailClientProps) {
   const [isActive, setIsActive] = useState(shop.is_active);
 
-  const completedOrders = orders.filter(o => o.order_status === "COMPLETED");
-  const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+  const totalRevenue = stats.totalRevenue;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -65,7 +64,7 @@ export function AdminShopDetailClient({ shop, orders }: AdminShopDetailClientPro
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Address</p>
-                    <p className="text-sm font-semibold text-gray-800 leading-relaxed">{shop.address}</p>
+                    <p className="text-sm font-semibold text-gray-800 leading-relaxed">{shop.address_line1}</p>
                   </div>
                 </div>
                 <div className="flex gap-4">
@@ -74,7 +73,7 @@ export function AdminShopDetailClient({ shop, orders }: AdminShopDetailClientPro
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Phone</p>
-                    <p className="text-sm font-semibold text-gray-800">{shop.phone}</p>
+                    <p className="text-sm font-semibold text-gray-800">{shop.owner_phone}</p>
                   </div>
                 </div>
               </div>
@@ -115,7 +114,7 @@ export function AdminShopDetailClient({ shop, orders }: AdminShopDetailClientPro
                 <ShoppingBag className="h-5 w-5 text-blue-600" />
               </div>
               <p className="text-[10px] text-blue-800 font-bold uppercase tracking-widest">Total Orders</p>
-              <p className="text-2xl font-black text-blue-900 mt-1">{orders.length}</p>
+              <p className="text-2xl font-black text-blue-900 mt-1">{stats.totalOrders}</p>
             </div>
             <div className="bg-purple-50 rounded-3xl p-6 border border-purple-100">
               <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center mb-4">
@@ -123,7 +122,7 @@ export function AdminShopDetailClient({ shop, orders }: AdminShopDetailClientPro
               </div>
               <p className="text-[10px] text-purple-800 font-bold uppercase tracking-widest">Completion Rate</p>
               <p className="text-2xl font-black text-purple-900 mt-1">
-                {orders.length > 0 ? Math.round((completedOrders.length / orders.length) * 100) : 0}%
+                {stats.totalOrders > 0 ? Math.round((stats.completedCount / stats.totalOrders) * 100) : 0}%
               </p>
             </div>
           </div>

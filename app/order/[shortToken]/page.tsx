@@ -8,7 +8,7 @@ import {
   FileText, RefreshCcw, ExternalLink, AlertCircle, Store
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/public-client";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
 
@@ -228,14 +228,14 @@ export default function OrderStatusPage() {
                 <Store className="w-8 h-8 text-emerald-600" />
               </div>
               <div>
-                <p className="font-black text-xl text-gray-900">{shop.shop_name}</p>
-                <p className="text-gray-500 font-medium leading-relaxed mt-1">{shop.address}</p>
+                <p className="font-black text-xl text-gray-900">{shop.name}</p>
+                <p className="text-gray-500 font-medium leading-relaxed mt-1">{shop.address_line1}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4">
               <a 
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.shop_name + " " + shop.address)}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.name + " " + shop.address_line1)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex-1"
@@ -244,7 +244,7 @@ export default function OrderStatusPage() {
                   <MapPin className="w-4 h-4" /> Directions
                 </Button>
               </a>
-              <a href={`tel:${shop.phone}`} className="flex-1">
+              <a href={`tel:${shop.owner_phone}`} className="flex-1">
                 <Button variant="outline" className="w-full h-14 rounded-2xl border-gray-100 bg-gray-50 hover:bg-white font-black text-xs uppercase tracking-widest gap-2">
                   <Phone className="w-4 h-4" /> Call Shop
                 </Button>
@@ -301,7 +301,7 @@ export default function OrderStatusPage() {
         <div className="text-center space-y-6 pt-6">
           <div className="inline-flex items-center gap-3 px-6 py-3 bg-white rounded-full border border-gray-100 shadow-sm">
             <p className="text-xs text-gray-500 font-bold">
-              Need help? Call the shop at <span className="text-emerald-600 font-black tracking-tight">{shop?.phone}</span>
+              Need help? Call the shop at <span className="text-emerald-600 font-black tracking-tight">{shop?.owner_phone}</span>
             </p>
           </div>
           <div className="flex items-center justify-center gap-4 opacity-30">
