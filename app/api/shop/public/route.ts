@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/shop/public?slug=xxx
  *

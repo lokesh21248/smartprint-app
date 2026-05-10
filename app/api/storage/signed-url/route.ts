@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSignedUrl } from "@/lib/storage";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/storage/signed-url?bucket=order-files&path=shop-id/file.pdf
  *

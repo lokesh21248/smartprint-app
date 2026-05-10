@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/shop/orders-list?shopId=<uuid>&status=<status>&page=<n>
  *
