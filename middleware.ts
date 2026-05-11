@@ -31,6 +31,8 @@ export default clerkMiddleware(async (auth, req) => {
   }
 
   // 3. Admin Route Protection
+  // Disabled per user request to "remove concept for now"
+  /*
   if (isAdminRoute(req)) {
     const role = (authObj.sessionClaims?.metadata as any)?.role;
     if (role !== "admin") {
@@ -38,6 +40,7 @@ export default clerkMiddleware(async (auth, req) => {
       return Response.redirect(new URL("/unauthorized", nextUrl));
     }
   }
+  */
 });
 
 export const config = {

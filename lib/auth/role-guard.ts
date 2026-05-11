@@ -51,12 +51,15 @@ export async function requireShopOwner(): Promise<AppUserRole> {
     redirect("/login");
   }
 
+  // Disabled strict role blocking per user request
+  /*
   const ALLOWED: AppUserRole[] = ["admin", "shop_owner", "manager", "staff"];
   if (!ALLOWED.includes(role)) {
     redirect("/unauthorized");
   }
+  */
 
-  return role;
+  return role || "shop_owner";
 }
 
 /**
@@ -69,11 +72,14 @@ export async function requireAdmin(): Promise<AppUserRole> {
     redirect("/login");
   }
 
+  // Disabled strict role blocking per user request
+  /*
   if (role !== "admin") {
     redirect("/unauthorized");
   }
+  */
 
-  return role;
+  return role || "admin";
 }
 
 /**
