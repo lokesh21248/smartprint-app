@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
-import { validateApiAccess } from "@/lib/auth/role-guard";
+import { getApiRole } from "@/lib/auth/role-guard";
 
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/shop/stats?shopId=<uuid>
- * 
- * Securely calculates dashboard statistics using aggregate queries.
- * Optimized for performance — avoids over-fetching raw rows.
- */
 export async function GET(request: Request) {
   try {
-    // 1. Strict Role Guard
-    const { authorized, response, userId, role } = await validateApiAccess();
-    if (!authorized) return response;
+    const { userId, role } = await getApiRole();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const ALLOWED = ["admin", "shop_owner", "manager", "staff"];
+    if (!role || !ALLOWED.includes(role)) {
+      return NextResponse.json({ error: "Forbidden: Insufficient permissions" }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get("shopId");
@@ -24,7 +23,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "shopId required" }, { status: 400 });
     }
 
-    // Rate limit: 20 requests per minute (dashboard polls/invalidates)
     const { success } = rateLimit(`shop_stats_${userId}`, 20, 60);
     if (!success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
@@ -32,7 +30,6 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    // Verify ownership via inner join on shops
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id")
@@ -47,7 +44,6 @@ export async function GET(request: Request) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Optimized aggregate query: count and sum in one DB round-trip
     const { data: rawStats, error: statsError } = await supabase
       .from("orders")
       .select("total_amount, status, customer_phone, created_at, updated_at")
@@ -55,17 +51,12 @@ export async function GET(request: Request) {
       .gte("created_at", today.toISOString());
 
     if (statsError) {
-      console.error("[GET /api/shop/stats] DB Error:", statsError);
       return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
     }
 
     const orders = rawStats ?? [];
     const completed = orders.filter(o => o.status === 'COMPLETED');
-    
-    // Revenue is already in Rupees in DB
     const revenueToday = completed.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-    
-    // Avg completion time
     const avgMins = completed.length > 0 
       ? completed.reduce((sum, o) => {
           const diff = (new Date(o.updated_at).getTime() - new Date(o.created_at).getTime()) / 60000;
@@ -85,7 +76,6 @@ export async function GET(request: Request) {
     });
 
   } catch (err) {
-    console.error("[GET /api/shop/stats] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
