@@ -40,7 +40,10 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error("[POST /api/sessions] Insert Error:", error);
-      return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
+      return NextResponse.json({ 
+        error: "Failed to create session", 
+        details: error.message || error.details || "Database insert failed"
+      }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, sessionId: data.id });

@@ -180,7 +180,8 @@ export default function QRLandingPage() {
                       if (data.success) {
                         router.push(`/order-upload?shopSlug=${slug}&sessionId=${data.sessionId}&name=${encodeURIComponent(customerName.trim())}`);
                       } else {
-                        toast.error(data.error || "Failed to start session");
+                        const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || "Failed to start session");
+                        toast.error(errorMessage);
                         setIsStartingSession(false);
                       }
                     } catch (err) {

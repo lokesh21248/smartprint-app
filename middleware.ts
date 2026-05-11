@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/shop/public",       // Public shop metadata lookup
   "/api/cron(.*)",          // Vercel Cron jobs (protected by CRON_SECRET, not Clerk)
   "/monitoring(.*)",        // Sentry tunnel — must be public or error reports are blocked
+  "/api/sessions(.*)",      // Public customer session creation
 ]);
 
 
