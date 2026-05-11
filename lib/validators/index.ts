@@ -115,7 +115,7 @@ export const OrderCreateSchema = z.object({
   doubleSided: z.boolean().optional().default(false),
   notes: z.string().max(500).optional(),
   customerName: z.string().trim().min(1, "Customer name is required").max(100),
-  customerPhone: z.string().regex(/^[6-9]\d{9}$/, "Invalid Indian mobile number"),
+  customerPhone: z.string().regex(/^[6-9]\d{9}$/, "Invalid Indian mobile number").optional().or(z.literal("")),
   fileSize: z.coerce.number().int().min(1).max(26_214_400).optional(),
 });
 export type OrderCreateInput = z.infer<typeof OrderCreateSchema>;

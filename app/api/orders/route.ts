@@ -79,10 +79,18 @@ export async function POST(request: Request) {
     }
 
     // ─── Zod Validation (single source of truth for all input constraints) ────
+    console.log("[POST /api/orders] Received payload:", JSON.stringify(rawBody, null, 2));
+
     const parsed = OrderCreateSchema.safeParse(rawBody);
     if (!parsed.success) {
+      console.error("[POST /api/orders] Validation failed:", JSON.stringify(parsed.error.flatten().fieldErrors, null, 2));
       return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { 
+          error: "Validation failed", 
+          details: parsed.error.flatten().fieldErrors,
+          // Extract the first error message to show exactly what's wrong instead of a generic message
+          message: Object.values(parsed.error.flatten().fieldErrors).flat()[0] || "Invalid order details"
+        },
         { status: 400 }
       );
     }

@@ -165,27 +165,68 @@ export default function QRLandingPage() {
                 </div>
                 <Button
                   onClick={async () => {
-                    if (customerName.trim().length < 3) {
-                      toast.error("Please enter a valid name (min 3 characters)");
+                    const trimmedName = customerName.trim();
+                    if (trimmedName.length < 3) {
+                      toast.error("Please enter your name (at least 3 characters).");
                       return;
                     }
                     setIsStartingSession(true);
+
+                    // AbortController: prevents hanging requests on mobile Chrome
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
                     try {
-                      const res = await fetch("/api/sessions", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ customer_name: customerName, shop_slug: slug }),
-                      });
-                      const data = await res.json();
-                      if (data.success) {
-                        router.push(`/order-upload?shopSlug=${slug}&sessionId=${data.sessionId}&name=${encodeURIComponent(customerName.trim())}`);
-                      } else {
-                        const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || "Failed to start session");
-                        toast.error(errorMessage);
+                      let res: Response;
+                      try {
+                        res = await fetch("/api/sessions", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ customer_name: trimmedName, shop_slug: slug }),
+                          signal: controller.signal,
+                        });
+                      } catch (networkErr) {
+                        const isTimeout = networkErr instanceof Error && networkErr.name === "AbortError";
+                        toast.error(isTimeout
+                          ? "Request timed out. Please check your connection and try again."
+                          : "Network error. Please check your connection and try again."
+                        );
                         setIsStartingSession(false);
+                        return;
+                      } finally {
+                        clearTimeout(timeoutId);
                       }
+
+                      let data: { success?: boolean; sessionId?: string; error?: string } = {};
+                      try {
+                        data = await res.json();
+                      } catch {
+                        toast.error("Unexpected server response. Please try again.");
+                        setIsStartingSession(false);
+                        return;
+                      }
+
+                      if (res.ok && data.success && data.sessionId) {
+                        router.push(
+                          `/order-upload?shopSlug=${slug}&sessionId=${data.sessionId}&name=${encodeURIComponent(trimmedName)}`
+                        );
+                        // Don't reset isStartingSession here — navigation is in progress
+                        return;
+                      }
+
+                      // Map specific HTTP status codes to helpful messages
+                      const errorMsg = (() => {
+                        if (res.status === 429) return "Too many requests. Please wait a moment and try again.";
+                        if (res.status === 503) return "Service is temporarily unavailable. Please try again in a few seconds.";
+                        if (res.status === 400) return data.error || "Invalid details entered. Please check and try again.";
+                        return data.error || "Could not start your session. Please try again.";
+                      })();
+
+                      toast.error(errorMsg);
+                      setIsStartingSession(false);
                     } catch (err) {
-                      toast.error("Something went wrong");
+                      console.error("[Session Start] Unhandled error:", err);
+                      toast.error("Something went wrong. Please try again.");
                       setIsStartingSession(false);
                     }
                   }}

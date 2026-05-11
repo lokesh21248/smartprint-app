@@ -49,8 +49,8 @@ function OrderUploadPageInner() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [copies, setCopies] = useState(1);
-  const [isColor, setIsColor] = useState(false);
-  const [isDoubleSided, setIsDoubleSided] = useState(false);
+  const [isColor, setIsColor] = useState(true); // Default to color print
+  const [isDoubleSided, setIsDoubleSided] = useState(false); // Default to single sided
   const [notes, setNotes] = useState("");
 
   // Pre-filled from landing page; editable as fallback
@@ -221,11 +221,11 @@ function OrderUploadPageInner() {
           filePath: storagePath,
           fileName: file.name,
           fileSize: file.size,
-          pageCount,
-          copies,
-          color: isColor,
-          doubleSided: isDoubleSided,
-          notes,
+          pageCount: Math.max(1, parseInt(String(pageCount)) || 1),
+          copies: Math.max(1, parseInt(String(copies)) || 1),
+          color: Boolean(isColor),
+          doubleSided: Boolean(isDoubleSided),
+          notes: notes?.trim() || "",
           customerName: formattedName,
           customerPhone: "",
         }),
@@ -236,12 +236,15 @@ function OrderUploadPageInner() {
         // Navigate before clearing isSubmitting — component unmounts cleanly
         router.push(`/order/${shortToken}`);
       } else {
-        const { error } = await res.json();
-        throw new Error(error || "Order creation failed");
+        const data = await res.json().catch(() => ({}));
+        // Throw specific error message from the backend if available
+        throw new Error(data.message || data.error || "Order creation failed");
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Error placing order";
-      toast.error(message + ". Please try again.");
+      console.error("[Order Submission Error]:", err);
+      // Ensure the error message string doesn't say "Error: Error: ..."
+      const message = err instanceof Error ? err.message.replace(/^Error:\s*/, '') : "Error placing order";
+      toast.error(message);
       setIsSubmitting(false); // Only reset on failure; success navigates away
     }
   };
