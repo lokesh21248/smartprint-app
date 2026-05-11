@@ -84,15 +84,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // ─── Backend Safety Validation (Sanitize Phone) ─────────────────────────
-    if (rawBody.customerPhone) {
-      const rawDigits = String(rawBody.customerPhone).replace(/\D/g, "");
-      const cleanedPhone = (rawDigits.length === 12 && rawDigits.startsWith("91")) 
-        ? rawDigits.slice(2) 
-        : rawDigits;
-      console.log("[POST /api/orders] PHONE BEFORE INSERT:", cleanedPhone);
-      rawBody.customerPhone = cleanedPhone;
+    // ─── Backend Safety Validation (Strict Phone Sanitization) ────────────────
+    const phone = String(rawBody.customerPhone || "").replace(/\D/g, "");
+    const cleanPhone = phone.length >= 10 ? phone.slice(-10) : phone;
+
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      console.error("[POST /api/orders] Invalid phone:", rawBody.customerPhone);
+      return NextResponse.json({ error: "Invalid phone number. Must be 10 digits." }, { status: 400 });
     }
+    rawBody.customerPhone = cleanPhone;
 
     // ─── Zod Validation (single source of truth for all input constraints) ────
     console.log("[POST /api/orders] Received payload:", JSON.stringify(rawBody, null, 2));
@@ -201,14 +201,12 @@ export async function POST(request: Request) {
       .select("id, short_token, customer_name, total_amount, shops(clerk_owner_id)")
       .single();
 
-    console.log("[ORDER API] Supabase response:", { data, error });
-
     if (error) {
-      console.error("[SUPABASE INSERT ERROR]", {
+      console.error("[ORDER INSERT ERROR]", {
         message: error.message,
         details: error.details,
-        hint: error.hint,
         code: error.code,
+        payload: orderInsertPayload
       });
       // Handle DB-level unique constraint violation gracefully (Idempotency)
       if (error.code === "23505") {

@@ -1,15 +1,13 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { NextResponse } from "next/server";
 
 export type AppUserRole = "admin" | "shop_owner" | "manager" | "staff" | "customer";
 
 /**
  * Fetches the authenticated user's role.
- * Source of truth priority:
- *   1. Clerk publicMetadata.role = "admin"
- *   2. Supabase shop_staff.role
- *   3. Fallback → "customer"
+ * Normalizes values from Clerk and Supabase.
  */
 export async function getServerRole(): Promise<AppUserRole | null> {
   const authObj = await auth();
@@ -17,32 +15,36 @@ export async function getServerRole(): Promise<AppUserRole | null> {
 
   if (!userId) return null;
 
-  // 1. Check Clerk publicMetadata for "admin"
-  const clerkRole = (authObj.sessionClaims?.metadata as any)?.role;
+  // 1. Clerk Admin Check
+  const clerkRole = String((authObj.sessionClaims?.metadata as any)?.role || "").toLowerCase();
   if (clerkRole === "admin") return "admin";
 
-  // 2. Fetch role from Supabase shop_staff
+  // 2. Database Check
   try {
     const supabase = createAdminClient();
-    const { data: staffRecord } = await supabase
-      .from("shop_staff")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
+    
+    const [ownerRes, staffRes] = await Promise.all([
+      supabase.from("shops").select("id").eq("clerk_owner_id", userId).maybeSingle(),
+      supabase.from("shop_staff").select("role").eq("user_id", userId).maybeSingle()
+    ]);
 
-    if (staffRecord?.role) {
-      if (staffRecord.role === "owner") return "shop_owner";
-      return staffRecord.role as AppUserRole;
+    if (ownerRes.data) return "shop_owner";
+    
+    if (staffRes.data?.role) {
+      const role = String(staffRes.data.role).trim().toLowerCase();
+      if (role === "owner") return "shop_owner";
+      if (role === "manager") return "manager";
+      if (role === "staff") return "staff";
     }
   } catch (err) {
-    console.error("[Role Guard] Error:", err);
+    console.error("[ROLE GUARD ERROR]", err);
   }
 
   return "customer";
 }
 
 /**
- * Server-side guard for dashboard pages.
+ * Guard for dashboard pages (owners, admins, managers, staff).
  */
 export async function requireShopOwner(): Promise<AppUserRole> {
   const role = await getServerRole();
@@ -51,19 +53,17 @@ export async function requireShopOwner(): Promise<AppUserRole> {
     redirect("/login");
   }
 
-  // Disabled strict role blocking per user request
-  /*
   const ALLOWED: AppUserRole[] = ["admin", "shop_owner", "manager", "staff"];
   if (!ALLOWED.includes(role)) {
+    console.warn(`[Security] Unauthorized access attempt. Role: ${role}`);
     redirect("/unauthorized");
   }
-  */
 
-  return role || "shop_owner";
+  return role;
 }
 
 /**
- * Server-side guard for admin pages.
+ * Guard for admin-only pages.
  */
 export async function requireAdmin(): Promise<AppUserRole> {
   const role = await getServerRole();
@@ -72,23 +72,39 @@ export async function requireAdmin(): Promise<AppUserRole> {
     redirect("/login");
   }
 
-  // Disabled strict role blocking per user request
-  /*
   if (role !== "admin") {
     redirect("/unauthorized");
   }
-  */
 
-  return role || "admin";
+  return role;
 }
 
 /**
- * API route helper.
+ * API-level validation helper.
  */
-export async function getApiRole() {
+export async function validateApiAccess(allowedRoles: AppUserRole[] = ["admin", "shop_owner", "manager", "staff"]) {
   const authObj = await auth();
   const userId = authObj.userId;
-  if (!userId) return { userId: null, role: null };
+
+  if (!userId) {
+    return { authorized: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  }
+
   const role = await getServerRole();
-  return { userId, role };
+  const isAuthorized = role && allowedRoles.includes(role);
+
+  if (!isAuthorized) {
+    console.warn(`[API SECURITY] Blocked ${userId} with role ${role}`);
+    return { 
+      authorized: false, 
+      role,
+      userId,
+      response: NextResponse.json({ 
+        error: "Forbidden", 
+        debug: { userId, role, authorized: false } 
+      }, { status: 403 }) 
+    };
+  }
+
+  return { authorized: true, userId, role };
 }

@@ -1,22 +1,16 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
-import { getApiRole } from "@/lib/auth/role-guard";
+import { validateApiAccess } from "@/lib/auth/role-guard";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
 
 export async function GET(request: Request) {
-  try {
-    const { userId, role } = await getApiRole();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const ALLOWED = ["admin", "shop_owner", "manager", "staff"];
-    if (!role || !ALLOWED.includes(role)) {
-      return NextResponse.json({ error: "Forbidden: Insufficient permissions" }, { status: 403 });
-    }
+    // 1. Strict Role Guard
+    const { authorized, response, userId } = await validateApiAccess(["admin", "shop_owner", "manager", "staff"]);
+    if (!authorized) return response;
 
     const { success } = rateLimit(`orders_list_${userId}`, 200, 60);
     if (!success) {
