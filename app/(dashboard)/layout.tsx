@@ -11,16 +11,15 @@ import { getShopByUserId } from "@/lib/data/shop";
 
 // getShopData removed in favor of cached lib/data/shop.ts
 
+import { requireShopOwner } from "@/lib/auth/role-guard";
+
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  await requireShopOwner();
   const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/login");
-  }
 
   const shop = userId ? await getShopByUserId(userId) : null;
 

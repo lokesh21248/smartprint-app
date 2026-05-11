@@ -15,6 +15,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Role-Based Guard (Defense-in-depth)
+    const { getServerRole } = await import("@/lib/auth/role-guard");
+    const role = await getServerRole();
+    if (role !== "admin" && role !== "shop_owner") {
+      return NextResponse.json({ error: "Forbidden: Only owners can update shop settings" }, { status: 403 });
+    }
+
     // 2. Rate limit — keyed on userId (authenticated write endpoint)
     //    10 updates / 60s is generous for real users, blocks automated abuse.
     const { success: rateLimitOk } = rateLimit(`shop_update_${userId}`, 10, 60);

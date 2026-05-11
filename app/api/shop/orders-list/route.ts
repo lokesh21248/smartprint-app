@@ -27,6 +27,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Role-Based Guard (Defense-in-depth)
+    const { getServerRole } = await import("@/lib/auth/role-guard");
+    const role = await getServerRole();
+    if (role !== "admin" && role !== "shop_owner" && role !== "manager" && role !== "staff") {
+      return NextResponse.json({ error: "Forbidden: Insufficient permissions" }, { status: 403 });
+    }
+
     // 2. Rate limit keyed by userId (200 req/min — dashboard polls every 30s)
     const { success } = rateLimit(`orders_list_${userId}`, 200, 60);
     if (!success) {

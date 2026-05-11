@@ -18,6 +18,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Role-Based Guard (Defense-in-depth)
+    const { getServerRole } = await import("@/lib/auth/role-guard");
+    const role = await getServerRole();
+    if (role !== "admin" && role !== "shop_owner" && role !== "manager" && role !== "staff") {
+      return NextResponse.json({ error: "Forbidden: Insufficient permissions" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get("shopId");
 
