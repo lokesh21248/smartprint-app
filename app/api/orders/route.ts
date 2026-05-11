@@ -73,9 +73,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const rawBody = await request.json().catch(() => null);
-    if (!rawBody) {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    let rawBody;
+    try {
+      rawBody = await request.json();
+    } catch (err) {
+      console.error("[POST /api/orders] JSON Parse Error:", err);
+      return NextResponse.json(
+        { success: false, error: "Invalid JSON request body" },
+        { status: 400 }
+      );
     }
 
     // ─── Zod Validation (single source of truth for all input constraints) ────
@@ -154,32 +160,46 @@ export async function POST(request: Request) {
     }
 
     // Create order using service role to bypass RLS and insert directly as PLACED
+    const orderInsertPayload = {
+      shop_id: shopId,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      customer_ip: ip,
+      file_s3_key: files.length > 0 ? files[0].url : filePath!,
+      file_name: files.length > 0 ? files[0].name : fileName!,
+      file_size_bytes: files.length > 0 ? files[0].size : fileSize,
+      files: files.length > 0 ? files : [
+        { name: fileName, size: fileSize, pages: pageCount, url: filePath }
+      ],
+      page_count: Number(pageCount || 1),
+      copies: Number(copies || 1),
+      is_color: Boolean(color),           // schema column: is_color
+      is_double_sided: Boolean(doubleSided), // schema column: is_double_sided
+      notes: String(notes || "").trim(),
+      total_amount: Number(totalAmount || 0),
+      status: "PLACED",            // schema column: status
+    };
+
+    console.log("[ORDER API] Insert payload:", JSON.stringify(orderInsertPayload, null, 2));
+    
+    // 6. Extra defensive fix: Env Check
+    console.log("[ENV CHECK] SUPABASE_SERVICE_ROLE_KEY present:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+
     const { data, error } = await supabase
       .from("orders")
-      .insert({
-        shop_id: shopId,
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        customer_ip: ip,
-        file_s3_key: files.length > 0 ? files[0].url : filePath!,
-        file_name: files.length > 0 ? files[0].name : fileName!,
-        file_size_bytes: files.length > 0 ? files[0].size : fileSize,
-        files: files.length > 0 ? files : [
-          { name: fileName, size: fileSize, pages: pageCount, url: filePath }
-        ],
-        page_count: pageCount,
-        copies: copies,
-        is_color: !!color,           // schema column: is_color
-        is_double_sided: !!doubleSided, // schema column: is_double_sided
-        notes: notes || null,
-        total_amount: totalAmount,
-        status: "PLACED",            // schema column: status
-      })
+      .insert(orderInsertPayload)
       .select("id, short_token, customer_name, total_amount, shops(clerk_owner_id)")
       .single();
 
+    console.log("[ORDER API] Supabase response:", { data, error });
+
     if (error) {
-      console.error("[POST /api/orders] ❌ Insert Error:", error);
+      console.error("[SUPABASE INSERT ERROR]", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       // Handle DB-level unique constraint violation gracefully (Idempotency)
       if (error.code === "23505") {
         const { data: existing } = await supabase
@@ -204,7 +224,12 @@ export async function POST(request: Request) {
         );
       }
       return NextResponse.json(
-        { error: "Failed to create order" },
+        {
+          success: false,
+          error: error.message,
+          details: error.details,
+          code: error.code,
+        },
         { status: 500 }
       );
     }

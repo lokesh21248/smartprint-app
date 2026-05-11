@@ -231,12 +231,20 @@ function OrderUploadPageInner() {
         }),
       });
 
+      const raw = await res.text();
+      console.log("RAW API RESPONSE:", raw);
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error("Server returned invalid JSON");
+      }
+
       if (res.ok) {
-        const { shortToken } = await res.json();
         // Navigate before clearing isSubmitting — component unmounts cleanly
-        router.push(`/order/${shortToken}`);
+        router.push(`/order/${data.shortToken}`);
       } else {
-        const data = await res.json().catch(() => ({}));
         // Throw specific error message from the backend if available
         throw new Error(data.message || data.error || "Order creation failed");
       }
