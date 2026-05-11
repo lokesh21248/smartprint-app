@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 
 export async function GET(request: Request) {
+  try {
     // 1. Strict Role Guard
     const { authorized, response, userId } = await validateApiAccess(["admin", "shop_owner", "manager", "staff"]);
     if (!authorized) return response;
