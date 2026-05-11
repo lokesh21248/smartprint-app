@@ -84,6 +84,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // ─── Backend Safety Validation (Sanitize Phone) ─────────────────────────
+    if (rawBody.customerPhone) {
+      const rawDigits = String(rawBody.customerPhone).replace(/\D/g, "");
+      const cleanedPhone = (rawDigits.length === 12 && rawDigits.startsWith("91")) 
+        ? rawDigits.slice(2) 
+        : rawDigits;
+      console.log("[POST /api/orders] PHONE BEFORE INSERT:", cleanedPhone);
+      rawBody.customerPhone = cleanedPhone;
+    }
+
     // ─── Zod Validation (single source of truth for all input constraints) ────
     console.log("[POST /api/orders] Received payload:", JSON.stringify(rawBody, null, 2));
 

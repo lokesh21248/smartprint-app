@@ -14,12 +14,14 @@ import {
   Zap,
   Clock,
   Printer,
-  ChevronRight
+  ChevronRight,
+  Phone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
+import { useUser } from "@clerk/nextjs";
 
 interface ShopDisplay {
   id?: string;
@@ -53,8 +55,23 @@ function OrderUploadPageInner() {
   const [isDoubleSided, setIsDoubleSided] = useState(false); // Default to single sided
   const [notes, setNotes] = useState("");
 
-  // Pre-filled from landing page; editable as fallback
+  const { user, isLoaded } = useUser();
+
+  // Pre-filled from landing page or user; editable as fallback
   const [customerName, setCustomerName] = useState(nameParam);
+  const [customerPhone, setCustomerPhone] = useState("");
+
+  // Initialize from Clerk if logged in
+  useEffect(() => {
+    if (isLoaded && user) {
+      if (!nameParam && user.fullName) {
+        setCustomerName(user.fullName);
+      }
+      if (user.primaryPhoneNumber) {
+        setCustomerPhone(user.primaryPhoneNumber.phoneNumber);
+      }
+    }
+  }, [isLoaded, user, nameParam]);
 
   const [pdfParseFailed, setPdfParseFailed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -169,6 +186,17 @@ function OrderUploadPageInner() {
       return;
     }
 
+    // ─── Frontend Safety Validation (Sanitize & Validate Phone) ─────────────
+    const rawDigits = customerPhone.replace(/\D/g, "");
+    const cleanedPhone = (rawDigits.length === 12 && rawDigits.startsWith("91")) 
+      ? rawDigits.slice(2) 
+      : rawDigits;
+    
+    if (cleanedPhone.length !== 10) {
+      toast.error("Enter valid 10-digit phone number");
+      return;
+    }
+
     // Capitalize words
     const formattedName = customerName
       .trim()
@@ -180,7 +208,6 @@ function OrderUploadPageInner() {
 
     try {
       // ── Step 1: Get a signed upload URL from our server ──────────────────────
-      // This is a tiny JSON request — Vercel only validates, it never touches the file.
       const presignRes = await fetch("/api/storage/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -200,8 +227,6 @@ function OrderUploadPageInner() {
       const { signedUrl, storagePath } = await presignRes.json();
 
       // ── Step 2: PUT file DIRECTLY to Supabase Storage ───────────────────────
-      // This request goes browser → Supabase, never touching Vercel.
-      // Works for any file size up to 25 MB with zero Vercel timeout risk.
       const uploadRes = await fetch(signedUrl, {
         method: "PUT",
         headers: { "Content-Type": file.type },
@@ -211,8 +236,8 @@ function OrderUploadPageInner() {
       if (!uploadRes.ok) {
         throw new Error("File upload to storage failed");
       }
-
-      // ── Step 3: Create order record with just file metadata ──────────────────
+      
+      // ── Step 3: Create order record with sanitized phone ──────────────────
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -227,7 +252,7 @@ function OrderUploadPageInner() {
           doubleSided: Boolean(isDoubleSided),
           notes: notes?.trim() || "",
           customerName: formattedName,
-          customerPhone: "",
+          customerPhone: cleanedPhone, // Send sanitized 10-digit phone
         }),
       });
 
@@ -410,10 +435,10 @@ function OrderUploadPageInner() {
               </div>
             </div>
 
-            {/* Customer name fallback — shown only if not pre-filled from landing page */}
-            {!nameParam && (
-              <div className="mt-6 p-6 bg-gray-50 rounded-3xl border border-gray-100">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 block">Your Name</label>
+            {/* Name & Phone Info */}
+            <div className="mt-6 space-y-4">
+              <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 block">Full Name</label>
                 <div className="relative group">
                   <User className="absolute left-4 top-4 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
                   <input
@@ -424,9 +449,25 @@ function OrderUploadPageInner() {
                   />
                 </div>
               </div>
-            )}
 
-            <div className="bg-emerald-600 rounded-[2rem] p-8 text-white flex items-center justify-between shadow-xl shadow-emerald-600/20">
+              <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 block">Mobile Number</label>
+                <div className="relative group">
+                  <Phone className="absolute left-4 top-4 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
+                  <input
+                    placeholder="10-digit mobile number"
+                    type="tel"
+                    maxLength={10}
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    className="w-full pl-12 h-14 rounded-2xl border border-gray-200 bg-white text-base font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400 font-bold mt-2 ml-1">For order updates & pickup notifications</p>
+              </div>
+            </div>
+
+            <div className="mt-8 bg-emerald-600 rounded-[2rem] p-8 text-white flex items-center justify-between shadow-xl shadow-emerald-600/20">
               <div>
                 <p className="text-emerald-100 font-bold uppercase tracking-widest text-[10px] mb-1">Estimated Total</p>
                 <p className="text-4xl font-black">{formatCurrency(totalAmount)}</p>
@@ -434,7 +475,7 @@ function OrderUploadPageInner() {
               </div>
               <Button
                 onClick={handlePlaceOrder}
-                disabled={isSubmitting || !customerName || customerName.trim().length < 3}
+                disabled={isSubmitting || !customerName || customerName.trim().length < 3 || customerPhone.length < 10}
                 className="bg-white text-emerald-700 px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:scale-100"
               >
                 {isSubmitting ? (
