@@ -1,10 +1,7 @@
-import { redirect } from "next/navigation";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminTopBar } from "@/components/admin/AdminTopBar";
-
 import { requireAdmin } from "@/lib/auth/role-guard";
-import { currentUser } from "@clerk/nextjs/server";
 
 export default async function AdminLayout({
   children,

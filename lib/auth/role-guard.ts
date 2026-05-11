@@ -1,57 +1,59 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { NextResponse } from "next/server";
 
-export type UserRole = "admin" | "shop_owner" | "manager" | "staff" | "customer";
+export type AppUserRole = "admin" | "shop_owner" | "manager" | "staff" | "customer";
 
 /**
- * Fetches the user's role from Supabase or Clerk Metadata.
- * Prioritizes the database as the source of truth for security.
+ * Fetches the authenticated user's role from Clerk (for admins) or Supabase (for shop staff).
+ * Source of truth:
+ *   1. Clerk publicMetadata.role === "admin"
+ *   2. Supabase shop_staff table (owner, manager, staff)
+ *   3. Fallback: "customer"
  */
-export async function getServerRole(): Promise<UserRole> {
+export async function getServerRole(): Promise<AppUserRole | null> {
   const authObj = await auth();
   const userId = authObj.userId;
 
-  if (!userId) return "customer";
+  if (!userId) return null;
 
-  // 1. Check for Super Admin in Clerk Metadata (for internal team)
-  const clerkRole = authObj.sessionClaims?.metadata?.role as string | undefined;
+  // 1. Check Clerk Metadata for global admin (Fastest)
+  const clerkRole = (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role as string | undefined;
   if (clerkRole === "admin") return "admin";
 
-  // 2. Fetch role from Supabase shop_staff table (Source of Truth)
-  // We use the admin client to bypass RLS for this specific check
-  const supabase = createAdminClient();
-  const { data: staffRecord, error } = await supabase
-    .from("shop_staff")
-    .select("role")
-    .eq("user_id", userId)
-    .maybeSingle();
+  // 2. Check Supabase for shop-specific roles
+  try {
+    const supabase = createAdminClient();
+    const { data: staffRecord } = await supabase
+      .from("shop_staff")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (error) {
-    console.error("[Role Guard] DB Error:", error.message);
+    if (staffRecord?.role) {
+      if (staffRecord.role === "owner") return "shop_owner";
+      return staffRecord.role as AppUserRole;
+    }
+  } catch (err) {
+    console.error("[Security] Role lookup failed:", err);
   }
-
-  if (staffRecord?.role) {
-    // Map internal DB roles to our UserRole type
-    if (staffRecord.role === "owner") return "shop_owner";
-    return staffRecord.role as UserRole;
-  }
-
-  // 3. Fallback to Clerk Metadata if DB record is missing but metadata exists
-  if (clerkRole) return clerkRole as UserRole;
 
   return "customer";
 }
 
 /**
- * Server-side guard to ensure only admins or shop owners can access.
- * Usage: await requireShopOwner(); at the top of Server Components or Layouts.
+ * Page-level guard for Server Components (Layouts/Pages).
+ * Redirects to /unauthorized if role is not allowed.
  */
 export async function requireShopOwner() {
   const role = await getServerRole();
   
-  if (role !== "admin" && role !== "shop_owner") {
-    console.warn(`[Security] Unauthorized access attempt by user. Role: ${role}`);
+  if (!role) redirect("/login");
+  
+  const ALLOWED: AppUserRole[] = ["admin", "shop_owner"];
+  if (!ALLOWED.includes(role)) {
+    console.warn(`[Security] Unauthorized page access attempt. Role: ${role}`);
     redirect("/unauthorized");
   }
   
@@ -59,15 +61,47 @@ export async function requireShopOwner() {
 }
 
 /**
- * Server-side guard to ensure only site-wide admins can access.
+ * Page-level guard for global admin pages.
  */
 export async function requireAdmin() {
   const role = await getServerRole();
   
+  if (!role) redirect("/login");
+  
   if (role !== "admin") {
-    console.warn(`[Security] Unauthorized admin access attempt.`);
+    console.warn(`[Security] Unauthorized admin access attempt. Role: ${role}`);
     redirect("/unauthorized");
   }
   
   return role;
+}
+
+/**
+ * API-level guard for Route Handlers.
+ * Returns { authorized: boolean, response?: NextResponse, userId: string, role: AppUserRole }
+ */
+export async function validateApiAccess(allowedRoles: AppUserRole[] = ["admin", "shop_owner"]) {
+  const authObj = await auth();
+  const userId = authObj.userId;
+
+  if (!userId) {
+    return {
+      authorized: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+  }
+
+  const role = await getServerRole();
+  
+  if (!role || !allowedRoles.includes(role)) {
+    console.warn(`[Security] Unauthorized API access attempt. Role: ${role}`);
+    return {
+      authorized: false,
+      response: NextResponse.json({ error: "Forbidden: Access Denied" }, { status: 403 }),
+      userId,
+      role: role || "customer"
+    };
+  }
+
+  return { authorized: true, userId, role };
 }

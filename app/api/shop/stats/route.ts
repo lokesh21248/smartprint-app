@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
+import { validateApiAccess } from "@/lib/auth/role-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,17 +13,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Role-Based Guard (Defense-in-depth)
-    const { getServerRole } = await import("@/lib/auth/role-guard");
-    const role = await getServerRole();
-    if (role !== "admin" && role !== "shop_owner" && role !== "manager" && role !== "staff") {
-      return NextResponse.json({ error: "Forbidden: Insufficient permissions" }, { status: 403 });
-    }
+    // 1. Strict Role Guard
+    const { authorized, response, userId, role } = await validateApiAccess();
+    if (!authorized) return response;
 
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get("shopId");

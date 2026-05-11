@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
+import { validateApiAccess } from "@/lib/auth/role-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -21,18 +21,9 @@ const PAGE_SIZE = 50; // orders per page — enough for one screen, efficient fo
 
 export async function GET(request: Request) {
   try {
-    // 1. Auth check
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Role-Based Guard (Defense-in-depth)
-    const { getServerRole } = await import("@/lib/auth/role-guard");
-    const role = await getServerRole();
-    if (role !== "admin" && role !== "shop_owner" && role !== "manager" && role !== "staff") {
-      return NextResponse.json({ error: "Forbidden: Insufficient permissions" }, { status: 403 });
-    }
+    // 1. Strict Role Guard
+    const { authorized, response, userId } = await validateApiAccess();
+    if (!authorized) return response;
 
     // 2. Rate limit keyed by userId (200 req/min — dashboard polls every 30s)
     const { success } = rateLimit(`orders_list_${userId}`, 200, 60);
