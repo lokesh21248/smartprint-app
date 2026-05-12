@@ -75,6 +75,7 @@ function OrderUploadPageInner() {
 
   const [pdfParseFailed, setPdfParseFailed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [timeoutError, setTimeoutError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load shop
@@ -205,6 +206,13 @@ function OrderUploadPageInner() {
       .join(' ');
 
     setIsSubmitting(true);
+    setTimeoutError(false);
+
+    // AbortController for 25s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 25000);
 
     try {
       // ── Step 1: Get a signed upload URL from our server ──────────────────────
@@ -217,6 +225,7 @@ function OrderUploadPageInner() {
           fileSize: file.size,
           mimeType: file.type,
         }),
+        signal: controller.signal,
       });
 
       if (!presignRes.ok) {
@@ -254,6 +263,7 @@ function OrderUploadPageInner() {
           customerName: formattedName,
           customerPhone: cleanedPhone, // Send sanitized 10-digit phone
         }),
+        signal: controller.signal,
       });
 
       const raw = await res.text();
@@ -275,10 +285,19 @@ function OrderUploadPageInner() {
       }
     } catch (err) {
       console.error("[Order Submission Error]:", err);
-      // Ensure the error message string doesn't say "Error: Error: ..."
-      const message = err instanceof Error ? err.message.replace(/^Error:\s*/, '') : "Error placing order";
-      toast.error(message);
       setIsSubmitting(false); // Only reset on failure; success navigates away
+      
+      const isTimeout = (err as Error).name === "AbortError";
+      if (isTimeout) {
+        setTimeoutError(true);
+        toast.error("Server is taking longer than expected. Please retry.");
+      } else {
+        // Ensure the error message string doesn't say "Error: Error: ..."
+        const message = err instanceof Error ? err.message.replace(/^Error:\s*/, '') : "Error placing order";
+        toast.error(message);
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -480,6 +499,8 @@ function OrderUploadPageInner() {
               >
                 {isSubmitting ? (
                   <Loader2 className="animate-spin w-5 h-5" />
+                ) : timeoutError ? (
+                  <>Retry Order <ChevronRight className="w-5 h-5" /></>
                 ) : (
                   <>Place Order <ChevronRight className="w-5 h-5" /></>
                 )}

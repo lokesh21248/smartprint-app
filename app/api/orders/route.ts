@@ -3,6 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 import { OrderCreateSchema } from "@/lib/validators";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 // ---------------------------------------------------------------------------
 // Shop Pricing Cache — eliminates one DB round-trip per order creation
 // TTL: 60 seconds. Shops rarely change pricing mid-session.
@@ -58,6 +61,7 @@ async function getShopPricing(
  * Ensure future month partitions exist (run Section 7 of PRODUCTION_MAINTENANCE.sql monthly).
  */
 export async function POST(request: Request) {
+  console.time("order-api");
   try {
     // Initialize Supabase admin client (fresh instance per request)
     const supabase = createAdminClient();
@@ -142,6 +146,7 @@ export async function POST(request: Request) {
 
       if (existingOrder) {
         console.warn("[POST /api/orders] Duplicate order detected, returning existing:", existingOrder.id);
+        console.timeEnd("order-api");
         return NextResponse.json({
           success: true,
           orderId: existingOrder.id,
@@ -155,6 +160,7 @@ export async function POST(request: Request) {
     // Fetch shop pricing via cache (server-side calculation, cache TTL: 60s)
     const shopPricing = await getShopPricing(shopId);
     if (!shopPricing) {
+      console.timeEnd("order-api");
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
@@ -166,6 +172,7 @@ export async function POST(request: Request) {
 
     // Guard: never allow a zero-amount order (misconfigured shop pricing)
     if (totalAmount <= 0) {
+      console.timeEnd("order-api");
       return NextResponse.json({ error: "Shop pricing is not configured" }, { status: 422 });
     }
 
@@ -208,6 +215,8 @@ export async function POST(request: Request) {
         code: error.code,
         payload: orderInsertPayload
       });
+      console.error("FULL ERROR:", error);
+      
       // Handle DB-level unique constraint violation gracefully (Idempotency)
       if (error.code === "23505") {
         const { data: existing } = await supabase
@@ -220,6 +229,7 @@ export async function POST(request: Request) {
           .limit(1)
           .maybeSingle();
 
+        console.timeEnd("order-api");
         return NextResponse.json(
           { 
             error: "Duplicate order detected.",
@@ -231,6 +241,7 @@ export async function POST(request: Request) {
           { status: 409 }
         );
       }
+      console.timeEnd("order-api");
       return NextResponse.json(
         {
           success: false,
@@ -247,13 +258,16 @@ export async function POST(request: Request) {
     // Trigger owner notification
     const shopData = data.shops as unknown as Record<string, unknown>;
     if (shopData?.clerk_owner_id) {
-      const { NotificationService } = await import("@/lib/notifications");
-      await NotificationService.alertNewOrder(shopData.clerk_owner_id as string, {
-        customer_name: data.customer_name,
-        total_amount: data.total_amount,
-      });
+      // Background execution: DO NOT AWAIT to avoid blocking response
+      import("@/lib/notifications").then(({ NotificationService }) => {
+        NotificationService.alertNewOrder(shopData.clerk_owner_id as string, {
+          customer_name: data.customer_name,
+          total_amount: data.total_amount,
+        }).catch((err: any) => console.error("FULL ERROR:", err));
+      }).catch((err: any) => console.error("FULL ERROR:", err));
     }
 
+    console.timeEnd("order-api");
     return NextResponse.json({
       success: true,
       orderId: data.id,
@@ -261,7 +275,8 @@ export async function POST(request: Request) {
       totalAmount,
     });
   } catch (err) {
-    console.error("[POST /api/orders]", err);
+    console.error("FULL ERROR:", err);
+    console.timeEnd("order-api");
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

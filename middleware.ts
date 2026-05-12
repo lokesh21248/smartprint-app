@@ -10,6 +10,8 @@ const isPublicRoute = createRouteMatcher([
   "/unauthorized(.*)",
   "/api/shop/public",
   "/api/orders(.*)",
+  "/api/storage(.*)",
+  "/api/sessions(.*)",
   "/s/(.*)",
   "/order/(.*)",
   "/find-shop(.*)",
