@@ -263,7 +263,7 @@ export async function POST(request: Request) {
         NotificationService.alertNewOrder(shopData.clerk_owner_id as string, {
           customer_name: data.customer_name,
           total_amount: data.total_amount,
-        }).catch((err: any) => console.error("FULL ERROR:", err));
+        });
       }).catch((err: any) => console.error("FULL ERROR:", err));
     }
 

@@ -98,7 +98,7 @@ export async function POST(request: Request) {
           }
         }
 
-        const storagePaths = [...paths];
+        const storagePaths = Array.from(paths);
         let storageOk = true; // tracks whether it's safe to delete the DB row
 
         // ── Delete storage files FIRST ──────────────────────────────────────
@@ -236,12 +236,17 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : "Unknown critical error";
     console.error("[cleanup] CRITICAL FAILURE:", message);
 
-    // Best-effort log even on critical failure
-    await supabase.from("cleanup_logs").insert({
-      deleted_count: stats.ordersDeleted,
-      status: "FAILED",
-      errors: message,
-    }).catch(() => {/* swallow log error */});
+    // Best-effort log even on critical failure — wrapped in try/catch because
+    // Supabase query builders are not native Promises and do not expose .catch()
+    try {
+      await supabase.from("cleanup_logs").insert({
+        deleted_count: stats.ordersDeleted,
+        status: "FAILED",
+        errors: message,
+      });
+    } catch {
+      // swallow log error so the real failure response is always returned
+    }
 
     return NextResponse.json(
       { success: false, error: "Cleanup failed", message, elapsedMs: Date.now() - runStart },
