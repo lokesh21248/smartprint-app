@@ -7,13 +7,15 @@ const isPublicRoute = createRouteMatcher([
   "/login(.*)",
   "/signup(.*)",
   "/register(.*)",
+  "/forgot-password(.*)",
   "/unauthorized(.*)",
-  "/api/shop/public",
+  "/api/shop/public(.*)",
   "/api/orders(.*)",
   "/api/storage(.*)",
   "/api/sessions(.*)",
   "/s/(.*)",
   "/order/(.*)",
+  "/order-upload(.*)",
   "/find-shop(.*)",
 ]);
 
@@ -79,15 +81,6 @@ export default clerkMiddleware(async (auth, req) => {
       
       const allowedRoles = ["owner", "manager", "staff"];
       const isAuthorized = isOwner || allowedRoles.includes(staffRole);
-
-      // [AUTH DEBUG]
-      console.log("[AUTH DEBUG]", {
-        userId,
-        isOwner,
-        staffRole,
-        pathname,
-        isAuthorized
-      });
 
       if (!isAuthorized) {
         return NextResponse.redirect(new URL("/unauthorized", req.url));

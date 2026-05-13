@@ -172,29 +172,42 @@ export default function QRLandingPage() {
                     }
                     setIsStartingSession(true);
 
-                    // AbortController: prevents hanging requests on mobile Chrome
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-                    try {
-                      let res: Response;
+                    // Helper: single fetch attempt with timeout
+                    const attemptSession = async (timeoutMs: number): Promise<Response> => {
+                      const controller = new AbortController();
+                      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
                       try {
-                        res = await fetch("/api/sessions", {
+                        return await fetch("/api/sessions", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ customer_name: trimmedName, shop_slug: slug }),
                           signal: controller.signal,
                         });
-                      } catch (networkErr) {
-                        const isTimeout = networkErr instanceof Error && networkErr.name === "AbortError";
-                        toast.error(isTimeout
-                          ? "Request timed out. Please check your connection and try again."
-                          : "Network error. Please check your connection and try again."
-                        );
-                        setIsStartingSession(false);
-                        return;
                       } finally {
                         clearTimeout(timeoutId);
+                      }
+                    };
+
+                    try {
+                      let res: Response;
+                      try {
+                        // First attempt: 25s timeout (accounts for Vercel cold start + Clerk middleware)
+                        res = await attemptSession(25000);
+                      } catch (firstErr) {
+                        // One automatic retry on network failure (transient mobile drop)
+                        try {
+                          await new Promise((r) => setTimeout(r, 1500));
+                          res = await attemptSession(20000);
+                        } catch (retryErr) {
+                          const isTimeout = retryErr instanceof Error && retryErr.name === "AbortError";
+                          toast.error(
+                            isTimeout
+                              ? "Request timed out. Please check your connection and try again."
+                              : "Connection failed. Please check your network and try again."
+                          );
+                          setIsStartingSession(false);
+                          return;
+                        }
                       }
 
                       let data: { success?: boolean; sessionId?: string; error?: string } = {};
