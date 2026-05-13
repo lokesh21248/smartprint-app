@@ -6,7 +6,7 @@ import type { Order } from "@/types";
 import { getShopByUserId } from "@/lib/data/shop";
 
 export const metadata: Metadata = { title: "Orders" };
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 async function getInitialOrders(userId: string): Promise<{ orders: Order[]; shopId: string }> {
   try {
@@ -36,9 +36,8 @@ async function getInitialOrders(userId: string): Promise<{ orders: Order[]; shop
         updated_at
       `)
       .eq("shop_id", shop.id)
-      .in("status", ["PLACED", "ACCEPTED", "PRINTING"])
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(100);
 
     const mappedOrders: Order[] = (data ?? []).map((ord) => ({
       id: ord.id as string,

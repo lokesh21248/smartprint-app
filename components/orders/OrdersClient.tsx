@@ -53,11 +53,12 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     queryKey: ["orders", shopId],
     queryFn: () => fetchOrders(shopId),
     initialData: initialOrders,
+    initialDataUpdatedAt: 0, // Force background fetch on mount to get ALL statuses since initialOrders is partial
     // Realtime subscription keeps cache fresh — no polling needed.
-    // Only re-fetch when the window regains focus after 5+ minutes away.
-    staleTime: 5 * 60 * 1000,
+    // Only re-fetch when the window regains focus after 1 minute away.
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnReconnect: true,
   });
 
@@ -88,9 +89,17 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     if (dateFilter === "today") {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      orders = orders.filter(
-        (o) => new Date(o.created_at) >= today
-      );
+      orders = orders.filter((o) => new Date(o.created_at) >= today);
+    } else if (dateFilter === "week") {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      weekAgo.setHours(0, 0, 0, 0);
+      orders = orders.filter((o) => new Date(o.created_at) >= weekAgo);
+    } else if (dateFilter === "month") {
+      const monthAgo = new Date();
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      monthAgo.setHours(0, 0, 0, 0);
+      orders = orders.filter((o) => new Date(o.created_at) >= monthAgo);
     }
 
     orders = [...orders].sort((a, b) => {
