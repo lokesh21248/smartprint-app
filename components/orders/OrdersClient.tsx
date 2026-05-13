@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OrderCard } from "@/components/orders/OrderCard";
 import { OrderFilters } from "@/components/orders/OrderFilters";
-import { OrderCardSkeleton } from "@/components/ui/skeleton";
+import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
 import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
 import type { Order, OrderStatus } from "@/types";
 
 const TABS: { value: OrderStatus | "ALL"; label: string }[] = [
+  { value: "ALL", label: "All" },
   { value: "PLACED", label: "New" },
   { value: "ACCEPTED", label: "Accepted" },
   { value: "PRINTING", label: "Printing" },
@@ -19,18 +21,15 @@ const TABS: { value: OrderStatus | "ALL"; label: string }[] = [
   { value: "CANCELLED", label: "Cancelled" },
 ];
 
-
-
 /**
- * Fetches orders via server API route (uses admin client server-side).
- * Avoids exposing DB schema to browser; correctly maps is_color → color,
- * is_double_sided → double_sided, status → order_status.
+ * Fetches orders via server API route.
  */
 async function fetchOrders(shopId: string): Promise<Order[]> {
+  if (!shopId) return [];
   const res = await fetch(`/api/shop/orders-list?shopId=${encodeURIComponent(shopId)}`, {
     credentials: "include",
     cache: "no-store",
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) return [];
   const data = await res.json();
@@ -43,71 +42,78 @@ interface OrdersClientProps {
 }
 
 export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<string>("PLACED");
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"time" | "amount">("time");
-  const [dateFilter, setDateFilter] = useState<string>("today");
 
-  const { data: allOrders = initialOrders, isLoading } = useQuery({
+  // URL State Management
+  const activeTab = searchParams.get("status") || "ALL";
+  const search = searchParams.get("q") || "";
+  const sortBy = (searchParams.get("sort") as "newest" | "amount") || "newest";
+  const dateFilter = searchParams.get("date") || "all";
+
+  const updateUrl = useCallback((updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    });
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  const { data: allOrders = initialOrders, isLoading, isFetching } = useQuery({
     queryKey: ["orders", shopId],
     queryFn: () => fetchOrders(shopId),
     initialData: initialOrders,
-    initialDataUpdatedAt: 0, // Force background fetch on mount to get ALL statuses since initialOrders is partial
-    // Realtime subscription keeps cache fresh — no polling needed.
-    // Only re-fetch when the window regains focus after 1 minute away.
-    staleTime: 60 * 1000,
-    refetchOnWindowFocus: true,
+    staleTime: 0,
+    gcTime: 5 * 60 * 1000,
     refetchOnMount: true,
     refetchOnReconnect: true,
+    refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev,
   });
 
   useRealtimeOrders(shopId);
 
   const tabCounts = useMemo(() => {
-    return TABS.reduce(
-      (acc, tab) => {
-        acc[tab.value] = allOrders.filter((o) => o.order_status === tab.value).length;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
+    return TABS.reduce((acc, tab) => {
+      acc[tab.value] = tab.value === "ALL" 
+        ? allOrders.length 
+        : allOrders.filter((o) => o.order_status === tab.value).length;
+      return acc;
+    }, {} as Record<string, number>);
   }, [allOrders]);
 
   const filteredOrders = useMemo(() => {
-    let orders = allOrders.filter((o) => o.order_status === activeTab);
+    let orders = activeTab === "ALL" 
+      ? allOrders 
+      : allOrders.filter((o) => o.order_status === activeTab);
 
     if (search.trim()) {
       const q = search.toLowerCase();
       orders = orders.filter(
         (o) =>
           o.customer_name?.toLowerCase().includes(q) ||
-          o.customer_phone?.includes(q)
+          o.customer_phone?.includes(q) ||
+          o.short_token?.toLowerCase().includes(q)
       );
     }
 
-    if (dateFilter === "today") {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      orders = orders.filter((o) => new Date(o.created_at) >= today);
-    } else if (dateFilter === "week") {
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
-      orders = orders.filter((o) => new Date(o.created_at) >= weekAgo);
-    } else if (dateFilter === "month") {
-      const monthAgo = new Date();
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
-      monthAgo.setHours(0, 0, 0, 0);
-      orders = orders.filter((o) => new Date(o.created_at) >= monthAgo);
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const compareDate = new Date();
+      if (dateFilter === "today") compareDate.setHours(0, 0, 0, 0);
+      else if (dateFilter === "week") compareDate.setDate(now.getDate() - 7);
+      else if (dateFilter === "month") compareDate.setMonth(now.getMonth() - 1);
+      
+      orders = orders.filter((o) => new Date(o.created_at) >= compareDate);
     }
 
-    orders = [...orders].sort((a, b) => {
+    return [...orders].sort((a, b) => {
       if (sortBy === "amount") return b.total_amount - a.total_amount;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-
-    return orders;
   }, [allOrders, activeTab, search, sortBy, dateFilter]);
 
   const handleStatusChange = useCallback(
@@ -121,42 +127,42 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     [queryClient, shopId]
   );
 
+  // Show skeleton only on initial load when no data exists
+  if (isLoading && allOrders.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="h-11 w-full bg-gray-100 animate-pulse rounded-xl" />
+        <OrdersSkeleton />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      {/* Filters */}
       <OrderFilters
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(v) => updateUrl({ q: v || null })}
         sortBy={sortBy}
-        onSortChange={setSortBy}
+        onSortChange={(v) => updateUrl({ sort: v })}
         dateFilter={dateFilter}
-        onDateFilterChange={setDateFilter}
+        onDateFilterChange={(v) => updateUrl({ date: v })}
       />
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="overflow-x-auto">
-          <TabsList className="h-auto flex-nowrap w-max gap-1">
+      <Tabs value={activeTab} onValueChange={(v) => updateUrl({ status: v })}>
+        <div className="overflow-x-auto no-scrollbar">
+          <TabsList className="h-auto flex-nowrap w-max gap-1 bg-transparent p-0">
             {TABS.map((tab) => (
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
                 id={`tab-${tab.value}`}
-                className="min-w-[80px]"
+                className="min-w-[80px] rounded-xl data-[state=active]:bg-[#2E8B57] data-[state=active]:text-white transition-all"
               >
                 <span>{tab.label}</span>
                 {tabCounts[tab.value] > 0 && (
-                  <span
-                    className={`ml-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${
-                    tab.value === "PLACED"
-                      ? "bg-red-100 text-red-700"
-                      : tab.value === "PRINTING" || tab.value === "ACCEPTED"
-                      ? "bg-orange-100 text-orange-700"
-                      : tab.value === "READY"
-                      ? "bg-green-100 text-green-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                  >
+                  <span className={`ml-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    activeTab === tab.value ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
+                  }`}>
                     {tabCounts[tab.value]}
                   </span>
                 )}
@@ -166,35 +172,27 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
         </div>
 
         {TABS.map((tab) => (
-          <TabsContent key={tab.value} value={tab.value}>
-            {isLoading ? (
-              <div className="space-y-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <OrderCardSkeleton key={i} />
-                ))}
-              </div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-[#F3F4F6] flex items-center justify-center mb-4">
-                  <span className="text-3xl">
-                    {tab.value === "PLACED" ? "📬" : tab.value === "COMPLETED" ? "✅" : "🖨️"}
+          <TabsContent key={tab.value} value={tab.value} className="mt-6 focus-visible:outline-none">
+            {filteredOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in zoom-in duration-300">
+                <div className="w-20 h-20 rounded-3xl bg-gray-50 flex items-center justify-center mb-6 shadow-sm border border-gray-100">
+                  <span className="text-4xl">
+                    {tab.value === "PLACED" ? "📬" : tab.value === "COMPLETED" ? "✅" : "📄"}
                   </span>
                 </div>
-                <p className="font-semibold text-[#374151] text-lg">
-                  No {tab.label.toLowerCase()} orders
+                <h3 className="font-bold text-[#111827] text-xl">No orders found</h3>
+                <p className="text-[#6B7280] text-sm mt-2 max-w-xs mx-auto">
+                  {search 
+                    ? `No orders matching "${search}" in this view.` 
+                    : "When new orders arrive, they will appear here instantly."}
                 </p>
-                 <p className="text-[#9CA3AF] text-sm mt-1">
-                   {tab.value === "PLACED"
-                     ? "All new orders have been handled."
-                     : `No orders in ${tab.label.toLowerCase()} status right now.`}
-                 </p>
               </div>
             ) : (
               <Virtuoso
-                style={{ height: "calc(100vh - 280px)", minHeight: "400px" }}
+                style={{ height: "calc(100vh - 280px)", minHeight: "500px" }}
                 totalCount={filteredOrders.length}
                 itemContent={(index) => (
-                  <div className="pb-3">
+                  <div className="pb-4 pr-1">
                     <OrderCard
                       order={filteredOrders[index]}
                       onStatusChange={handleStatusChange}
@@ -206,6 +204,14 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Background fetching indicator */}
+      {isFetching && !isLoading && (
+        <div className="fixed bottom-6 right-6 bg-white/90 backdrop-blur shadow-lg rounded-full px-4 py-2 border border-gray-100 flex items-center gap-2 animate-in slide-in-from-bottom-4">
+          <div className="w-2 h-2 rounded-full bg-[#2E8B57] animate-pulse" />
+          <span className="text-xs font-medium text-gray-600">Syncing live data...</span>
+        </div>
+      )}
     </div>
   );
 }

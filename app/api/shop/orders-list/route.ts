@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     let query = supabase
       .from("orders")
       .select(
-        "id, short_token, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, status_history, created_at, updated_at, shops!inner(clerk_owner_id)",
+        "id, short_token, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, created_at, shops!inner(clerk_owner_id)",
         { count: "estimated" }
       )
       .eq("shop_id", shopId)

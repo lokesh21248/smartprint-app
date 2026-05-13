@@ -150,25 +150,46 @@ export function useRealtimeOrders(shopId: string | null) {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "orders",
           filter: `shop_id=eq.${shopId}`,
         },
         (payload) => {
-          // Realtime sends raw DB row — must map to Order type
-          // DB column → Order type field mismatches:
-          //   is_color      → color
-          //   is_double_sided → double_sided
-          //   status        → order_status
-          const raw = payload.new as Record<string, unknown>;
-          const mapped: Order = {
-            ...(raw as unknown as Order),
-            color: raw.is_color as boolean,
-            double_sided: raw.is_double_sided as boolean,
-            order_status: raw.status as Order["order_status"],
-          };
-          handleNewOrder(mapped);
+          if (payload.eventType === "INSERT") {
+            const raw = payload.new as Record<string, unknown>;
+            const mapped: Order = {
+              ...(raw as unknown as Order),
+              color: raw.is_color as boolean,
+              double_sided: raw.is_double_sided as boolean,
+              order_status: raw.status as Order["order_status"],
+            };
+            handleNewOrder(mapped);
+          } else if (payload.eventType === "UPDATE") {
+            const raw = payload.new as Record<string, unknown>;
+            const mapped: Order = {
+              ...(raw as unknown as Order),
+              color: raw.is_color as boolean,
+              double_sided: raw.is_double_sided as boolean,
+              order_status: raw.status as Order["order_status"],
+            };
+            
+            // Patch local cache instantly
+            queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
+              (prev ?? []).map((o) => (o.id === mapped.id ? { ...o, ...mapped } : o))
+            );
+            queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
+              (prev ?? []).map((o) => (o.id === mapped.id ? { ...o, ...mapped } : o))
+            );
+          } else if (payload.eventType === "DELETE") {
+            const id = (payload.old as { id: string }).id;
+            queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
+              (prev ?? []).filter((o) => o.id !== id)
+            );
+            queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
+              (prev ?? []).filter((o) => o.id !== id)
+            );
+          }
         }
       )
       .subscribe((status) => {

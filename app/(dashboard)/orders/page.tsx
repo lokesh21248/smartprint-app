@@ -30,10 +30,7 @@ async function getInitialOrders(userId: string): Promise<{ orders: Order[]; shop
         notes,
         total_amount,
         status,
-        status_history,
-        files,
-        created_at,
-        updated_at
+        created_at
       `)
       .eq("shop_id", shop.id)
       .order("created_at", { ascending: false })

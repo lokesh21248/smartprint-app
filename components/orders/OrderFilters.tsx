@@ -7,8 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 interface OrderFiltersProps {
   search: string;
   onSearchChange: (v: string) => void;
-  sortBy: "time" | "amount";
-  onSortChange: (v: "time" | "amount") => void;
+  sortBy: "newest" | "amount";
+  onSortChange: (v: "newest" | "amount") => void;
   dateFilter: string;
   onDateFilterChange: (v: string) => void;
 }
@@ -64,7 +64,7 @@ export function OrderFilters({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="time">Newest First</SelectItem>
+            <SelectItem value="newest">Newest First</SelectItem>
             <SelectItem value="amount">Highest Amount</SelectItem>
           </SelectContent>
         </Select>
