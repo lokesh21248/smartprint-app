@@ -9,6 +9,9 @@ import { toast } from "sonner";
 import type { Order } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio notification (singleton AudioContext)
+// ─────────────────────────────────────────────────────────────────────────────
 let audioCtx: AudioContext | null = null;
 
 function playNotificationSound() {
@@ -27,10 +30,13 @@ function playNotificationSound() {
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.5);
   } catch {
-    // Audio not available
+    // Audio not available in this context
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Browser push notification
+// ─────────────────────────────────────────────────────────────────────────────
 function showBrowserNotification(order: Order) {
   if (typeof window === "undefined") return;
   if (Notification.permission === "granted") {
@@ -46,50 +52,54 @@ function showBrowserNotification(order: Order) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Map raw DB row → Order type
+// (DB uses is_color / is_double_sided / status; our type uses color / double_sided / order_status)
+// ─────────────────────────────────────────────────────────────────────────────
+function mapRawToOrder(raw: Record<string, unknown>): Order {
+  return {
+    ...(raw as unknown as Order),
+    color: raw.is_color as boolean,
+    double_sided: raw.is_double_sided as boolean,
+    order_status: raw.status as Order["order_status"],
+  };
+}
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook
+// ─────────────────────────────────────────────────────────────────────────────
 export function useRealtimeOrders(shopId: string | null) {
   const queryClient = useQueryClient();
   const { soundEnabled, incrementNotifications } = useShopStore();
   const { addNewOrder, incrementPending, setRealtimeChannel } = useOrderStore();
+
+  // Stable refs so callbacks don't stale-close over old values
   const channelRef = useRef<RealtimeChannel | null>(null);
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Batch pending order events every 500ms to avoid re-rendering on every
-  // single DB change when a shop is getting 100+ orders/hour.
-  const pendingBatch = useRef<Order[]>([]);
+  // Batch inserts over 300ms to prevent re-renders on burst traffic
+  const pendingInserts = useRef<Order[]>([]);
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flushBatch = useCallback(() => {
-    const batch = pendingBatch.current.splice(0);
+  // ── Flush the INSERT batch ────────────────────────────────────────────────
+  const flushInsertBatch = useCallback(() => {
+    const batch = pendingInserts.current.splice(0);
     if (!batch.length) return;
 
-    // ── Zero-HTTP cache update ──────────────────────────────────────────────
-    // Patch both order caches directly from the realtime payload.
-    // This avoids triggering background HTTP refetches (previously 3 per event).
-    // Only stats (aggregates we can't patch locally) need a real invalidation.
+    // Patch cache: prepend new orders (deduplication guard)
     batch.forEach((order) => {
-      // Update main orders list
       queryClient.setQueryData<Order[]>(["orders", shopId], (prev) => {
-        if (!prev) return [order, ...[]];
-        // Deduplicate: don't add if already present (React Strict Mode fires twice)
+        if (!prev) return [order];
         const exists = prev.some((o) => o.id === order.id);
         return exists ? prev : [order, ...prev];
       });
-      // Update new-orders feed (dashboard widget)
       queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) => {
         if (!prev) return [order];
         const exists = prev.some((o) => o.id === order.id);
         return exists ? prev : [order, ...prev];
       });
-    });
 
-    // Only invalidate the stats aggregation — it can't be patched locally
-    queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
-
-    // Notifications & sound
-    batch.forEach((order) => {
       addNewOrder(order);
       incrementPending();
       incrementNotifications();
@@ -97,139 +107,167 @@ export function useRealtimeOrders(shopId: string | null) {
       showBrowserNotification(order);
     });
 
-    // Single toast summarising the batch
+    // Invalidate only the stats aggregate — it can't be patched locally
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
+
+    // Toast
     if (batch.length === 1) {
       const order = batch[0];
       toast.success(`🖨️ New order from ${order.customer_name || "Guest"}`, {
-        description: `₹${order.total_amount.toFixed(2)} · ${order.page_count} pages × ${order.copies} copies`,
-        duration: 10000,
-        action: { label: "View", onClick: () => (window.location.href = `/orders/${order.id}`) },
+        description: `₹${order.total_amount?.toFixed(2)} · ${order.page_count} pages × ${order.copies} copies`,
+        duration: 10_000,
+        action: {
+          label: "View",
+          onClick: () => (window.location.href = `/orders/${order.id}`),
+        },
       });
     } else {
       toast.success(`🖨️ ${batch.length} new orders received`, {
         description: "Check your orders dashboard",
-        duration: 8000,
-        action: { label: "View All", onClick: () => (window.location.href = "/orders") },
+        duration: 8_000,
+        action: {
+          label: "View All",
+          onClick: () => (window.location.href = "/orders"),
+        },
       });
+    }
+
+    // Tab title flash
+    if (typeof window !== "undefined") {
+      const originalTitle = document.title;
+      let flashes = 0;
+      const interval = setInterval(() => {
+        document.title =
+          flashes % 2 === 0 ? `🔔 (${batch.length}) NEW ORDER!` : originalTitle;
+        flashes++;
+        if (flashes >= 10) {
+          clearInterval(interval);
+          document.title = originalTitle;
+        }
+      }, 600);
     }
   }, [queryClient, shopId, soundEnabled, addNewOrder, incrementPending, incrementNotifications]);
 
-  const handleNewOrder = useCallback(
-    (order: Order) => {
-      pendingBatch.current.push(order);
-      if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
-      batchTimerRef.current = setTimeout(flushBatch, 500); // 500ms debounce
-
-      // Tab title flash is immediate (low cost)
-      if (typeof window !== "undefined") {
-        const originalTitle = document.title;
-        let flashes = 0;
-        const flashInterval = setInterval(() => {
-          document.title = flashes % 2 === 0 ? "🔔 (1) NEW ORDER!" : originalTitle;
-          flashes++;
-          if (flashes >= 10) {
-            clearInterval(flashInterval);
-            document.title = originalTitle;
-          }
-        }, 500);
+  // ── Realtime event handler ────────────────────────────────────────────────
+  const handleRealtimeEvent = useCallback(
+    (payload: {
+      eventType: "INSERT" | "UPDATE" | "DELETE";
+      new: Record<string, unknown>;
+      old: Record<string, unknown>;
+    }) => {
+      if (payload.eventType === "INSERT") {
+        const order = mapRawToOrder(payload.new);
+        pendingInserts.current.push(order);
+        if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+        // 300ms debounce — tight enough to feel instant, loose enough to batch bursts
+        batchTimerRef.current = setTimeout(flushInsertBatch, 300);
+      } else if (payload.eventType === "UPDATE") {
+        const updated = mapRawToOrder(payload.new);
+        // Patch cache instantly — no HTTP needed
+        queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
+          (prev ?? []).map((o) =>
+            o.id === updated.id ? { ...o, ...updated } : o
+          )
+        );
+        queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
+          (prev ?? []).map((o) =>
+            o.id === updated.id ? { ...o, ...updated } : o
+          )
+        );
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
+      } else if (payload.eventType === "DELETE") {
+        const id = (payload.old as { id: string }).id;
+        queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
+          (prev ?? []).filter((o) => o.id !== id)
+        );
+        queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
+          (prev ?? []).filter((o) => o.id !== id)
+        );
       }
     },
-    [flushBatch]
+    [queryClient, shopId, flushInsertBatch]
   );
+
+  // ── Subscribe / unsubscribe helpers ──────────────────────────────────────
+  const unsubscribe = useCallback(async () => {
+    if (channelRef.current) {
+      try {
+        const supabase = createClient();
+        await supabase.removeChannel(channelRef.current);
+      } catch {
+        // Ignore cleanup errors
+      }
+      channelRef.current = null;
+      setRealtimeChannel(null);
+    }
+  }, [setRealtimeChannel]);
 
   const subscribe = useCallback(() => {
     if (!shopId) return;
-    const isDemo =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project");
-    if (isDemo) return;
+
+    // Guard against placeholder / demo configs
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    if (!url || url.includes("your-project")) return;
+
+    // Tear down any existing channel first to prevent duplicate subscriptions
+    if (channelRef.current) {
+      const supabase = createClient();
+      supabase.removeChannel(channelRef.current).catch(() => {});
+      channelRef.current = null;
+    }
 
     const supabase = createClient();
     const channel = supabase
-      .channel(`shop:${shopId}:orders`)
+      .channel(`shop:${shopId}:orders:v2`)
       .on(
-        "postgres_changes",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "postgres_changes" as any,
         {
           event: "*",
           schema: "public",
           table: "orders",
           filter: `shop_id=eq.${shopId}`,
         },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const raw = payload.new as Record<string, unknown>;
-            const mapped: Order = {
-              ...(raw as unknown as Order),
-              color: raw.is_color as boolean,
-              double_sided: raw.is_double_sided as boolean,
-              order_status: raw.status as Order["order_status"],
-            };
-            handleNewOrder(mapped);
-          } else if (payload.eventType === "UPDATE") {
-            const raw = payload.new as Record<string, unknown>;
-            const mapped: Order = {
-              ...(raw as unknown as Order),
-              color: raw.is_color as boolean,
-              double_sided: raw.is_double_sided as boolean,
-              order_status: raw.status as Order["order_status"],
-            };
-            
-            // Patch local cache instantly
-            queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
-              (prev ?? []).map((o) => (o.id === mapped.id ? { ...o, ...mapped } : o))
-            );
-            queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
-              (prev ?? []).map((o) => (o.id === mapped.id ? { ...o, ...mapped } : o))
-            );
-          } else if (payload.eventType === "DELETE") {
-            const id = (payload.old as { id: string }).id;
-            queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
-              (prev ?? []).filter((o) => o.id !== id)
-            );
-            queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
-              (prev ?? []).filter((o) => o.id !== id)
-            );
-          }
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (payload: any) => handleRealtimeEvent(payload)
       )
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         if (status === "SUBSCRIBED") {
-          // Reset backoff on successful connection
-          retryCountRef.current = 0;
+          retryCountRef.current = 0; // reset backoff on success
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          // Exponential backoff: 1s, 2s, 4s, 8s … capped at 30s
-          const delay = Math.min(1000 * 2 ** retryCountRef.current, 30_000);
+          // Exponential backoff: 1s → 2s → 4s → … → max 30s
+          const delay = Math.min(1_000 * 2 ** retryCountRef.current, 30_000);
           retryCountRef.current += 1;
-          console.warn(`[Realtime] Channel ${status} — retrying in ${delay}ms (attempt ${retryCountRef.current})`);
+          console.warn(
+            `[Realtime] ${status} — retrying in ${delay}ms (attempt ${retryCountRef.current})`,
+            err
+          );
           if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-          retryTimerRef.current = setTimeout(() => {
-            supabase.removeChannel(channel).then(() => subscribe());
-          }, delay);
+          retryTimerRef.current = setTimeout(() => subscribe(), delay);
         }
       });
 
     channelRef.current = channel;
     setRealtimeChannel(channel);
-  }, [shopId, handleNewOrder, setRealtimeChannel]);
+  }, [shopId, handleRealtimeEvent, setRealtimeChannel]);
 
+  // ── Effect ────────────────────────────────────────────────────────────────
   useEffect(() => {
     subscribe();
 
-    // ── Visibility-aware subscription ──────────────────────────────────────
-    // On mobile, browsers kill backgrounded WebSocket connections which causes
-    // a reconnect loop. Instead: gracefully unsubscribe when hidden, and
-    // resubscribe + do a single fresh fetch when visible again.
+    // Visibility-aware lifecycle:
+    // When the tab is hidden the browser may kill the WebSocket.
+    // → On hide: gracefully remove the channel.
+    // → On show: resubscribe + invalidate to fetch any missed events.
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
-        // Clean up gracefully to avoid reconnect loops
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
         if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
-        setRealtimeChannel(null);
+        unsubscribe();
       } else {
-        // Tab is visible again: resubscribe and fetch any missed orders
         subscribe();
+        // One-shot refetch to catch any missed events while backgrounded
         queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
-        queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
       }
     };
 
@@ -239,7 +277,8 @@ export function useRealtimeOrders(shopId: string | null) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      setRealtimeChannel(null);
+      unsubscribe();
     };
-  }, [subscribe, setRealtimeChannel, queryClient, shopId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopId]); // Re-subscribe only when shopId changes
 }

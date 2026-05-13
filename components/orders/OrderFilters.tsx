@@ -2,7 +2,13 @@
 
 import { useRef } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface OrderFiltersProps {
   search: string;
@@ -30,11 +36,12 @@ export function OrderFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {/* Search */}
+      {/* Search — controlled via key so it re-renders correctly from URL */}
       <div className="relative flex-1 min-w-[200px]">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
         <input
           id="order-search"
+          key={search} // force re-mount when URL changes (e.g. refresh)
           type="search"
           placeholder="Search by order #, customer name or phone…"
           defaultValue={search}
@@ -49,17 +56,20 @@ export function OrderFilters({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="all">All Time</SelectItem>
           <SelectItem value="today">Today</SelectItem>
           <SelectItem value="week">This Week</SelectItem>
           <SelectItem value="month">This Month</SelectItem>
-          <SelectItem value="all">All Time</SelectItem>
         </SelectContent>
       </Select>
 
       {/* Sort */}
       <div className="flex items-center gap-2">
         <SlidersHorizontal className="h-4 w-4 text-[#6B7280]" />
-        <Select value={sortBy} onValueChange={onSortChange as (v: string) => void}>
+        <Select
+          value={sortBy}
+          onValueChange={onSortChange as (v: string) => void}
+        >
           <SelectTrigger id="sort-by" className="h-11 w-36">
             <SelectValue />
           </SelectTrigger>
