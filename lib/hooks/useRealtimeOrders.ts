@@ -64,12 +64,31 @@ export function useRealtimeOrders(shopId: string | null) {
   const flushBatch = useCallback(() => {
     const batch = pendingBatch.current.splice(0);
     if (!batch.length) return;
-    if (batch.length > 0) {
-      queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
-      queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
-    }
 
+    // ── Zero-HTTP cache update ──────────────────────────────────────────────
+    // Patch both order caches directly from the realtime payload.
+    // This avoids triggering background HTTP refetches (previously 3 per event).
+    // Only stats (aggregates we can't patch locally) need a real invalidation.
+    batch.forEach((order) => {
+      // Update main orders list
+      queryClient.setQueryData<Order[]>(["orders", shopId], (prev) => {
+        if (!prev) return [order, ...[]];
+        // Deduplicate: don't add if already present (React Strict Mode fires twice)
+        const exists = prev.some((o) => o.id === order.id);
+        return exists ? prev : [order, ...prev];
+      });
+      // Update new-orders feed (dashboard widget)
+      queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) => {
+        if (!prev) return [order];
+        const exists = prev.some((o) => o.id === order.id);
+        return exists ? prev : [order, ...prev];
+      });
+    });
+
+    // Only invalidate the stats aggregation — it can't be patched locally
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
+
+    // Notifications & sound
     batch.forEach((order) => {
       addNewOrder(order);
       incrementPending();
@@ -77,6 +96,7 @@ export function useRealtimeOrders(shopId: string | null) {
       if (soundEnabled) playNotificationSound();
       showBrowserNotification(order);
     });
+
     // Single toast summarising the batch
     if (batch.length === 1) {
       const order = batch[0];
@@ -173,12 +193,32 @@ export function useRealtimeOrders(shopId: string | null) {
 
   useEffect(() => {
     subscribe();
+
+    // ── Visibility-aware subscription ──────────────────────────────────────
+    // On mobile, browsers kill backgrounded WebSocket connections which causes
+    // a reconnect loop. Instead: gracefully unsubscribe when hidden, and
+    // resubscribe + do a single fresh fetch when visible again.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // Clean up gracefully to avoid reconnect loops
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+        setRealtimeChannel(null);
+      } else {
+        // Tab is visible again: resubscribe and fetch any missed orders
+        subscribe();
+        queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
+        queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
-      // Clean up batch timer
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      // Unsubscribe channel via store (which handles the actual unsubscribe call)
       setRealtimeChannel(null);
     };
-  }, [subscribe, setRealtimeChannel]);
+  }, [subscribe, setRealtimeChannel, queryClient, shopId]);
 }

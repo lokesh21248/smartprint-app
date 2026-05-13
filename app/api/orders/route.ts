@@ -6,10 +6,6 @@ import { OrderCreateSchema } from "@/lib/validators";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// ---------------------------------------------------------------------------
-// Shop Pricing Cache — eliminates one DB round-trip per order creation
-// TTL: 60 seconds. Shops rarely change pricing mid-session.
-// ---------------------------------------------------------------------------
 // Shop Pricing Cache — eliminates one DB round-trip per order creation
 // TTL: 60 seconds. Shops rarely change pricing mid-session.
 // ---------------------------------------------------------------------------
@@ -97,9 +93,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid phone number. Must be 10 digits." }, { status: 400 });
     }
     rawBody.customerPhone = cleanPhone;
-
-    // ─── Zod Validation (single source of truth for all input constraints) ────
-    console.log("[POST /api/orders] Received payload:", JSON.stringify(rawBody, null, 2));
 
     const parsed = OrderCreateSchema.safeParse(rawBody);
     if (!parsed.success) {
@@ -196,11 +189,6 @@ export async function POST(request: Request) {
       total_amount: Number(totalAmount || 0),
       status: "PLACED",            // schema column: status
     };
-
-    console.log("[ORDER API] Insert payload:", JSON.stringify(orderInsertPayload, null, 2));
-    
-    // 6. Extra defensive fix: Env Check
-    console.log("[ENV CHECK] SUPABASE_SERVICE_ROLE_KEY present:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
     const { data, error } = await supabase
       .from("orders")

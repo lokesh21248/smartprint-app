@@ -45,14 +45,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Hard timeout for Storage interaction (10 seconds)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
     // 3. Parse & validate body
     const body = await request.json().catch(() => null);
     if (!body) {
-      clearTimeout(timeoutId);
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
@@ -71,7 +66,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Validate file type (PDF only)
+    // Validate file type (PDF only)
     if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
       return NextResponse.json(
         { error: "Only PDF files are accepted" },

@@ -50,6 +50,7 @@ export async function GET(request: Request) {
     const { data, error, count } = await query;
 
     if (error) {
+      console.error("[GET /api/shop/orders-list] DB error:", error.message, error.code);
       return NextResponse.json({ error: "Failed to fetch orders" }, { status: 500 });
     }
 

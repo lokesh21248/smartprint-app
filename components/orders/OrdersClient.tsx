@@ -29,7 +29,8 @@ const TABS: { value: OrderStatus | "ALL"; label: string }[] = [
 async function fetchOrders(shopId: string): Promise<Order[]> {
   const res = await fetch(`/api/shop/orders-list?shopId=${encodeURIComponent(shopId)}`, {
     credentials: "include",
-    signal: AbortSignal.timeout(10000),
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000),
   });
   if (!res.ok) return [];
   const data = await res.json();
@@ -52,8 +53,12 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     queryKey: ["orders", shopId],
     queryFn: () => fetchOrders(shopId),
     initialData: initialOrders,
-    staleTime: 30 * 1000,
-    refetchInterval: 30 * 1000,
+    // Realtime subscription keeps cache fresh — no polling needed.
+    // Only re-fetch when the window regains focus after 5+ minutes away.
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnReconnect: true,
   });
 
   useRealtimeOrders(shopId);

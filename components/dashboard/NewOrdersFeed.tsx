@@ -39,8 +39,11 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
     queryKey: ["new-orders", shopId],
     queryFn: () => fetchNewOrders(shopId),
     initialData: initialOrders,
-    staleTime: 60 * 1000,
-    refetchInterval: 60 * 1000,
+    // Realtime subscription handles live updates — polling removed.
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnReconnect: true,
   });
 
   // Subscribe to realtime
