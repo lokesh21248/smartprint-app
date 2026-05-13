@@ -102,7 +102,28 @@ export async function GET(request: Request) {
     }
 
     // 4. Map DB column names → client field names
-    const orders = (data ?? []).map((ord) => ({
+    // Cast through unknown[] to bypass Supabase's GenericStringError union
+    // (occurs when select() includes a !inner join — the TS type is overly broad).
+    type OrderRow = {
+      id: string;
+      short_token: string;
+      shop_id: string;
+      customer_name: string;
+      customer_phone: string;
+      file_name: string;
+      page_count: number;
+      copies: number;
+      is_color: boolean;
+      is_double_sided: boolean;
+      notes: string | null;
+      total_amount: number;
+      status: string;
+      created_at: string;
+      updated_at: string;
+    };
+
+    const rows = (data ?? []) as unknown as OrderRow[];
+    const orders = rows.map((ord) => ({
       id: ord.id,
       short_token: ord.short_token,
       shop_id: ord.shop_id,
@@ -111,13 +132,10 @@ export async function GET(request: Request) {
       file_name: ord.file_name,
       page_count: ord.page_count,
       copies: ord.copies,
-      // DB: is_color → client: color
-      color: ord.is_color,
-      // DB: is_double_sided → client: double_sided
-      double_sided: ord.is_double_sided,
-      // DB: status → client: order_status
-      order_status: ord.status,
-      notes: ord.notes,
+      color: ord.is_color,          // DB: is_color      → client: color
+      double_sided: ord.is_double_sided, // DB: is_double_sided → client: double_sided
+      order_status: ord.status,     // DB: status        → client: order_status
+      notes: ord.notes ?? "",
       total_amount: ord.total_amount,
       created_at: ord.created_at,
       updated_at: ord.updated_at,
