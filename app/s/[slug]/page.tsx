@@ -172,7 +172,14 @@ export default function QRLandingPage() {
                     }
                     setIsStartingSession(true);
 
-                    // Helper: single fetch attempt with timeout
+                    // 1. Offline check before making any request
+                    if (typeof navigator !== "undefined" && !navigator.onLine) {
+                      toast.error("You appear to be offline. Please check your connection and try again.");
+                      setIsStartingSession(false);
+                      return;
+                    }
+
+                    // 2. Helper: single attempt with configurable timeout
                     const attemptSession = async (timeoutMs: number): Promise<Response> => {
                       const controller = new AbortController();
                       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -182,23 +189,37 @@ export default function QRLandingPage() {
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ customer_name: trimmedName, shop_slug: slug }),
                           signal: controller.signal,
+                          cache: "no-store",
+                          credentials: "same-origin",
                         });
                       } finally {
                         clearTimeout(timeoutId);
                       }
                     };
 
+                    // 3. Helper: readable error from response
+                    const getErrorMsg = (status: number, data: { error?: string }): string => {
+                      if (status === 429) return "Too many requests. Please wait a moment and try again.";
+                      if (status === 503) return "Service temporarily unavailable. Please try again in a few seconds.";
+                      if (status === 400) return data.error || "Invalid details. Please check and try again.";
+                      if (status >= 500) return "Server error. We're retrying…";
+                      return data.error || "Could not start your session. Please try again.";
+                    };
+
                     try {
                       let res: Response;
+
+                      // 4. First attempt — 25s handles Vercel cold start + Clerk middleware
                       try {
-                        // First attempt: 25s timeout (accounts for Vercel cold start + Clerk middleware)
                         res = await attemptSession(25000);
                       } catch (firstErr) {
-                        // One automatic retry on network failure (transient mobile drop)
+                        // Network failure or timeout — wait 1.5s then retry once
+                        console.error("[ORDER FLOW ERROR] First attempt failed:", firstErr);
                         try {
                           await new Promise((r) => setTimeout(r, 1500));
                           res = await attemptSession(20000);
                         } catch (retryErr) {
+                          console.error("[ORDER FLOW ERROR] Retry also failed:", retryErr);
                           const isTimeout = retryErr instanceof Error && retryErr.name === "AbortError";
                           toast.error(
                             isTimeout
@@ -210,35 +231,46 @@ export default function QRLandingPage() {
                         }
                       }
 
+                      // 5. Retry once on 5xx server errors
+                      if (res.status >= 500) {
+                        console.warn("[ORDER FLOW] 5xx on first attempt, retrying:", res.status);
+                        try {
+                          await new Promise((r) => setTimeout(r, 2000));
+                          res = await attemptSession(20000);
+                        } catch (retryErr) {
+                          console.error("[ORDER FLOW ERROR] 5xx retry network failed:", retryErr);
+                          toast.error("Server error. Please try again in a moment.");
+                          setIsStartingSession(false);
+                          return;
+                        }
+                      }
+
+                      // 6. Parse response body
                       let data: { success?: boolean; sessionId?: string; error?: string } = {};
                       try {
                         data = await res.json();
                       } catch {
+                        console.error("[ORDER FLOW ERROR] Failed to parse response JSON");
                         toast.error("Unexpected server response. Please try again.");
                         setIsStartingSession(false);
                         return;
                       }
 
+                      // 7. Success path
                       if (res.ok && data.success && data.sessionId) {
                         router.push(
                           `/order-upload?shopSlug=${slug}&sessionId=${data.sessionId}&name=${encodeURIComponent(trimmedName)}`
                         );
-                        // Don't reset isStartingSession here — navigation is in progress
+                        // Keep spinner — navigation in progress
                         return;
                       }
 
-                      // Map specific HTTP status codes to helpful messages
-                      const errorMsg = (() => {
-                        if (res.status === 429) return "Too many requests. Please wait a moment and try again.";
-                        if (res.status === 503) return "Service is temporarily unavailable. Please try again in a few seconds.";
-                        if (res.status === 400) return data.error || "Invalid details entered. Please check and try again.";
-                        return data.error || "Could not start your session. Please try again.";
-                      })();
-
-                      toast.error(errorMsg);
+                      // 8. API-level error
+                      console.error("[ORDER FLOW ERROR] API error:", res.status, data);
+                      toast.error(getErrorMsg(res.status, data));
                       setIsStartingSession(false);
                     } catch (err) {
-                      console.error("[Session Start] Unhandled error:", err);
+                      console.error("[ORDER FLOW ERROR] Unhandled exception:", err);
                       toast.error("Something went wrong. Please try again.");
                       setIsStartingSession(false);
                     }

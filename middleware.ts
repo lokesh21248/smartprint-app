@@ -2,6 +2,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+// Public routes — no auth check at all, return immediately
 const isPublicRoute = createRouteMatcher([
   "/",
   "/login(.*)",
@@ -9,14 +10,16 @@ const isPublicRoute = createRouteMatcher([
   "/register(.*)",
   "/forgot-password(.*)",
   "/unauthorized(.*)",
+  // Customer-facing shop & order flow — must be fully public
+  "/s(.*)",
+  "/order(.*)",
+  "/order-upload(.*)",
+  "/find-shop(.*)",
+  // Public APIs — no auth needed
   "/api/shop/public(.*)",
   "/api/orders(.*)",
   "/api/storage(.*)",
   "/api/sessions(.*)",
-  "/s/(.*)",
-  "/order/(.*)",
-  "/order-upload(.*)",
-  "/find-shop(.*)",
 ]);
 
 const isAdminRoute = createRouteMatcher([
@@ -26,7 +29,6 @@ const isAdminRoute = createRouteMatcher([
 
 const isDashboardRoute = createRouteMatcher([
   "/dashboard(.*)",
-  "/orders(.*)",
   "/analytics(.*)",
   "/staff(.*)",
   "/settings(.*)",
@@ -35,33 +37,44 @@ const isDashboardRoute = createRouteMatcher([
   "/profile(.*)",
 ]);
 
+// API routes that belong to the authenticated shop owner dashboard
+// Excludes /api/shop/public which is listed in public routes above
+const isDashboardApiRoute = createRouteMatcher([
+  "/api/shop/orders(.*)",
+  "/api/shop/update(.*)",
+  "/api/shop/staff(.*)",
+  "/api/shop/settings(.*)",
+  "/api/shop/orders-list(.*)",
+]);
+
 export default clerkMiddleware(async (auth, req) => {
+  // ── Short-circuit public routes immediately ──────────────────────────────
+  // IMPORTANT: do this BEFORE calling auth() to avoid Clerk cold-start latency
+  // hitting every customer page load and /api/sessions call.
+  if (isPublicRoute(req)) return NextResponse.next();
+
+  // ── Only authenticated routes from here ─────────────────────────────────
   const authObj = await auth();
   const { userId, sessionClaims } = authObj;
   const { pathname } = req.nextUrl;
 
-  // 1. Allow public routes
-  if (isPublicRoute(req)) return;
-
-  // 2. Auth enforcement
   if (!userId) {
     return authObj.redirectToSignIn();
   }
 
   const clerkRole = String((sessionClaims?.metadata as any)?.role || "").toLowerCase();
 
-  // 3. Admin Route Protection
+  // Admin routes
   if (isAdminRoute(req)) {
     if (clerkRole !== "admin") {
       return NextResponse.redirect(new URL("/unauthorized", req.url));
     }
-    return;
+    return NextResponse.next();
   }
 
-  // 4. Dashboard Route Protection (RBAC)
-  if (isDashboardRoute(req) || pathname.startsWith("/api/shop/")) {
-    // Admins bypass
-    if (clerkRole === "admin") return;
+  // Dashboard + owner API routes — verify shop ownership via DB
+  if (isDashboardRoute(req) || isDashboardApiRoute(req)) {
+    if (clerkRole === "admin") return NextResponse.next();
 
     try {
       const supabase = createClient(
@@ -70,27 +83,26 @@ export default clerkMiddleware(async (auth, req) => {
         { auth: { persistSession: false } }
       );
 
-      // Check both shops (owners) and shop_staff (employees)
       const [ownerRes, staffRes] = await Promise.all([
         supabase.from("shops").select("id").eq("clerk_owner_id", userId).maybeSingle(),
-        supabase.from("shop_staff").select("role").eq("user_id", userId).maybeSingle()
+        supabase.from("shop_staff").select("role").eq("user_id", userId).maybeSingle(),
       ]);
 
       const isOwner = !!ownerRes.data;
       const staffRole = String(staffRes.data?.role || "").trim().toLowerCase();
-      
-      const allowedRoles = ["owner", "manager", "staff"];
-      const isAuthorized = isOwner || allowedRoles.includes(staffRole);
+      const isAuthorized = isOwner || ["owner", "manager", "staff"].includes(staffRole);
 
       if (!isAuthorized) {
         return NextResponse.redirect(new URL("/unauthorized", req.url));
       }
     } catch (error) {
       console.error("[RBAC ERROR]", error);
-      // Fallback: don't block if DB is down, but log it
-      return;
+      // Fail open — don't block if DB is temporarily unreachable
+      return NextResponse.next();
     }
   }
+
+  return NextResponse.next();
 });
 
 export const config = {
