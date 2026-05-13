@@ -1,150 +1,181 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Runtime: must stay Node.js — Supabase admin + storage are NOT Edge-compatible
+// ─────────────────────────────────────────────────────────────────────────────
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60; // Vercel Pro max; free tier is 10s
+
 /**
- * POST /api/cron/cleanup
+ * GET /api/cron/cleanup
  *
- * Enterprise-grade auto-cleanup for SmartPrint — runs every 2 hours via Vercel Cron.
+ * Vercel Cron always calls GET. Schedule: every 2 hours (vercel.json).
  *
- * Strategy:
- *   1. Fetch stale orders (COMPLETED / CANCELLED / REJECTED / DRAFT older than 2 hours)
- *   2. Delete their storage files FIRST to avoid orphans
- *   3. Delete DB rows ONLY after storage succeeds (retry-safe)
- *   4. Sweep uploaded_documents tracker for abandoned uploads (no order ever created)
- *   5. Write a structured row to cleanup_logs for observability
- *   6. Return detailed JSON so Vercel logs are readable at a glance
+ * Strategy (one bounded batch per run — zero risk of Vercel timeout):
+ *   A. Delete storage files + DB rows for stale terminal orders
+ *      (COMPLETED / CANCELLED / DRAFT older than 24 h)
+ *   B. Sweep uploaded_documents for abandoned uploads (no order ever placed)
+ *   C. Write a structured row to cleanup_logs for observability
  *
- * Auth: Vercel Cron sends  Authorization: Bearer <CRON_SECRET>
- * Protected: never touches PLACED / ACCEPTED / PRINTING / READY orders.
+ * Safety guarantees:
+ *   - NEVER touches PLACED / ACCEPTED / PRINTING / READY orders
+ *   - Per-file deletions are individually try/caught — one failure ≠ run failure
+ *   - Always returns HTTP 200 so Vercel Cron does not mark the job as failed
+ *   - All DB/storage errors are logged and included in the JSON response
  */
 
-// Statuses that are safe to permanently delete after the retention window
-const SAFE_STATUSES = ["COMPLETED", "CANCELLED", "REJECTED", "DRAFT"] as const;
+// Orders in these statuses are safe to permanently delete after the retention window
+const SAFE_STATUSES = ["COMPLETED", "CANCELLED", "DRAFT"] as const;
+type SafeStatus = (typeof SAFE_STATUSES)[number];
+
 const BUCKET = "order-files";
-const RETENTION_MS = 2 * 60 * 60 * 1000; // 2 hours
-const BATCH_LIMIT = 100; // max rows per run — keeps us well inside Vercel timeout
+
+// 24 h age threshold — wide enough to survive Vercel cron timing drift
+const RETENTION_MS = 24 * 60 * 60 * 1_000;
+
+// Hard cap: 50 rows per run keeps us well inside the Vercel function timeout
+const BATCH_LIMIT = 50;
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-export async function POST(request: Request) {
+// Vercel Cron calls GET
+// ─────────────────────────────────────────────────────────────────────────────
+export async function GET(request: Request) {
   const runStart = Date.now();
 
-  // ── 1. Environment validation ───────────────────────────────────────────────
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // ── 1. Auth — Vercel injects Authorization: Bearer <CRON_SECRET> ────────────
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = request.headers.get("authorization");
 
-  if (!supabaseUrl || !serviceKey) {
-    console.error("[cleanup] CRITICAL: Missing Supabase env vars — aborting run");
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    console.error("[cleanup] Unauthorized request — wrong or missing CRON_SECRET");
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // ── 2. Env sanity check ─────────────────────────────────────────────────────
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("[cleanup] CRITICAL: Missing Supabase env vars — aborting");
     return NextResponse.json(
-      { success: false, error: "Server misconfigured: missing env vars" },
+      { success: false, error: "Server misconfigured" },
       { status: 500 }
     );
   }
 
-  // ── 2. Vercel Cron authentication ───────────────────────────────────────────
-  const cronSecret  = process.env.CRON_SECRET;
-  const authHeader  = request.headers.get("authorization");
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    console.error("[cleanup] Unauthorized request — missing or wrong CRON_SECRET");
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  // ── 3. Shared state for this run ────────────────────────────────────────────
   const supabase = createAdminClient();
   const errors: string[] = [];
   const stats = {
-    ordersScanned: 0,
-    filesDeleted: 0,
-    filesFailed: 0,
-    ordersDeleted: 0,
-    ordersFailed: 0,
+    scanned: 0,
+    deleted: 0,
+    skipped: 0,
+    failed: 0,
     orphansDeleted: 0,
     orphansFailed: 0,
     orphanRowsCleaned: 0,
   };
 
+  // Cut-off: anything older than 24 hours
   const cutoff = new Date(Date.now() - RETENTION_MS).toISOString();
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // PART A — Stale terminal orders
+  // ════════════════════════════════════════════════════════════════════════════
   try {
-    // ══════════════════════════════════════════════════════════════════════════
-    // PART A — Clean up stale orders and their associated storage files
-    // ══════════════════════════════════════════════════════════════════════════
-
     const { data: staleOrders, error: fetchErr } = await supabase
       .from("orders")
       .select("id, status, file_s3_key, files")
-      .in("status", SAFE_STATUSES)
+      .in("status", SAFE_STATUSES as unknown as SafeStatus[])
       .lt("created_at", cutoff)
       .limit(BATCH_LIMIT);
 
     if (fetchErr) {
-      // Non-recoverable for this run — log and abort Part A
-      const msg = `[cleanup] Part A fetch failed: ${fetchErr.message}`;
-      console.error(msg);
+      const msg = `Part A fetch failed: ${fetchErr.message}`;
+      console.error(`[cleanup] ${msg}`);
       errors.push(msg);
     } else {
-      stats.ordersScanned = staleOrders?.length ?? 0;
-      console.log(`[cleanup] Part A: found ${stats.ordersScanned} stale orders`);
+      const rows = staleOrders ?? [];
+      stats.scanned = rows.length;
+      console.log(`[cleanup] Part A: ${rows.length} stale orders found`);
 
-      for (const order of staleOrders ?? []) {
-        // ── Collect every file path attached to this order ──────────────────
+      for (const order of rows) {
+        // Collect every storage path this order references
         const paths = new Set<string>();
-        if (order.file_s3_key) paths.add(order.file_s3_key);
 
+        if (typeof order.file_s3_key === "string" && order.file_s3_key) {
+          paths.add(order.file_s3_key);
+        }
         if (Array.isArray(order.files)) {
           for (const f of order.files as Array<{ url?: string }>) {
-            if (f?.url) paths.add(f.url);
+            if (f?.url && typeof f.url === "string") paths.add(f.url);
           }
         }
 
         const storagePaths = Array.from(paths);
-        let storageOk = true; // tracks whether it's safe to delete the DB row
+        let storageOk = true;
 
-        // ── Delete storage files FIRST ──────────────────────────────────────
+        // Delete storage files first — prevents orphaned blobs
         if (storagePaths.length > 0) {
-          const { error: storErr } = await supabase.storage
-            .from(BUCKET)
-            .remove(storagePaths);
+          try {
+            const { error: storErr } = await supabase.storage
+              .from(BUCKET)
+              .remove(storagePaths);
 
-          if (storErr) {
+            if (storErr) {
+              storageOk = false;
+              const msg = `Storage delete failed (order ${order.id}): ${storErr.message}`;
+              console.error(`[cleanup] ${msg}`);
+              errors.push(msg);
+              stats.failed += storagePaths.length;
+            } else {
+              stats.deleted += storagePaths.length;
+            }
+          } catch (e) {
             storageOk = false;
-            const msg = `Storage delete failed (order ${order.id}): ${storErr.message}`;
+            const msg = `Storage exception (order ${order.id}): ${e instanceof Error ? e.message : String(e)}`;
             console.error(`[cleanup] ${msg}`);
             errors.push(msg);
-            stats.filesFailed += storagePaths.length;
-          } else {
-            stats.filesDeleted += storagePaths.length;
-            console.log(`[cleanup] Deleted ${storagePaths.length} file(s) for order ${order.id}`);
+            stats.failed++;
           }
         }
 
-        // ── Delete DB row ONLY if storage succeeded (retry-safe) ────────────
+        // Delete DB row ONLY after storage succeeds — keeps run idempotent
         if (storageOk) {
-          const { error: dbErr } = await supabase
-            .from("orders")
-            .delete()
-            .eq("id", order.id)
-            // Double-guard: never wipe active orders even if they slip through
-            .in("status", SAFE_STATUSES);
+          try {
+            const { error: dbErr } = await supabase
+              .from("orders")
+              .delete()
+              .eq("id", order.id)
+              // Double-guard: never wipe an order that slipped to an active status
+              .in("status", SAFE_STATUSES as unknown as SafeStatus[]);
 
-          if (dbErr) {
-            const msg = `DB delete failed (order ${order.id}): ${dbErr.message}`;
+            if (dbErr) {
+              const msg = `DB delete failed (order ${order.id}): ${dbErr.message}`;
+              console.error(`[cleanup] ${msg}`);
+              errors.push(msg);
+              stats.skipped++;
+            }
+          } catch (e) {
+            const msg = `DB exception (order ${order.id}): ${e instanceof Error ? e.message : String(e)}`;
             console.error(`[cleanup] ${msg}`);
             errors.push(msg);
-            stats.ordersFailed++;
-          } else {
-            stats.ordersDeleted++;
+            stats.skipped++;
           }
+        } else {
+          stats.skipped++;
         }
       }
     }
+  } catch (e) {
+    const msg = `Part A critical: ${e instanceof Error ? e.message : String(e)}`;
+    console.error(`[cleanup] ${msg}`);
+    errors.push(msg);
+  }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // PART B — Orphan file sweep via uploaded_documents tracker
-    // Files that were uploaded but the user closed the tab before placing an order.
-    // ══════════════════════════════════════════════════════════════════════════
-
+  // ════════════════════════════════════════════════════════════════════════════
+  // PART B — Orphan uploaded_documents sweep
+  // Files uploaded but order was never placed (user closed the tab, etc.)
+  // ════════════════════════════════════════════════════════════════════════════
+  try {
     const { data: staleDocs, error: docsErr } = await supabase
       .from("uploaded_documents")
       .select("id, file_path")
@@ -152,128 +183,123 @@ export async function POST(request: Request) {
       .limit(BATCH_LIMIT);
 
     if (docsErr) {
-      const msg = `[cleanup] Part B fetch failed: ${docsErr.message}`;
-      console.error(msg);
+      const msg = `Part B fetch failed: ${docsErr.message}`;
+      console.error(`[cleanup] ${msg}`);
       errors.push(msg);
-    } else if (staleDocs && staleDocs.length > 0) {
-      console.log(`[cleanup] Part B: found ${staleDocs.length} stale upload tracking rows`);
+    } else {
+      const docs = staleDocs ?? [];
+      console.log(`[cleanup] Part B: ${docs.length} stale upload-tracking rows`);
 
-      for (const doc of staleDocs) {
-        if (!doc.file_path) continue;
+      for (const doc of docs) {
+        if (!doc.file_path || typeof doc.file_path !== "string") {
+          // Bad row — clean the tracker but skip storage delete
+          await supabase.from("uploaded_documents").delete().eq("id", doc.id);
+          stats.orphanRowsCleaned++;
+          continue;
+        }
 
-        // Check whether any active order still references this file path
-        const { data: activeRef } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("file_s3_key", doc.file_path)
-          .not("status", "in", `(COMPLETED,CANCELLED,REJECTED,DRAFT)`)
-          .limit(1);
+        // Check whether any *active* order still references this file path.
+        // Active = anything that is NOT a terminal status.
+        let isActive = false;
+        try {
+          const { data: activeRef } = await supabase
+            .from("orders")
+            .select("id")
+            .eq("file_s3_key", doc.file_path)
+            .not("status", "in", `(${SAFE_STATUSES.join(",")})`)
+            .limit(1);
 
-        const isActive = activeRef && activeRef.length > 0;
+          isActive = Array.isArray(activeRef) && activeRef.length > 0;
+        } catch {
+          // If we can't confirm, skip deletion — safety first
+          isActive = true;
+        }
 
         if (!isActive) {
-          // Orphan — delete from storage bucket
-          const { error: orphanErr } = await supabase.storage
-            .from(BUCKET)
-            .remove([doc.file_path]);
+          try {
+            const { error: orphanErr } = await supabase.storage
+              .from(BUCKET)
+              .remove([doc.file_path]);
 
-          if (orphanErr) {
-            // Only warn — file might have already been deleted by Part A
-            console.warn(`[cleanup] Orphan storage delete warn (${doc.file_path}): ${orphanErr.message}`);
+            if (orphanErr) {
+              // Warn only — file may already have been removed in Part A
+              console.warn(
+                `[cleanup] Orphan storage warn (${doc.file_path}): ${orphanErr.message}`
+              );
+              stats.orphansFailed++;
+            } else {
+              stats.orphansDeleted++;
+            }
+          } catch (e) {
+            console.warn(
+              `[cleanup] Orphan exception (${doc.file_path}): ${e instanceof Error ? e.message : String(e)}`
+            );
             stats.orphansFailed++;
-          } else {
-            stats.orphansDeleted++;
-            console.log(`[cleanup] Deleted orphan file: ${doc.file_path}`);
           }
         }
 
-        // Clean the tracker row regardless — it's past its useful TTL
-        const { error: rowErr } = await supabase
-          .from("uploaded_documents")
-          .delete()
-          .eq("id", doc.id);
+        // Always clean the tracker row — it's past its useful TTL regardless
+        try {
+          const { error: rowErr } = await supabase
+            .from("uploaded_documents")
+            .delete()
+            .eq("id", doc.id);
 
-        if (!rowErr) stats.orphanRowsCleaned++;
+          if (!rowErr) stats.orphanRowsCleaned++;
+        } catch {
+          // Non-critical — row will be picked up next run
+        }
       }
-    } else {
-      console.log("[cleanup] Part B: no stale upload tracking rows");
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // PART C — Write structured run log to cleanup_logs for observability
-    // ══════════════════════════════════════════════════════════════════════════
-
-    const elapsedMs = Date.now() - runStart;
-    const logStatus = errors.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS";
-
-    const { error: logErr } = await supabase.from("cleanup_logs").insert({
-      deleted_count: stats.ordersDeleted + stats.orphansDeleted,
-      status: logStatus,
-      errors: errors.length > 0 ? errors.join(" | ") : null,
-    });
-
-    if (logErr) {
-      // Non-critical — don't let logging failure mask the cleanup result
-      console.warn("[cleanup] Failed to write cleanup_logs row:", logErr.message);
-    }
-
-    const summary = {
-      success: true,
-      status: logStatus,
-      ...stats,
-      totalDeleted: stats.ordersDeleted + stats.orphansDeleted,
-      errorCount: errors.length,
-      errors,
-      elapsedMs,
-      ranAt: new Date().toISOString(),
-    };
-
-    console.info("[cleanup] Run complete:", JSON.stringify(summary));
-    return NextResponse.json(summary);
-
-  } catch (err) {
-    // Top-level safety net — should never fire due to inner try/catch blocks
-    const message = err instanceof Error ? err.message : "Unknown critical error";
-    console.error("[cleanup] CRITICAL FAILURE:", message);
-
-    // Best-effort log even on critical failure — wrapped in try/catch because
-    // Supabase query builders are not native Promises and do not expose .catch()
-    try {
-      await supabase.from("cleanup_logs").insert({
-        deleted_count: stats.ordersDeleted,
-        status: "FAILED",
-        errors: message,
-      });
-    } catch {
-      // swallow log error so the real failure response is always returned
-    }
-
-    return NextResponse.json(
-      { success: false, error: "Cleanup failed", message, elapsedMs: Date.now() - runStart },
-      { status: 500 }
-    );
+  } catch (e) {
+    const msg = `Part B critical: ${e instanceof Error ? e.message : String(e)}`;
+    console.error(`[cleanup] ${msg}`);
+    errors.push(msg);
   }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // PART C — Write structured run log (non-critical — never throws)
+  // ════════════════════════════════════════════════════════════════════════════
+  const duration_ms = Date.now() - runStart;
+  const runStatus = errors.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS";
+
+  try {
+    await supabase.from("cleanup_logs").insert({
+      deleted_count: stats.deleted + stats.orphansDeleted,
+      status: runStatus,
+      errors: errors.length > 0 ? errors.slice(0, 10).join(" | ") : null,
+    });
+  } catch (e) {
+    // Non-fatal — observability failure must never mask the cleanup result
+    console.warn("[cleanup] cleanup_logs insert failed:", e instanceof Error ? e.message : String(e));
+  }
+
+  const response = {
+    success: true,
+    status: runStatus,
+    scanned: stats.scanned,
+    deleted: stats.deleted,
+    skipped: stats.skipped,
+    failed: stats.failed,
+    orphansDeleted: stats.orphansDeleted,
+    orphansFailed: stats.orphansFailed,
+    orphanRowsCleaned: stats.orphanRowsCleaned,
+    errorCount: errors.length,
+    errors: errors.slice(0, 10), // cap log size
+    duration_ms,
+    ranAt: new Date().toISOString(),
+  };
+
+  console.info("[cleanup] Run complete:", JSON.stringify(response));
+
+  // Always HTTP 200 — Vercel Cron marks any non-2xx as a failed job
+  return NextResponse.json(response);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET — health check / manual trigger info
+// POST — manual trigger (e.g. from admin panel or curl)
 // ─────────────────────────────────────────────────────────────────────────────
-
-export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader  = request.headers.get("authorization");
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  return NextResponse.json({
-    status: "ready",
-    bucket: BUCKET,
-    retentionHours: 2,
-    batchLimit: BATCH_LIMIT,
-    schedule: "0 */2 * * * (every 2 hours via Vercel Cron)",
-    safeDeletionStatuses: SAFE_STATUSES,
-    description: "POST to this endpoint to trigger a cleanup run",
-  });
+export async function POST(request: Request) {
+  // Re-use the same GET handler for manual triggers
+  return GET(request);
 }
