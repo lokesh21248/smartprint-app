@@ -20,6 +20,7 @@ const ContentSecurityPolicy = `
   connect-src 'self'
     https://*.clerk.accounts.dev
     https://api.clerk.dev
+    https://clerk-telemetry.com
     https://*.supabase.co
     https://*.supabase.in
     wss://*.supabase.co
