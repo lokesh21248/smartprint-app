@@ -5,7 +5,7 @@ import { validateApiAccess } from "@/lib/auth/role-guard";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 500;
+const PAGE_SIZE = 70;
 
 export async function GET(request: Request) {
   try {
