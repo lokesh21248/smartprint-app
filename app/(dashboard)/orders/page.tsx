@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { auth } from "@clerk/nextjs/server";
-import { OrdersClient } from "@/components/orders/OrdersClient";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Order } from "@/types";
 import { getShopByUserId } from "@/lib/data/shop";
+import { OrdersClient } from "@/components/orders/OrdersClient";
+import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
+import type { Order } from "@/types";
 
 export const metadata: Metadata = { title: "Orders | SmartPrint" };
 export const dynamic = "force-dynamic";
@@ -65,5 +67,17 @@ export default async function OrdersPage() {
     ? await getInitialOrders(userId)
     : { orders: [], shopId: "" };
 
-  return <OrdersClient initialOrders={orders} shopId={shopId} />;
+  return (
+    /**
+     * CRITICAL: OrdersClient calls useSearchParams() which opts out of SSR
+     * unless wrapped in <Suspense>. Without this boundary Next.js renders a
+     * blank shell on the client during hydration — causing the empty-state
+     * flash and the "orders disappear on refresh" bug.
+     *
+     * The fallback uses the real OrdersSkeleton so the transition is seamless.
+     */
+    <Suspense fallback={<OrdersSkeleton />}>
+      <OrdersClient initialOrders={orders} shopId={shopId} />
+    </Suspense>
+  );
 }

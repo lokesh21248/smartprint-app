@@ -2,7 +2,7 @@
 
 import { useMemo, useCallback } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OrderCard } from "@/components/orders/OrderCard";
@@ -111,13 +111,17 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     queryFn: () => fetchOrders(shopId),
     enabled: !!shopId,
     initialData: initialOrders,
+    // Mark initialData as instantly stale so React Query always fires a
+    // background refetch on mount — without this the SSR data never updates.
+    initialDataUpdatedAt: 0,
     staleTime: 0,
     gcTime: 5 * 60 * 1_000,
     refetchOnMount: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
-    // Keep previous data visible while new data loads → zero flicker
-    placeholderData: (prev: Order[] | undefined) => prev,
+    // keepPreviousData keeps the SSR orders visible during the background
+    // refetch — this is what prevents orders from going blank on refresh.
+    placeholderData: keepPreviousData,
   });
 
   // ── Realtime subscription (INSERT / UPDATE / DELETE) ─────────────────────
