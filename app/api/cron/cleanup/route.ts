@@ -11,7 +11,7 @@ export const maxDuration = 60; // Vercel Pro max; free tier is 10s
 /**
  * GET /api/cron/cleanup
  *
- * Vercel Cron always calls GET. Schedule: every 2 hours (vercel.json).
+ * Vercel Cron always calls GET. Schedule: every 24 hours at 12:00 AM UTC (vercel.json).
  *
  * Strategy (one bounded batch per run — zero risk of Vercel timeout):
  *   A. Delete storage files + DB rows for stale terminal orders
@@ -32,8 +32,8 @@ type SafeStatus = (typeof SAFE_STATUSES)[number];
 
 const BUCKET = "order-files";
 
-// 24 h age threshold — wide enough to survive Vercel cron timing drift
-const RETENTION_MS = 24 * 60 * 60 * 1_000;
+// 25 h age threshold
+const RETENTION_MS = 25 * 60 * 60 * 1_000;
 
 // Hard cap: 50 rows per run keeps us well inside the Vercel function timeout
 const BATCH_LIMIT = 50;
