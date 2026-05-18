@@ -127,12 +127,14 @@ export default function QRLandingPage() {
             </div>
             <span className="font-extrabold text-sm tracking-tight text-slate-800">SmartPrint</span>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 rounded-full text-emerald-700 text-[10px] font-black uppercase tracking-wider">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-            </span>
-            {shop.is_open ? "Open Now" : "Closed"}
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${shop.is_open !== false ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+            {shop.is_open !== false && (
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+            )}
+            {shop.is_open !== false ? "Open Now" : "Closed"}
           </div>
         </div>
       </nav>

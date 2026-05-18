@@ -275,9 +275,9 @@ export default function OrderStatusPage() {
                 <Store className="w-5 h-5 text-emerald-600 shrink-0" /> Pickup Store
               </h3>
               <div className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
-                shop.is_open ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                shop.is_open !== false ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
               }`}>
-                {shop.is_open ? "Open Now" : "Closed"}
+                {shop.is_open !== false ? "Open Now" : "Closed"}
               </div>
             </div>
             
