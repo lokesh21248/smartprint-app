@@ -21,6 +21,7 @@ import QRCodeCard from "@/components/QRCodeCard";
 export interface ProfileShop {
   id: string;
   name: string | null;
+  owner_name: string | null;
   owner_email: string | null;
   owner_phone: string | null;
   address_line1: string | null;
@@ -350,7 +351,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
                 <InfoRow 
                   icon={<User className="h-4 w-4" />} 
                   label="Owner" 
-                  value={!isLoaded ? "..." : ((user?.fullName ?? user?.firstName) ?? "—")} 
+                  value={shop.owner_name || "—"} 
                 />
                 <InfoRow icon={<Mail className="h-4 w-4" />} label="Email" value={ownerEmail} />
                 <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone" value={shop.owner_phone} />

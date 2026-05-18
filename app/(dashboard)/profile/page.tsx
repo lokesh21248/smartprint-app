@@ -14,7 +14,7 @@ export default async function ProfilePage() {
   const supabase = createAdminClient();
   const { data: shop } = await supabase
     .from("shops")
-    .select("id, name, owner_email, owner_phone, address_line1, city, state, pincode, shop_code, slug, is_open")
+    .select("id, name, owner_name, owner_email, owner_phone, address_line1, city, state, pincode, shop_code, slug, is_open")
     .eq("clerk_owner_id", userId)
     .limit(1)
     .maybeSingle();

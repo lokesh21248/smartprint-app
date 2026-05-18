@@ -126,14 +126,9 @@ export default async function DashboardPage() {
   if (!data.shop) return <div>Shop not found. Please log in properly.</div>;
   
   const { stats, newOrders, shop } = data;
-  const userMetadata = (user?.unsafeMetadata || {}) as Record<string, unknown>;
-  const ownerDisplayName =
-    (typeof userMetadata.ownerName === "string" && userMetadata.ownerName.trim()) ||
-    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
-    user?.username ||
-    "N/A";
+  const ownerDisplayName = shop?.owner_name || "N/A";
   const shopDisplayName = shop?.name || "N/A";
-  const emailDisplay = user?.emailAddresses?.[0]?.emailAddress || shop?.owner_email || "N/A";
+  const emailDisplay = shop?.owner_email || "N/A";
 
   return (
     <div className="space-y-6">
