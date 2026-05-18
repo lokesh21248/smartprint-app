@@ -15,13 +15,18 @@ import {
   Clock,
   Printer,
   ChevronRight,
-  Phone
+  Phone,
+  Sparkles,
+  ArrowLeft,
+  X,
+  FileSpreadsheet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ShopDisplay {
   id?: string;
@@ -33,12 +38,10 @@ interface ShopDisplay {
   price_color_per_page?: number;
 }
 
-
 function OrderUploadPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const shopSlug = searchParams.get("shopSlug");
-  // Name is pre-filled from landing page URL param
   const nameParam = searchParams.get("name") ?? "";
 
   // State
@@ -51,13 +54,12 @@ function OrderUploadPageInner() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [copies, setCopies] = useState(1);
-  const [isColor, setIsColor] = useState(true); // Default to color print
-  const [isDoubleSided, setIsDoubleSided] = useState(false); // Default to single sided
+  const [isColor, setIsColor] = useState(false); // B&W as default for cost friendliness
+  const [isDoubleSided, setIsDoubleSided] = useState(true); // Double sided default to save paper
   const [notes, setNotes] = useState("");
 
   const { user, isLoaded } = useUser();
 
-  // Pre-filled from landing page or user; editable as fallback
   const [customerName, setCustomerName] = useState(nameParam);
   const [customerPhone, setCustomerPhone] = useState("");
 
@@ -120,14 +122,11 @@ function OrderUploadPageInner() {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    // Robust validation
     if (selectedFile.size === 0) {
       toast.error("File is empty.");
       return;
     }
 
-    // Android Chrome often sends PDFs as application/octet-stream or empty type.
-    // Validate by BOTH mime type and file extension to handle all browsers.
     const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
       toast.error("Please upload a valid PDF file");
@@ -143,33 +142,24 @@ function OrderUploadPageInner() {
     setIsProcessing(true);
     setPdfParseFailed(false);
 
-    console.log(`[PDF Upload] Name: ${selectedFile.name}, Size: ${selectedFile.size}, Type: ${selectedFile.type}`);
-
     try {
-      console.log(`[PDF Parsing] Reading ArrayBuffer...`);
       const arrayBuffer = await selectedFile.arrayBuffer();
-
-      console.log(`[PDF Parsing] Initializing PDF-lib document...`);
       const { PDFDocument } = await import("pdf-lib");
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       const numPages = pdfDoc.getPageCount();
 
-      console.log(`[PDF Parsing] Success. Pages: ${numPages}`);
       setPageCount(numPages);
       toast.success(`PDF analyzed: ${numPages} pages detected`);
     } catch (err) {
       console.error("[PDF Parsing] Failed:", err);
-      // Fallback: allow direct upload even if preview/parsing fails
       toast.error("Could not automatically count pages. Please enter them manually.");
       setPdfParseFailed(true);
-      setPageCount(1); // Default to 1
+      setPageCount(1);
     } finally {
       setIsProcessing(false);
-      setStep(2); // Always proceed to Step 2
+      setStep(2); // Proceed to config
     }
   };
-
-
 
   // Calculate total
   const totalAmount = useMemo(() => {
@@ -178,7 +168,7 @@ function OrderUploadPageInner() {
     return pageCount * copies * rate;
   }, [pageCount, copies, isColor, shop]);
 
-  // Submit order — direct-to-Supabase upload (bypasses Vercel entirely)
+  // Submit order
   const handlePlaceOrder = async () => {
     if (!file || !shop?.id) return;
 
@@ -187,7 +177,6 @@ function OrderUploadPageInner() {
       return;
     }
 
-    // ─── Frontend Safety Validation (Sanitize & Validate Phone) ─────────────
     const rawDigits = customerPhone.replace(/\D/g, "");
     const cleanedPhone = (rawDigits.length === 12 && rawDigits.startsWith("91")) 
       ? rawDigits.slice(2) 
@@ -198,7 +187,6 @@ function OrderUploadPageInner() {
       return;
     }
 
-    // Capitalize words
     const formattedName = customerName
       .trim()
       .split(' ')
@@ -208,14 +196,12 @@ function OrderUploadPageInner() {
     setIsSubmitting(true);
     setTimeoutError(false);
 
-    // AbortController for 25s timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, 25000);
 
     try {
-      // ── Step 1: Get a signed upload URL from our server ──────────────────────
       const presignRes = await fetch("/api/storage/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -235,7 +221,6 @@ function OrderUploadPageInner() {
 
       const { signedUrl, storagePath } = await presignRes.json();
 
-      // ── Step 2: PUT file DIRECTLY to Supabase Storage ───────────────────────
       const uploadRes = await fetch(signedUrl, {
         method: "PUT",
         headers: { "Content-Type": file.type },
@@ -246,7 +231,6 @@ function OrderUploadPageInner() {
         throw new Error("File upload to storage failed");
       }
       
-      // ── Step 3: Create order record with sanitized phone ──────────────────
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,14 +245,12 @@ function OrderUploadPageInner() {
           doubleSided: Boolean(isDoubleSided),
           notes: notes?.trim() || "",
           customerName: formattedName,
-          customerPhone: cleanedPhone, // Send sanitized 10-digit phone
+          customerPhone: cleanedPhone,
         }),
         signal: controller.signal,
       });
 
       const raw = await res.text();
-      console.log("RAW API RESPONSE:", raw);
-
       let data;
       try {
         data = JSON.parse(raw);
@@ -277,22 +259,19 @@ function OrderUploadPageInner() {
       }
 
       if (res.ok) {
-        // Navigate before clearing isSubmitting — component unmounts cleanly
         router.push(`/order/${data.shortToken}`);
       } else {
-        // Throw specific error message from the backend if available
         throw new Error(data.message || data.error || "Order creation failed");
       }
     } catch (err) {
       console.error("[Order Submission Error]:", err);
-      setIsSubmitting(false); // Only reset on failure; success navigates away
+      setIsSubmitting(false);
       
       const isTimeout = (err as Error).name === "AbortError";
       if (isTimeout) {
         setTimeoutError(true);
         toast.error("Server is taking longer than expected. Please retry.");
       } else {
-        // Ensure the error message string doesn't say "Error: Error: ..."
         const message = err instanceof Error ? err.message.replace(/^Error:\s*/, '') : "Error placing order";
         toast.error(message);
       }
@@ -303,239 +282,392 @@ function OrderUploadPageInner() {
 
   if (isLoadingShop) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAFAFA]">
-        <Loader2 className="w-12 h-12 animate-spin text-emerald-600 mb-4" />
-        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Loading SmartPrint...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9FAFB]">
+        <div className="relative flex items-center justify-center mb-6">
+          <div className="absolute w-20 h-20 rounded-full border-4 border-emerald-500/10 border-t-emerald-500 animate-spin" />
+          <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-600">
+            <Printer className="w-6 h-6 animate-pulse" />
+          </div>
+        </div>
+        <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">Loading SmartPrint...</p>
       </div>
     );
   }
 
+  // Format file size helper
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
   return (
-    <div className="min-h-screen bg-[#FAFAFA] pb-20">
-      {/* Dynamic Header */}
-      <div className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white pb-24 font-sans antialiased font-medium text-slate-800">
+      
+      {/* Sticky Premium Header */}
+      <div className="bg-white/70 backdrop-blur-md border-b border-slate-100/80 sticky top-0 z-50">
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-black text-gray-900 tracking-tight">{shop?.name}</h1>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-emerald-500" /> Secure Cloud Print
-            </p>
+          <div className="flex items-center gap-3">
+            {step === 2 && (
+              <button 
+                onClick={() => { setStep(1); setFile(null); }} 
+                className="p-2 hover:bg-slate-100 rounded-xl transition"
+              >
+                <ArrowLeft className="w-4 h-4 text-slate-600" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-base font-extrabold text-slate-900 tracking-tight">{shop?.name}</h1>
+              <p className="text-[9px] text-emerald-700 font-extrabold uppercase tracking-widest flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> Secure Cloud Print
+              </p>
+            </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {[1, 2].map((s) => (
-              <div key={s} className={`h-1.5 w-8 rounded-full transition-all duration-500 ${step >= s ? "bg-emerald-500" : "bg-gray-100"}`} />
+              <div 
+                key={s} 
+                className={`h-1.5 w-6 rounded-full transition-all duration-300 ${
+                  step >= s ? "bg-emerald-600" : "bg-slate-100"
+                }`} 
+              />
             ))}
           </div>
         </div>
       </div>
 
-      <main className="max-w-2xl mx-auto px-4 mt-8 space-y-8">
-        {/* Step 1: File Upload */}
-        <div className={`transition-all duration-500 ${step !== 1 ? "opacity-50 scale-95 pointer-events-none blur-sm hidden" : "opacity-100 scale-100"}`}>
-          <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-emerald-900/5 p-10 text-center border border-gray-100">
-            <div className="w-24 h-24 rounded-3xl bg-emerald-50 flex items-center justify-center mx-auto mb-8 shadow-inner">
-              <Upload className="w-10 h-10 text-emerald-600" />
-            </div>
-            <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">Upload Documents</h2>
-            <p className="text-gray-500 font-medium mb-2">We support high-quality PDF printing up to 50MB</p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-full text-emerald-700 text-[10px] font-black uppercase tracking-widest mb-10">
-              <ShieldCheck className="w-3 h-3 text-emerald-600" /> Files auto-deleted after 2 hours for privacy
-            </div>
-
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-4 border-dashed border-gray-100 rounded-[2rem] p-12 cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
+      <main className="max-w-2xl mx-auto px-4 mt-6">
+        <AnimatePresence mode="wait">
+          
+          {/* STEP 1: UPLOAD SCREEN */}
+          {step === 1 && (
+            <motion.div
+              key="step1"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.4 }}
+              className="space-y-6"
             >
-              <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
-              {isProcessing ? (
-                <div className="flex flex-col items-center">
-                  <Loader2 className="w-12 h-12 animate-spin text-emerald-600 mb-4" />
-                  <p className="font-black text-emerald-900">Analyzing PDF...</p>
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-8 text-center space-y-6">
+                
+                <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100/50 flex items-center justify-center mx-auto shadow-inner text-emerald-600">
+                  <Upload className="w-8 h-8" />
                 </div>
-              ) : (
-                <div className="flex flex-col items-center">
-                  <div className="p-4 bg-gray-50 rounded-2xl group-hover:bg-white group-hover:shadow-lg transition-all mb-4">
-                    <FileText className="w-8 h-8 text-gray-400 group-hover:text-emerald-600" />
-                  </div>
-                  <p className="font-black text-gray-900 text-lg">Click to select PDF</p>
-                  <p className="text-xs text-gray-400 font-bold uppercase mt-2">Maximum 50 Pages per file</p>
+                
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Upload Documents</h2>
+                  <p className="text-slate-500 text-sm">Tap the card below to select your PDF file.</p>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Step 2: Print Configuration */}
-        <div className={`transition-all duration-500 ${step !== 2 ? "hidden" : "opacity-100 scale-100"}`}>
-          <div className="space-y-6">
-            <div className="bg-white rounded-[2rem] shadow-xl border border-gray-100 p-8">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center shadow-inner">
-                  <Printer className="w-6 h-6 text-emerald-600" />
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-emerald-50 rounded-full text-emerald-700 text-[10px] font-extrabold uppercase tracking-widest">
+                  <ShieldCheck className="w-3.5 h-3.5" /> 2-Hour Auto-Delete Privacy Active
+                </div>
+
+                <motion.div
+                  onClick={() => fileInputRef.current?.click()}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  className="border-3 border-dashed border-slate-200/80 rounded-2xl p-10 cursor-pointer hover:border-emerald-500 hover:bg-emerald-500/[0.01] transition-all bg-slate-50/50 flex flex-col items-center justify-center group relative overflow-hidden"
+                >
+                  <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+                  
+                  {isProcessing ? (
+                    <div className="flex flex-col items-center space-y-3 py-4">
+                      <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
+                      <p className="font-extrabold text-slate-700 text-sm">Analyzing PDF structure...</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center space-y-4">
+                      <div className="p-3.5 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-400 group-hover:text-emerald-600 transition-colors">
+                        <FileText className="w-7 h-7" />
+                      </div>
+                      <div className="text-center space-y-1">
+                        <p className="font-extrabold text-slate-800 text-base">Select PDF Document</p>
+                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">PDF format up to 50MB</p>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              </div>
+
+              {/* Supported details card */}
+              <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-100 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                  <Clock className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-gray-900 tracking-tight">Configuration</h2>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">{file?.name}</p>
+                  <h3 className="font-extrabold text-slate-800 text-sm">Same-Day Pickup ready</h3>
+                  <p className="text-slate-500 text-xs font-medium">Place your order online, pick it up at the shop instantly.</p>
                 </div>
               </div>
+            </motion.div>
+          )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Color Mode */}
-                <button
-                  onClick={() => setIsColor(!isColor)}
-                  className={`p-6 rounded-3xl border-2 transition-all text-left relative overflow-hidden ${isColor ? "border-orange-500 bg-orange-50" : "border-gray-100 bg-gray-50"}`}
-                >
-                  <div className={`p-2 rounded-lg inline-block mb-3 ${isColor ? "bg-orange-500 text-white" : "bg-gray-200 text-gray-500"}`}>
-                    <Zap className="w-4 h-4" />
+          {/* STEP 2: PRINT CONFIGURATION & CHECKOUT */}
+          {step === 2 && (
+            <motion.div
+              key="step2"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.4 }}
+              className="space-y-6"
+            >
+              
+              {/* Document Overview Header */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center shrink-0 text-rose-500">
+                    <FileText className="w-6 h-6" />
                   </div>
-                  <p className={`font-black text-lg ${isColor ? "text-orange-900" : "text-gray-900"}`}>{isColor ? "Color Print" : "Black & White"}</p>
-                  <p className="text-xs font-bold text-gray-400 uppercase">Premium Vivid Ink</p>
-                  {isColor && <Check className="absolute top-4 right-4 text-orange-600" />}
-                </button>
-
-                {/* Sidedness */}
-                <button
-                  onClick={() => setIsDoubleSided(!isDoubleSided)}
-                  className={`p-6 rounded-3xl border-2 transition-all text-left relative overflow-hidden ${isDoubleSided ? "border-emerald-500 bg-emerald-50" : "border-gray-100 bg-gray-50"}`}
-                >
-                  <div className={`p-2 rounded-lg inline-block mb-3 ${isDoubleSided ? "bg-emerald-500 text-white" : "bg-gray-200 text-gray-500"}`}>
-                    <FileText className="w-4 h-4" />
+                  <div className="min-w-0">
+                    <h3 className="font-extrabold text-slate-800 text-base truncate">{file?.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                      {formatSize(file?.size || 0)} · {pageCount} {pageCount === 1 ? "page" : "pages"}
+                    </p>
                   </div>
-                  <p className={`font-black text-lg ${isDoubleSided ? "text-emerald-900" : "text-gray-900"}`}>{isDoubleSided ? "Double-Sided" : "Single-Sided"}</p>
-                  <p className="text-xs font-bold text-gray-400 uppercase">Save Paper</p>
-                  {isDoubleSided && <Check className="absolute top-4 right-4 text-emerald-600" />}
+                </div>
+                <button 
+                  onClick={() => { setStep(1); setFile(null); }}
+                  className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 transition"
+                  title="Remove file"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Fallback Page Counter */}
-              {pdfParseFailed && (
-                <div className="mt-6 p-6 bg-rose-50 rounded-3xl flex items-center justify-between border border-rose-100">
+              {/* Configurations section */}
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+                    <Printer className="w-5 h-5" />
+                  </div>
                   <div>
-                    <p className="font-black text-rose-900">Document Pages</p>
-                    <p className="text-xs text-rose-500 font-bold uppercase tracking-tighter">Enter pages manually</p>
-                  </div>
-                  <div className="flex items-center gap-6 bg-white rounded-2xl p-2 shadow-sm border border-rose-100">
-                    <button onClick={() => setPageCount(Math.max(1, (pageCount || 1) - 1))} className="w-10 h-10 rounded-xl hover:bg-gray-50 flex items-center justify-center transition-colors">
-                      <Minus className="w-4 h-4 text-gray-400" />
-                    </button>
-                    <span className="text-2xl font-black text-gray-900 w-8 text-center">{pageCount || 1}</span>
-                    <button onClick={() => setPageCount(Math.min(500, (pageCount || 1) + 1))} className="w-10 h-10 rounded-xl hover:bg-gray-50 flex items-center justify-center transition-colors">
-                      <Plus className="w-4 h-4 text-rose-600" />
-                    </button>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">Print Preferences</h2>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">Choose your ink & paper options</p>
                   </div>
                 </div>
-              )}
 
-              {/* Copies Counter */}
-              <div className="mt-6 p-6 bg-gray-50 rounded-3xl flex items-center justify-between border border-gray-100">
-                <div>
-                  <p className="font-black text-gray-900">Number of Copies</p>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-tighter">Total sets to print</p>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Ink Type Selection */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Ink Mode</label>
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button
+                        onClick={() => setIsColor(false)}
+                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
+                          !isColor ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        B&amp;W
+                      </button>
+                      <button
+                        onClick={() => setIsColor(true)}
+                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
+                          isColor ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Color
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sidedness Selection */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Sidedness</label>
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button
+                        onClick={() => setIsDoubleSided(false)}
+                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
+                          !isDoubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        1-Sided
+                      </button>
+                      <button
+                        onClick={() => setIsDoubleSided(true)}
+                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
+                          isDoubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        2-Sided
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-6 bg-white rounded-2xl p-2 shadow-sm border border-gray-100">
-                  <button onClick={() => setCopies(Math.max(1, copies - 1))} className="w-10 h-10 rounded-xl hover:bg-gray-50 flex items-center justify-center transition-colors">
-                    <Minus className="w-4 h-4 text-gray-400" />
-                  </button>
-                  <span className="text-2xl font-black text-gray-900 w-8 text-center">{copies}</span>
-                  <button onClick={() => setCopies(Math.min(50, copies + 1))} className="w-10 h-10 rounded-xl hover:bg-gray-50 flex items-center justify-center transition-colors">
-                    <Plus className="w-4 h-4 text-emerald-600" />
-                  </button>
+
+                {/* Live rate information alert */}
+                <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between border border-slate-100/80">
+                  <span className="text-xs font-bold text-slate-500">Current Print Rate</span>
+                  <span className="text-xs font-black text-slate-800">
+                    {formatCurrency(isColor ? shop?.price_color_per_page || 0 : shop?.price_bw_per_page || 0)} / page
+                  </span>
                 </div>
-              </div>
 
-              <div className="mt-8">
-                <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1 mb-2 block">Special Instructions</label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="E.g. Use glossy paper, staple top-left..."
-                  className="w-full bg-gray-50 rounded-3xl p-6 text-sm border-none focus:ring-2 focus:ring-emerald-500 outline-none min-h-[100px] transition-all"
-                />
-              </div>
-            </div>
-
-            {/* Name & Phone Info */}
-            <div className="mt-6 space-y-4">
-              <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 block">Full Name</label>
-                <div className="relative group">
-                  <User className="absolute left-4 top-4 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
-                  <input
-                    placeholder="Enter your name"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full pl-12 h-14 rounded-2xl border border-gray-200 bg-white text-base font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 block">Mobile Number</label>
-                <div className="relative group">
-                  <Phone className="absolute left-4 top-4 h-5 w-5 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
-                  <input
-                    placeholder="10-digit mobile number"
-                    type="tel"
-                    maxLength={10}
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    className="w-full pl-12 h-14 rounded-2xl border border-gray-200 bg-white text-base font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  />
-                </div>
-                <p className="text-[10px] text-gray-400 font-bold mt-2 ml-1">For order updates & pickup notifications</p>
-              </div>
-            </div>
-
-            <div className="mt-8 bg-emerald-600 rounded-[2rem] p-8 text-white flex items-center justify-between shadow-xl shadow-emerald-600/20">
-              <div>
-                <p className="text-emerald-100 font-bold uppercase tracking-widest text-[10px] mb-1">Estimated Total</p>
-                <p className="text-4xl font-black">{formatCurrency(totalAmount)}</p>
-                {customerName && <p className="text-emerald-200 text-xs font-bold mt-1">for {customerName}</p>}
-              </div>
-              <Button
-                onClick={handlePlaceOrder}
-                disabled={isSubmitting || !customerName || customerName.trim().length < 3 || customerPhone.length < 10}
-                className="bg-white text-emerald-700 px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:scale-100"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="animate-spin w-5 h-5" />
-                ) : timeoutError ? (
-                  <>Retry Order <ChevronRight className="w-5 h-5" /></>
-                ) : (
-                  <>Place Order <ChevronRight className="w-5 h-5" /></>
+                {/* Dynamic Page Adjuster (if auto-parse failed) */}
+                {pdfParseFailed && (
+                  <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
+                    <div>
+                      <p className="font-extrabold text-amber-900 text-sm">Specify Page Count</p>
+                      <p className="text-[9px] text-amber-600 font-bold uppercase tracking-wider">Please type or set manually</p>
+                    </div>
+                    <div className="flex items-center gap-4 bg-white rounded-xl p-1 shadow-sm border border-amber-100">
+                      <button 
+                        onClick={() => setPageCount(Math.max(1, (pageCount || 1) - 1))} 
+                        className="w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
+                      >
+                        <Minus className="w-3 h-3 text-slate-400" />
+                      </button>
+                      <span className="text-lg font-black text-slate-800 w-6 text-center">{pageCount || 1}</span>
+                      <button 
+                        onClick={() => setPageCount(Math.min(500, (pageCount || 1) + 1))} 
+                        className="w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
+                      >
+                        <Plus className="w-3 h-3 text-emerald-600" />
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </Button>
-            </div>
-          </div>
-        </div>
 
-        {/* Shop Badge */}
-        {step === 2 && (
-          <div className="text-center">
-            <div className="inline-flex items-center gap-3 bg-white px-6 py-3 rounded-2xl border border-gray-100 shadow-sm">
-              <Clock className="w-4 h-4 text-emerald-500" />
-              <span className="text-gray-900 font-black text-sm">{shop?.name}</span>
-            </div>
-          </div>
-        )}
+                {/* Copies Counter */}
+                <div className="p-5 bg-slate-50 rounded-2xl flex items-center justify-between border border-slate-100/50">
+                  <div>
+                    <p className="font-extrabold text-slate-800 text-sm">Number of Copies</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Total sets to produce</p>
+                  </div>
+                  <div className="flex items-center gap-4 bg-white rounded-xl p-1 shadow-sm border border-slate-100">
+                    <button 
+                      onClick={() => setCopies(Math.max(1, copies - 1))} 
+                      className="w-9 h-9 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
+                    >
+                      <Minus className="w-3.5 h-3.5 text-slate-400" />
+                    </button>
+                    <span className="text-xl font-black text-slate-900 w-6 text-center">{copies}</span>
+                    <button 
+                      onClick={() => setCopies(Math.min(50, copies + 1))} 
+                      className="w-9 h-9 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Special Instructions Notes */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Special Instructions</label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="E.g. Staple top-left, spiral binding requested..."
+                    className="w-full bg-slate-50/50 rounded-2xl p-4 text-sm border border-slate-100 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none min-h-[90px] transition-all placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              {/* Customer Details Form */}
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">Delivery Info</h2>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">Your contact details for pickups</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Full Name</label>
+                    <div className="relative group">
+                      <User className="absolute left-4 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                      <input
+                        placeholder="Enter your name"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        className="w-full pl-12 h-12 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm font-semibold transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">WhatsApp / Phone Number</label>
+                    <div className="relative group">
+                      <Phone className="absolute left-4 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                      <input
+                        placeholder="10-digit mobile number"
+                        type="tel"
+                        maxLength={10}
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        className="w-full pl-12 h-12 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm font-semibold transition-all"
+                      />
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold ml-0.5">Used strictly for real-time status & pickup updates</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Checkout / Pricing sticky bar */}
+              <div className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl shadow-slate-950/20 relative overflow-hidden">
+                <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
+                  <Printer className="w-40 h-40" />
+                </div>
+                
+                <div className="z-10">
+                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Total Print Bill</span>
+                  <p className="text-3xl font-black text-emerald-400 mt-1">{formatCurrency(totalAmount)}</p>
+                  <p className="text-[10px] text-slate-300 font-bold mt-1">
+                    {pageCount} {pageCount === 1 ? "page" : "pages"} · {copies} {copies === 1 ? "copy" : "copies"}
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handlePlaceOrder}
+                  disabled={isSubmitting || !customerName || customerName.trim().length < 3 || customerPhone.length < 10}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-4 h-14 rounded-xl font-bold flex items-center gap-2 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="animate-spin w-4 h-4" /> Processing...
+                    </>
+                  ) : timeoutError ? (
+                    <>
+                      Retry Order <ChevronRight className="w-4 h-4" />
+                    </>
+                  ) : (
+                    <>
+                      Place Order <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Bottom Quick Help Contact */}
+              <div className="text-center pt-2 pb-6">
+                <div className="inline-flex items-center gap-2 bg-white px-5 py-2.5 rounded-full border border-slate-100 shadow-sm text-slate-500 hover:scale-[1.02] transition">
+                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">
+                    Need Help? Call Store {shop?.phone ? `at ${shop.phone}` : ""}
+                  </span>
+                </div>
+              </div>
+
+            </motion.div>
+          )}
+
+        </AnimatePresence>
       </main>
-
-      {/* Quick Help Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 p-4 z-50 pointer-events-none">
-        <div className="max-w-2xl mx-auto flex justify-center">
-          <div className="bg-gray-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl pointer-events-auto border border-white/10 transition-all hover:scale-105">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <p className="text-[10px] font-black uppercase tracking-widest">Questions? Call {shop?.name}{shop?.phone ? ` · ${shop.phone}` : ""}</p>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
 
 export default function OrderUploadPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-emerald-600" /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F9FAFB]"><Loader2 className="h-8 w-8 animate-spin text-emerald-600" /></div>}>
       <OrderUploadPageInner />
     </Suspense>
   );

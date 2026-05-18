@@ -5,12 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { 
   CheckCircle2, Clock, Printer, Package, 
   XCircle, ArrowLeft, Loader2, MapPin, Phone,
-  FileText, RefreshCcw, AlertCircle, Store
+  FileText, RefreshCcw, AlertCircle, Store,
+  Sparkles, Check, ChevronRight, Navigation
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/public-client";
 import { formatCurrency } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function OrderStatusPage() {
   const params = useParams();
@@ -71,20 +73,36 @@ export default function OrderStatusPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-        <Loader2 className="w-10 h-10 animate-spin text-emerald-600 mb-4" />
-        <p className="text-gray-600 font-bold uppercase tracking-widest text-[10px]">Tracking Order...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9FAFB]">
+        <div className="relative flex items-center justify-center mb-6">
+          <div className="absolute w-20 h-20 rounded-full border-4 border-emerald-500/10 border-t-emerald-500 animate-spin" />
+          <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-600">
+            <Clock className="w-6 h-6 animate-pulse" />
+          </div>
+        </div>
+        <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">Tracking Order...</p>
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
-        <XCircle className="w-16 h-16 text-red-500 mb-4" />
-        <h1 className="text-2xl font-black text-gray-900 mb-2">Order Not Found</h1>
-        <p className="text-gray-600 mb-6 font-medium">We couldn&apos;t find an order with this link. It might have expired or been deleted.</p>
-        <Button onClick={() => router.push("/")} className="rounded-2xl px-8 shadow-lg shadow-emerald-600/20">Go Home</Button>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9FAFB] p-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl p-10 shadow-xl max-w-md w-full border border-slate-100"
+        >
+          <XCircle className="w-16 h-16 text-red-500 mb-4 mx-auto" />
+          <h1 className="text-2xl font-black text-slate-900 mb-2">Order Not Found</h1>
+          <p className="text-slate-500 mb-6 font-medium text-sm">We couldn&apos;t find an order with this link. It might have expired or been deleted.</p>
+          <Button 
+            onClick={() => router.push("/")} 
+            className="w-full h-14 rounded-xl bg-slate-900 hover:bg-slate-950 text-white font-bold transition shadow-lg"
+          >
+            Go Home
+          </Button>
+        </motion.div>
       </div>
     );
   }
@@ -93,73 +111,101 @@ export default function OrderStatusPage() {
   const status = order.order_status;
   
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-12">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-10">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white pb-16 font-sans antialiased font-medium text-slate-800">
+      
+      {/* Sticky Minimal Navbar */}
+      <div className="bg-white/70 backdrop-blur-md border-b border-slate-100/80 sticky top-0 z-50">
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => router.push("/")} className="p-2 hover:bg-gray-100 rounded-xl transition">
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => router.push("/")} 
+              className="p-2 hover:bg-slate-100 rounded-xl transition"
+            >
+              <ArrowLeft className="w-4 h-4 text-slate-600" />
             </button>
             <div>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Order ID</p>
-              <h1 className="font-black text-gray-900 tracking-tight">{order.short_token}</h1>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Order ID</p>
+              <h1 className="font-extrabold text-slate-900 tracking-tight">{order.short_token}</h1>
             </div>
           </div>
           <button 
             onClick={() => loadOrder(false)}
-            className={`p-3 bg-gray-50 hover:bg-gray-100 rounded-xl transition shadow-sm ${isRefreshing ? "animate-spin text-emerald-600" : "text-gray-600"}`}
+            className={`p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl transition shadow-sm ${
+              isRefreshing ? "animate-spin text-emerald-600" : "text-slate-600"
+            }`}
           >
-            <RefreshCcw className="w-5 h-5" />
+            <RefreshCcw className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      <main className="max-w-2xl mx-auto px-4 mt-8 space-y-6">
-        {/* Status Card */}
-        <div className="bg-white rounded-[2rem] shadow-2xl shadow-emerald-900/5 border border-gray-100 overflow-hidden">
-          <div className={`p-10 text-center text-white relative ${
-            status === "PLACED" || status === "DRAFT" ? "bg-gradient-to-br from-blue-600 to-indigo-700" :
+      <main className="max-w-2xl mx-auto px-4 mt-6 space-y-6">
+        
+        {/* State Banner / Main Success Card */}
+        <motion.div 
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl shadow-xl shadow-slate-900/[0.02] border border-slate-100/80 overflow-hidden"
+        >
+          {/* Header Gradient based on status */}
+          <div className={`p-8 text-center text-white relative flex flex-col items-center justify-center min-h-[220px] ${
+            status === "PLACED" || status === "DRAFT" ? "bg-gradient-to-br from-indigo-600 to-violet-700" :
             status === "ACCEPTED" || status === "PRINTING" ? "bg-gradient-to-br from-emerald-600 to-teal-700" :
-            status === "READY" ? "bg-gradient-to-br from-orange-500 to-amber-600" :
-            status === "COMPLETED" ? "bg-gradient-to-br from-gray-800 to-black" :
-            "bg-gradient-to-br from-red-600 to-rose-700"
+            status === "READY" ? "bg-gradient-to-br from-amber-500 to-orange-600" :
+            status === "COMPLETED" ? "bg-gradient-to-br from-slate-800 to-slate-950" :
+            "bg-gradient-to-br from-rose-600 to-red-700"
           }`}>
-            <div className="absolute top-4 right-6 opacity-20">
-              <Printer className="w-24 h-24" />
+            <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
+              <Printer className="w-48 h-48" />
             </div>
             
-            <div className="w-24 h-24 rounded-3xl bg-white/20 flex items-center justify-center mx-auto mb-6 backdrop-blur-md shadow-inner">
-              {status === "PLACED" || status === "DRAFT" ? <Clock className="w-12 h-12" /> :
-               status === "ACCEPTED" ? <CheckCircle2 className="w-12 h-12" /> :
-               status === "PRINTING" ? <Printer className="w-12 h-12 animate-bounce" /> :
-               status === "READY" ? <Package className="w-12 h-12 animate-pulse" /> :
-               status === "COMPLETED" ? <CheckCircle2 className="w-12 h-12" /> :
-               <XCircle className="w-12 h-12" />}
-            </div>
+            <motion.div 
+              initial={{ scale: 0.8, rotate: -10 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", stiffness: 200, damping: 15 }}
+              className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center mb-5 border border-white/10 shadow-inner"
+            >
+              {status === "PLACED" || status === "DRAFT" ? <Clock className="w-9 h-9" /> :
+               status === "ACCEPTED" ? <Sparkles className="w-9 h-9 animate-pulse" /> :
+               status === "PRINTING" ? <Printer className="w-9 h-9 animate-bounce" /> :
+               status === "READY" ? <CheckCircle2 className="w-9 h-9 animate-pulse" /> :
+               status === "COMPLETED" ? <Check className="w-10 h-10" /> :
+               <XCircle className="w-9 h-9" />}
+            </motion.div>
             
-            <h2 className="text-4xl font-black mb-2 tracking-tight">
-              {status === "PLACED" || status === "DRAFT" ? "Pending" :
-               status === "ACCEPTED" ? "Accepted" :
-               status === "PRINTING" ? "Printing" :
-               status === "READY" ? "Ready!" :
-               status === "COMPLETED" ? "Picked Up" :
-               "Cancelled"}
+            <h2 className="text-3xl font-black mb-1.5 tracking-tight">
+              {status === "PLACED" || status === "DRAFT" ? "Order Placed" :
+               status === "ACCEPTED" ? "Order Accepted" :
+               status === "PRINTING" ? "Printing Now" :
+               status === "READY" ? "Ready for Pickup!" :
+               status === "COMPLETED" ? "Completed" :
+               "Order Cancelled"}
             </h2>
-            <p className="text-white/80 font-bold uppercase tracking-widest text-xs">
-              {status === "PLACED" || status === "DRAFT" ? "Waiting for shop review" :
-               status === "ACCEPTED" ? "Shop is preparing your order" :
-               status === "PRINTING" ? "Ink is hitting the paper now" :
-               status === "READY" ? "Come to the shop for pickup" :
-               status === "COMPLETED" ? "Transaction finished" :
-               "This order will not be processed"}
+            <p className="text-white/80 font-bold uppercase tracking-widest text-[10px]">
+              {status === "PLACED" || status === "DRAFT" ? "Waiting for store approval" :
+               status === "ACCEPTED" ? "Store preparing sheets" :
+               status === "PRINTING" ? "Vivid ink hitting paper now" :
+               status === "READY" ? "Ready at the pickup counter" :
+               status === "COMPLETED" ? "Thank you for using SmartPrint" :
+               "This session has been terminated"}
             </p>
           </div>
 
-          <div className="p-8 space-y-8">
-            {/* Progress line */}
+          {/* Details & Custom Stepper */}
+          <div className="p-6 md:p-8 space-y-8">
+            
+            {/* Live Sync Banner */}
+            <div className="flex items-center justify-center gap-2 py-2 px-4 bg-emerald-50 rounded-xl text-emerald-800 text-[10px] font-extrabold uppercase tracking-widest border border-emerald-100/50 w-full">
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span>Live Real-time Sync Active</span>
+            </div>
+
+            {/* Premium Stepper */}
             {!["CANCELLED"].includes(status) && (
-              <div className="flex justify-between items-start">
+              <div className="flex justify-between items-start pt-2">
                 {[
                   { id: "PLACED", label: "Placed" },
                   { id: "ACCEPTED", label: "Accepted" },
@@ -175,141 +221,160 @@ export default function OrderStatusPage() {
                   return (
                     <div key={step.id} className="flex flex-col items-center relative flex-1">
                       {i < arr.length - 1 && (
-                        <div className={`absolute left-1/2 top-4 w-full h-1.5 rounded-full ${
-                          stepIdx < currentIdx ? "bg-emerald-500" : "bg-gray-100"
+                        <div className={`absolute left-1/2 top-3 w-full h-[3px] rounded-full transition-colors duration-500 ${
+                          stepIdx < currentIdx ? "bg-emerald-500" : "bg-slate-100"
                         }`} />
                       )}
-                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm z-10 transition-all duration-500 ${
-                        isDone ? "bg-emerald-500 text-white shadow-lg shadow-emerald-200" : "bg-gray-100 text-gray-400"
-                      } ${isActive ? "ring-4 ring-emerald-100 scale-110" : ""}`}>
-                        {isDone ? <CheckCircle2 className="w-6 h-6" /> : <div className="w-2 h-2 rounded-full bg-gray-300" />}
+                      
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs z-10 transition-all duration-500 ${
+                        isDone 
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/10" 
+                          : "bg-slate-100 text-slate-400 border border-slate-200/50"
+                      } ${isActive ? "ring-4 ring-emerald-500/10 scale-110" : ""}`}>
+                        {isDone ? (
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        ) : (
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                        )}
                       </div>
-                      <span className={`text-[10px] mt-3 font-black uppercase tracking-widest ${
-                        isDone ? "text-emerald-700" : "text-gray-400"
+                      <span className={`text-[9px] mt-3 font-extrabold uppercase tracking-widest ${
+                        isDone ? "text-slate-800" : "text-slate-400"
                       }`}>
                         {step.label}
                       </span>
                     </div>
-                  )
+                  );
                 })}
               </div>
             )}
 
+            {/* Quick Bill Info Box */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status</p>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${status === "READY" ? "bg-orange-500 animate-pulse" : "bg-emerald-500"}`} />
-                  <p className="font-black text-gray-900">{status}</p>
-                </div>
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Order Status</span>
+                <p className="font-extrabold text-slate-800 text-lg mt-1">{status}</p>
               </div>
               <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100">
-                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Amount to Pay</p>
-                <p className="text-2xl font-black text-emerald-700">{formatCurrency(order.total_amount)}</p>
+                <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Pay at Counter</span>
+                <p className="text-2xl font-black text-emerald-700 mt-0.5">{formatCurrency(order.total_amount)}</p>
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Shop Info Card */}
         {shop && (
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 md:p-8 space-y-6"
+          >
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-gray-900 text-xl tracking-tight flex items-center gap-2">
-                <MapPin className="w-6 h-6 text-emerald-600" /> Store Details
+              <h3 className="font-extrabold text-slate-800 text-lg tracking-tight flex items-center gap-2">
+                <Store className="w-5 h-5 text-emerald-600 shrink-0" /> Pickup Store
               </h3>
-              <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${shop.is_open ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+              <div className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
+                shop.is_open ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+              }`}>
                 {shop.is_open ? "Open Now" : "Closed"}
               </div>
             </div>
             
-            <div className="flex items-start gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 shadow-inner">
-                <Store className="w-8 h-8 text-emerald-600" />
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 shadow-inner text-emerald-600">
+                <Store className="w-6 h-6" />
               </div>
-              <div>
-                <p className="font-black text-xl text-gray-900">{shop.name}</p>
-                <p className="text-gray-500 font-medium leading-relaxed mt-1">{shop.address_line1}</p>
+              <div className="space-y-1">
+                <p className="font-extrabold text-slate-900 text-lg tracking-tight">{shop.name}</p>
+                <p className="text-slate-500 text-sm leading-relaxed">{shop.address_line1}</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-4">
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <a 
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.name + " " + shop.address_line1)}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.name + " " + (shop.address_line1 || ""))}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1"
               >
-                <Button variant="outline" className="w-full h-14 rounded-2xl border-gray-100 bg-gray-50 hover:bg-white font-black text-xs uppercase tracking-widest gap-2">
-                  <MapPin className="w-4 h-4" /> Directions
+                <Button variant="outline" className="w-full h-12 rounded-xl border-slate-100 bg-slate-50 hover:bg-white font-extrabold text-xs uppercase tracking-wider gap-2">
+                  <Navigation className="w-4 h-4 text-slate-500" /> Directions
                 </Button>
               </a>
-              <a href={`tel:${shop.owner_phone}`} className="flex-1">
-                <Button variant="outline" className="w-full h-14 rounded-2xl border-gray-100 bg-gray-50 hover:bg-white font-black text-xs uppercase tracking-widest gap-2">
-                  <Phone className="w-4 h-4" /> Call Shop
+              <a href={`tel:${shop.owner_phone}`}>
+                <Button variant="outline" className="w-full h-12 rounded-xl border-slate-100 bg-slate-50 hover:bg-white font-extrabold text-xs uppercase tracking-wider gap-2">
+                  <Phone className="w-4 h-4 text-slate-500" /> Call Store
                 </Button>
               </a>
             </div>
-          </div>
+          </motion.div>
         )}
 
-        {/* Order Items Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 space-y-6">
-          <h3 className="font-black text-gray-900 text-xl tracking-tight flex items-center gap-2">
-            <FileText className="h-6 h-6 text-emerald-600" /> Order Details
+        {/* Order Details list */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 md:p-8 space-y-6"
+        >
+          <h3 className="font-extrabold text-slate-800 text-lg tracking-tight flex items-center gap-2">
+            <FileText className="w-5 h-5 text-emerald-600 shrink-0" /> Order Details
           </h3>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 group transition-all hover:bg-white hover:shadow-md">
-              <div className="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
-                <FileText className="w-6 h-6 text-rose-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-gray-900 truncate">{order.file_name || "Document"}</p>
-                <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">
-                  {order.page_count} Pages · {order.copies} Copies
-                </p>
-              </div>
-              <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${order.color ? "bg-orange-100 text-orange-700" : "bg-gray-200 text-gray-700"}`}>
-                {order.color ? "Color" : "B&W"}
-              </div>
+          
+          <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
+            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500">
+              <FileText className="w-5.5 h-5.5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-extrabold text-slate-900 truncate text-sm">{order.file_name || "Document"}</p>
+              <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                {order.page_count} Pages · {order.copies} {order.copies === 1 ? "Copy" : "Copies"}
+              </p>
+            </div>
+            <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
+              order.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
+            }`}>
+              {order.color ? "Color" : "B&W"}
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="p-5 bg-emerald-50 rounded-2xl border border-emerald-100">
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Print Type</p>
-              <p className="font-black text-emerald-900">{order.double_sided ? "Double-Sided" : "Single-Sided"}</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100/50">
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">Print Sides</span>
+              <span className="font-extrabold text-slate-800 text-sm mt-1 block">
+                {order.double_sided ? "Double-Sided" : "Single-Sided"}
+              </span>
             </div>
-            <div className="p-5 bg-emerald-50 rounded-2xl border border-emerald-100">
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Copies</p>
-              <p className="font-black text-emerald-900">{order.copies} Sets</p>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100/50">
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">Order Volume</span>
+              <span className="font-extrabold text-slate-800 text-sm mt-1 block">
+                {order.page_count * order.copies} Total Pages
+              </span>
             </div>
           </div>
 
           {order.notes && (
-            <div className="p-5 bg-orange-50 rounded-2xl border border-orange-100 flex gap-3">
-              <AlertCircle className="h-5 w-5 text-orange-500 shrink-0" />
-              <div>
-                <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Special Notes</p>
-                <p className="text-sm font-medium text-orange-900">{order.notes}</p>
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-100/50 flex gap-3 text-slate-700">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-extrabold text-amber-700 uppercase tracking-widest block font-sans">Special notes</span>
+                <p className="text-xs font-semibold text-amber-900 leading-normal">{order.notes}</p>
               </div>
             </div>
           )}
+        </motion.div>
+
+        {/* Support section */}
+        <div className="text-center space-y-4 pt-4">
+          <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-full border border-slate-100 shadow-sm text-xs font-bold text-slate-500">
+            <span>Need assistance? Call the store at</span>
+            <span className="text-emerald-600 font-extrabold">{shop?.owner_phone}</span>
+          </div>
+          <p className="text-[9px] font-extrabold text-slate-300 uppercase tracking-[0.3em]">
+            SmartPrint Secure Print Cloud v2.0
+          </p>
         </div>
 
-        {/* Support footer */}
-        <div className="text-center space-y-6 pt-6">
-          <div className="inline-flex items-center gap-3 px-6 py-3 bg-white rounded-full border border-gray-100 shadow-sm">
-            <p className="text-xs text-gray-500 font-bold">
-              Need help? Call the shop at <span className="text-emerald-600 font-black tracking-tight">{shop?.owner_phone}</span>
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-4 opacity-30">
-            <div className="h-px bg-gray-300 flex-1" />
-            <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em]">SmartPrint QR v1.0</p>
-            <div className="h-px bg-gray-300 flex-1" />
-          </div>
-        </div>
       </main>
     </div>
   );
