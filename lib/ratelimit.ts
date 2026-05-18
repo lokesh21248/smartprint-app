@@ -1,17 +1,11 @@
 /**
- * In-memory sliding window rate limiter.
+ * In-memory sliding-window rate limiter.
  *
- * Why NOT the DB approach:
- * - The old ratelimit.ts made 2 Supabase DB round-trips per request
- *   (SELECT count + INSERT into audit_log).
- * - At 10K concurrent users this saturates the Supabase connection pool fast.
+ * Trade-off: state is per-serverless-instance (not globally shared across
+ * Vercel regions). This is ACCEPTABLE — rate limiting is a best-effort
+ * defence layer. Data-level constraints in Supabase are the hard guard.
  *
- * Trade-off with in-memory:
- * - State is per-serverless-instance (not globally shared across Vercel deploys).
- * - This is ACCEPTABLE: rate limiting is a best-effort defence, not a hard lock.
- *   If a user hits two different function instances they might get slightly more
- *   requests through — but the Supabase DB-level constraints still protect data.
- * - For true global rate limiting, add Upstash Redis (one extra env var).
+ * For true global rate limiting: add Upstash Redis (one extra env var).
  *
  * Performance: 0 DB calls, O(1) lookup, < 0.1ms per check.
  */
@@ -21,7 +15,7 @@ interface WindowEntry {
   resetAt: number; // epoch ms when the window expires
 }
 
-// Module-level map — lives for the lifetime of the serverless function instance
+// Module-level store — lives for the lifetime of the serverless function instance
 const store = new Map<string, WindowEntry>();
 
 // Prune expired entries every 5 minutes to prevent unbounded memory growth
@@ -38,41 +32,117 @@ function ensurePruner() {
   if (pruneTimer.unref) pruneTimer.unref();
 }
 
+// ─── Result type ──────────────────────────────────────────────────────────────
+
+export interface RateLimitResult {
+  /** Whether the request is allowed through */
+  success: boolean;
+  /** Remaining requests in the current window */
+  remaining: number;
+  /** Seconds until the window resets (useful for Retry-After header) */
+  retryAfter: number;
+}
+
+// ─── Core function ────────────────────────────────────────────────────────────
+
 /**
- * Sliding-window rate limiter (in-memory).
+ * Sliding-window rate limiter (in-memory, zero DB cost).
  *
- * @param identifier - Unique key, e.g. IP address or phone number
- * @param limit      - Max requests allowed in the window (default: 5)
- * @param windowSecs - Window size in seconds (default: 3600 = 1 hour)
+ * @param identifier  - Unique key, e.g. `"orders_POST_192.168.1.1"`
+ * @param limit       - Max requests allowed in the window
+ * @param windowSecs  - Window size in seconds
  */
 export function rateLimit(
   identifier: string,
-  limit: number = 5,
-  windowSecs: number = 3600
-): { success: boolean; remaining: number } {
+  limit: number,
+  windowSecs: number
+): RateLimitResult {
   try {
     ensurePruner();
 
     const now = Date.now();
     const existing = store.get(identifier);
 
-    // Window expired or first request — start fresh
+    // Window expired or first request — start a fresh window
     if (!existing || existing.resetAt <= now) {
-      store.set(identifier, { count: 1, resetAt: now + windowSecs * 1000 });
-      return { success: true, remaining: limit - 1 };
+      const resetAt = now + windowSecs * 1000;
+      store.set(identifier, { count: 1, resetAt });
+      return { success: true, remaining: limit - 1, retryAfter: 0 };
     }
 
     // Within window — check count
     if (existing.count >= limit) {
-      return { success: false, remaining: 0 };
+      const retryAfter = Math.ceil((existing.resetAt - now) / 1000);
+      return { success: false, remaining: 0, retryAfter };
     }
 
     existing.count += 1;
-    return { success: true, remaining: limit - existing.count };
+    return {
+      success: true,
+      remaining: limit - existing.count,
+      retryAfter: 0,
+    };
   } catch (err) {
-    // Fail open: if rate limiter fails, allow the request but log the error
+    // Fail open: if the rate limiter itself fails, allow the request
     console.error("[rateLimit] Critical failure:", err);
-    return { success: true, remaining: 1 };
+    return { success: true, remaining: 1, retryAfter: 0 };
   }
 }
 
+// ─── Named presets ────────────────────────────────────────────────────────────
+// Centralised limits — change here, applies everywhere.
+
+/**
+ * POST /api/orders — 15 requests per 60 seconds per IP.
+ * Generous enough for real customers, tight enough to block spam.
+ */
+export function rateLimitOrders(ip: string): RateLimitResult {
+  return rateLimit(`orders_post_${ip}`, 15, 60);
+}
+
+/**
+ * GET /api/orders — 30 requests per 60 seconds per IP.
+ * Customers poll for order status updates.
+ */
+export function rateLimitOrdersGet(ip: string): RateLimitResult {
+  return rateLimit(`orders_get_${ip}`, 30, 60);
+}
+
+/**
+ * POST /api/sessions — 10 requests per 60 seconds per IP.
+ * Aggressive: one session per customer visit is normal.
+ */
+export function rateLimitSessions(ip: string): RateLimitResult {
+  return rateLimit(`sessions_post_${ip}`, 10, 60);
+}
+
+/**
+ * POST /api/storage/presign — 20 uploads per hour per IP.
+ * Each order typically needs 1-3 files. 20/hr covers legitimate use.
+ */
+export function rateLimitPresign(ip: string): RateLimitResult {
+  return rateLimit(`presign_post_${ip}`, 20, 3600);
+}
+
+/**
+ * /api/auth/* — 10 requests per 5 minutes per IP.
+ * OTP and callback endpoints — aggressive throttle.
+ */
+export function rateLimitAuth(ip: string): RateLimitResult {
+  return rateLimit(`auth_${ip}`, 10, 300);
+}
+
+// ─── Response helper ──────────────────────────────────────────────────────────
+
+/**
+ * Returns standard rate-limit headers to attach to 429 responses.
+ *
+ * Usage:
+ *   return NextResponse.json({ error: "..." }, { status: 429, headers: rateLimitHeaders(result) });
+ */
+export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {
+  return {
+    "Retry-After": String(result.retryAfter),
+    "X-RateLimit-Remaining": String(result.remaining),
+  };
+}

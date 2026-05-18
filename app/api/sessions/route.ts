@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rateLimitSessions, rateLimitHeaders } from "@/lib/ratelimit";
 
 // Startup check: catch missing env at cold start, not at runtime per-request
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function POST(request: Request) {
+  // ── Rate limiting — 10 req/min/IP ─────────────────────────────────────────
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+  const rl = rateLimitSessions(ip);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait a moment and try again." },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   // ── Guard: catch misconfigured Vercel env before touching the DB ──────────
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.error(

@@ -1,5 +1,5 @@
-// This file configures the initialization of Sentry on the client.
-// The added config here will be used whenever a users loads a page in their browser.
+// Client-side Sentry configuration.
+// Runs in the browser whenever a user loads a page.
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
@@ -7,25 +7,58 @@ import * as Sentry from "@sentry/nextjs";
 Sentry.init({
   dsn: "https://9f2ddc0b8fa48768054c21450b52ee90@o4511199536021504.ingest.de.sentry.io/4511199543820368",
 
-  // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
+  // ── Integrations ──────────────────────────────────────────────────────────
+  integrations: [
+    Sentry.replayIntegration({
+      // Mask all text and block all media to protect customer PII in replays
+      maskAllText: true,
+      blockAllMedia: true,
+    }),
+  ],
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
-  // Enable logs to be sent to Sentry
+  // ── Sampling ──────────────────────────────────────────────────────────────
+  // 10% of traces in production, 100% in dev
+  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+
+  // ── Logs ──────────────────────────────────────────────────────────────────
   enableLogs: true,
 
-  // Define how likely Replay events are sampled.
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
+  // ── Session Replay ────────────────────────────────────────────────────────
+  // Normal sessions: 10% (baseline metrics)
   replaysSessionSampleRate: 0.1,
-
-  // Define how likely Replay events are sampled when an error occurs.
+  // Error sessions: 100% (always capture replays when something goes wrong)
   replaysOnErrorSampleRate: 1.0,
 
-  // Enable sending user PII (Personally Identifiable Information)
-  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
+  // ── PII ───────────────────────────────────────────────────────────────────
   sendDefaultPii: true,
+
+  // ── Environment ───────────────────────────────────────────────────────────
+  environment: process.env.NODE_ENV || "development",
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
+  ignoreErrors: [
+    // Browser extension noise
+    "ResizeObserver loop",
+    "ResizeObserver loop completed with undelivered notifications",
+    // Network errors from mobile users
+    "TypeError: Failed to fetch",
+    "TypeError: NetworkError",
+    "TypeError: Load failed",
+    "ChunkLoadError",
+    // Clerk popup closed by user
+    "ClerkRuntimeError",
+    // Safari private browsing
+    "QuotaExceededError",
+  ],
+
+  // ── Deny URLs ─────────────────────────────────────────────────────────────
+  // Filter out errors from browser extensions and third-party scripts
+  denyUrls: [
+    /extensions\//i,
+    /^chrome:\/\//i,
+    /^chrome-extension:\/\//i,
+    /^moz-extension:\/\//i,
+  ],
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

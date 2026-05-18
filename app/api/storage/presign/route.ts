@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimitPresign, rateLimitHeaders } from "@/lib/ratelimit";
+import {
+  validateUploadRequest,
+  generateStoragePath,
+  UPLOAD_BUCKET,
+  UPLOAD_URL_TTL_SECONDS,
+} from "@/lib/upload-validation";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -18,26 +24,19 @@ export const dynamic = "force-dynamic";
  * 4. Client → POST /api/orders        { filePath, ... }  (tiny JSON payload)
  */
 
-const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB hard cap
-const ALLOWED_MIME_TYPES = ["application/pdf"];
-const BUCKET = "order-files";
-const URL_TTL_SECONDS = 120; // 2 minutes to complete the upload
-
 export async function POST(request: Request) {
   try {
-    const supabase = createAdminClient();
-
-    // 1. Rate limit — 5 presigns per IP per 5 minutes (in-memory, zero DB cost)
-    const ip = request.headers.get("x-forwarded-for") ?? "anonymous";
-    const { success } = rateLimit(`presign_${ip}`, 5, 300);
-    if (!success) {
+    // 1. Rate limit — 20 uploads/hour/IP (in-memory, zero DB cost)
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
+    const rl = rateLimitPresign(ip);
+    if (!rl.success) {
       return NextResponse.json(
-        { error: "Too many upload requests. Please wait a few minutes." },
-        { status: 429 }
+        { error: "Too many upload requests. Please wait before uploading again." },
+        { status: 429, headers: rateLimitHeaders(rl) }
       );
     }
 
-    // 2. Parse & validate body
+    // 2. Parse body
     const body = await request.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -50,40 +49,28 @@ export async function POST(request: Request) {
       mimeType?: string;
     };
 
-    if (!shopId || !fileName || !fileSize || !mimeType) {
+    // 3. Validate shopId
+    if (!shopId || typeof shopId !== "string") {
       return NextResponse.json(
-        {
-          error:
-            "Missing required fields: shopId, fileName, fileSize, mimeType",
-        },
+        { error: "Missing required field: shopId" },
         { status: 400 }
       );
     }
 
-    // 3. Validate MIME type (PDF only)
-    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
+    // 4. Validate file — MIME type, extension, double-extension, path traversal, size
+    const validation = validateUploadRequest({ fileName, fileSize, mimeType });
+    if (!validation.valid) {
       return NextResponse.json(
-        { error: "Only PDF files are accepted" },
-        { status: 415 }
+        { error: validation.error },
+        { status: validation.statusCode ?? 400 }
       );
     }
 
-    // 4. Validate file size (max 25 MB)
-    if (fileSize > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        {
-          error: `File too large. Maximum size is ${
-            MAX_FILE_SIZE_BYTES / 1024 / 1024
-          } MB`,
-        },
-        { status: 413 }
-      );
-    }
-
-    // 5. Confirm shop exists (prevent orphan uploads)
+    // 5. Confirm shop exists and is active (prevent orphan uploads)
+    const supabase = createAdminClient();
     const { data: shop, error: shopError } = await supabase
       .from("shops")
-      .select("id")
+      .select("id, is_active")
       .eq("id", shopId)
       .maybeSingle();
 
@@ -91,14 +78,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
-    // 6. Generate unique storage path
-    const ext = fileName.split(".").pop()?.toLowerCase() ?? "pdf";
-    const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const storagePath = `orders/${shopId}/${uniqueName}`;
+    if (!shop.is_active) {
+      return NextResponse.json(
+        { error: "This shop is currently not accepting orders." },
+        { status: 403 }
+      );
+    }
+
+    // 6. Generate unique, collision-safe storage path
+    //    Uses timestamp + random — original filename is NOT used to prevent
+    //    path traversal, collisions, and encoding issues.
+    const storagePath = generateStoragePath(shopId, validation.extension!);
 
     // 7. Issue signed upload URL (client PUTs the file directly to this URL)
     const { data: signedData, error: signError } = await supabase.storage
-      .from(BUCKET)
+      .from(UPLOAD_BUCKET)
       .createSignedUploadUrl(storagePath, { upsert: false });
 
     if (signError || !signedData) {
@@ -118,14 +112,14 @@ export async function POST(request: Request) {
       });
 
     return NextResponse.json({
-      signedUrl: signedData.signedUrl, // Client PUTs the file here
+      signedUrl: signedData.signedUrl,   // Client PUTs the file here
       token: signedData.token,
-      storagePath,                     // Client sends this to POST /api/orders
-      expiresIn: URL_TTL_SECONDS,
+      storagePath,                       // Client sends this to POST /api/orders
+      sanitizedName: validation.sanitizedName,
+      expiresIn: UPLOAD_URL_TTL_SECONDS,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Internal server error";
+    const message = err instanceof Error ? err.message : "Internal server error";
     console.error("[presign] Unexpected error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }

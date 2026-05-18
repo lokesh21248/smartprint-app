@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimitOrders, rateLimitOrdersGet, rateLimitHeaders } from "@/lib/ratelimit";
 import { OrderCreateSchema } from "@/lib/validators";
 
 export const maxDuration = 60;
@@ -62,14 +62,13 @@ export async function POST(request: Request) {
     // Initialize Supabase admin client (fresh instance per request)
     const supabase = createAdminClient();
 
-    // 1. Rate Limiting — in-memory, zero DB overhead
-    const ip = request.headers.get("x-forwarded-for") || "anonymous";
-    const { success } = rateLimit(`order_spam_${ip}`, 5, 3600);
-
-    if (!success) {
+    // 1. Rate limiting — 15 req/min/IP (in-memory, zero DB cost)
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+    const rl = rateLimitOrders(ip);
+    if (!rl.success) {
       return NextResponse.json(
-        { error: "Too many orders from this IP. Please try again in an hour." },
-        { status: 429 }
+        { error: "Too many requests. Please slow down and try again shortly." },
+        { status: 429, headers: rateLimitHeaders(rl) }
       );
     }
 
@@ -293,6 +292,16 @@ interface GetOrderByTokenResponse {
  */
 export async function GET(request: Request) {
   try {
+    // Rate limiting — 30 req/min/IP
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+    const rl = rateLimitOrdersGet(ip);
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again shortly." },
+        { status: 429, headers: rateLimitHeaders(rl) }
+      );
+    }
+
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     const shortToken = searchParams.get("shortToken");

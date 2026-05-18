@@ -7,6 +7,9 @@ const WORKER_MAX_TIME_MS = 5000;
 // Smart retry backoff: 10s, 30s, 2min, 5min, 30min
 const BACKOFF_SECONDS = [10, 30, 120, 300, 1800];
 
+// Shared secret — the webhook handler passes this to authenticate worker calls
+const WORKER_SECRET = process.env.CLERK_WEBHOOK_SECRET;
+
 // --- Inline concurrency limiter (avoids p-limit ESM issues in Next.js) ---
 function createLimiter(concurrency: number) {
   let active = 0;
@@ -110,7 +113,13 @@ async function processJob(supabase: SupabaseClient, job: WebhookJob): Promise<"s
   }
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  // ── Auth guard: only the webhook handler should call this ────────────────
+  const secret = req.headers.get("x-worker-secret");
+  if (!WORKER_SECRET || secret !== WORKER_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const supabase = createAdminClient();
   const workerStart = Date.now();
 

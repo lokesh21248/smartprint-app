@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Bell, Volume2, VolumeX, Zap, Globe, LogOut,
@@ -19,7 +18,6 @@ interface SettingsClientProps {
 }
 
 export function SettingsClient({ shopName, shopEmail, shopLocation }: SettingsClientProps) {
-  const router = useRouter();
   const { signOut } = useClerk();
   // Only use Zustand for persisted UI preferences — NOT for shop identity data
   const {
@@ -48,9 +46,8 @@ export function SettingsClient({ shopName, shopEmail, shopLocation }: SettingsCl
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
-      await signOut();
+      await signOut({ redirectUrl: "/login" });
       toast.success("Logged out. See you soon! 👋");
-      router.push("/login");
     } catch {
       toast.error("Logout failed");
       setLoggingOut(false);

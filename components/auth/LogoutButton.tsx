@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { LogOut, Loader2 } from "lucide-react";
 import { useClerk } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 interface LogoutButtonProps {
@@ -15,14 +14,10 @@ export function LogoutButton({ className = "", showText = true }: LogoutButtonPr
   const [loading, setLoading] = useState(false);
   const { signOut } = useClerk();
 
-  const router = useRouter();
-
   const handleLogout = async () => {
-    
     setLoading(true);
     try {
-      await signOut();
-      router.push("/login");
+      await signOut({ redirectUrl: "/login" });
     } catch {
       toast.error("Logout failed. Please try again.");
       setLoading(false);

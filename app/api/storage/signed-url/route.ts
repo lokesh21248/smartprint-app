@@ -2,14 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSignedUrl } from "@/lib/storage";
+import { validateStoragePath, UPLOAD_BUCKET } from "@/lib/upload-validation";
 
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/storage/signed-url?bucket=order-files&path=shop-id/file.pdf
+ * GET /api/storage/signed-url?bucket=order-files&path=orders/shop-id/file.pdf
  *
  * Returns a short-lived signed URL for a private storage object.
- * Requires an authenticated session — returns 401 otherwise.
+ * Requires authenticated session + shop ownership verification.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -18,7 +19,6 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const supabase = createAdminClient();
 
     // ── Params ────────────────────────────────────────────────────────────────
     const { searchParams } = new URL(request.url);
@@ -34,6 +34,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // ── Bucket validation — only allow the uploads bucket ─────────────────────
+    if (bucket !== UPLOAD_BUCKET) {
+      return NextResponse.json({ error: "Invalid bucket" }, { status: 400 });
+    }
+
+    // ── Path validation — block traversal attacks + malformed paths ────────────
+    const pathCheck = validateStoragePath(path);
+    if (!pathCheck.valid) {
+      console.warn(`[SECURITY] Blocked storage path: "${path}" — ${pathCheck.error}`);
+      return NextResponse.json({ error: pathCheck.error }, { status: 400 });
+    }
+
     // Validate expiresIn (max 60 seconds for production safety)
     if (isNaN(expiresIn) || expiresIn < 1 || expiresIn > 60) {
       return NextResponse.json(
@@ -42,29 +54,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ── Ownership Verification ────────────────────────────────────────────────
-    // Path format: "orders/[shopId]/[fileName]"
-    const parts = path.split("/");
-    if (parts[0] !== "orders" || !parts[1]) {
-      return NextResponse.json({ error: "Invalid path format" }, { status: 400 });
-    }
-    const shopIdFromPath = parts[1];
-
-    // Verify the user owns the shop extracted from the file path
+    // ── Ownership verification ────────────────────────────────────────────────
+    // The shopId was validated by validateStoragePath above.
+    const supabase = createAdminClient();
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id")
-      .eq("id", shopIdFromPath)
+      .eq("id", pathCheck.shopId!)
       .eq("clerk_owner_id", userId)
       .limit(1)
       .maybeSingle();
 
     if (shopError || !shop) {
-      // Forbidden: Trying to access another shop's files
+      // Forbidden: trying to access another shop's files
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // ── Generate URL ──────────────────────────────────────────────────────────
+    // ── Generate signed URL ──────────────────────────────────────────────────
     const signedUrl = await getSignedUrl(bucket, path, expiresIn);
 
     return NextResponse.json({ signedUrl, expiresIn });

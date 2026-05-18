@@ -101,14 +101,28 @@ export const OrderCreateSchema = z.object({
   shopId: z.string().uuid("Invalid shopId"),
   // Support for multiple files
   files: z.array(z.object({
-    name: z.string().min(1).max(255),
-    size: z.coerce.number().int().min(1),
-    pages: z.coerce.number().int().min(1),
-    url: z.string().min(1).max(1000),
+    name: z.string().min(1).max(255)
+      .refine((n) => !n.includes("..") && !n.includes("/") && !n.includes("\\"), {
+        message: "Invalid filename",
+      }),
+    size: z.coerce.number().int().min(1).max(26_214_400), // 25 MB cap per file
+    pages: z.coerce.number().int().min(1).max(2000),
+    url: z.string().min(1).max(1000)
+      .refine((u) => !u.includes("..") && !u.includes("\0"), {
+        message: "Invalid file path",
+      }),
   })).min(1, "At least one file is required").optional(),
   // Legacy single-file fields (optional for backward compatibility)
-  filePath: z.string().trim().min(1).optional(),
-  fileName: z.string().trim().min(1).max(255).optional(),
+  filePath: z.string().trim().min(1)
+    .refine((p) => !p.includes("..") && !p.includes("\0"), {
+      message: "Invalid file path",
+    })
+    .optional(),
+  fileName: z.string().trim().min(1).max(255)
+    .refine((n) => !n.includes("..") && !n.includes("/") && !n.includes("\\"), {
+      message: "Invalid filename",
+    })
+    .optional(),
   pageCount: z.coerce.number().int().min(1).max(2000),
   copies: z.coerce.number().int().min(1).max(50),
   color: z.boolean().optional().default(false),

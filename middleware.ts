@@ -1,113 +1,100 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-// Public routes — no auth check at all, return immediately
+// ─── PUBLIC ROUTES ────────────────────────────────────────────────────────────
+// These never require a Clerk session. Order matters — more specific first.
 const isPublicRoute = createRouteMatcher([
   "/",
   "/login(.*)",
   "/signup(.*)",
   "/register(.*)",
   "/forgot-password(.*)",
+  "/verify-email(.*)",
   "/unauthorized(.*)",
-  // Customer-facing shop & order flow — must be fully public
-  "/s(.*)",
+  "/not-found(.*)",
+
+  // Customer-facing flows (no Clerk account required)
+  "/s/(.*)",
   "/order(.*)",
   "/order-upload(.*)",
   "/find-shop(.*)",
-  // Public APIs — no auth needed
-  "/api/shop/public(.*)",
+
+  // Public APIs
   "/api/orders(.*)",
-  "/api/storage(.*)",
   "/api/sessions(.*)",
+  "/api/storage(.*)",
+  "/api/shop/public(.*)",
+  "/api/cron(.*)",
+  "/api/webhooks(.*)",
+  "/api/auth(.*)",
 ]);
 
+// ─── ADMIN ROUTES ─────────────────────────────────────────────────────────────
+// Clerk session claims check only — no DB call.
+// Fine-grained guard also runs in: app/admin/layout.tsx + /api/admin handlers.
 const isAdminRoute = createRouteMatcher([
   "/admin(.*)",
   "/api/admin(.*)",
 ]);
 
-const isDashboardRoute = createRouteMatcher([
+// ─── PROTECTED ROUTES ─────────────────────────────────────────────────────────
+// Require sign-in only. Role authorization is handled by layouts and API handlers.
+const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
   "/analytics(.*)",
-  "/staff(.*)",
   "/settings(.*)",
-  "/my-shop(.*)",
-  "/shop-profile(.*)",
   "/profile(.*)",
+  "/staff(.*)",
+  "/shop-profile(.*)",
+  "/my-shop(.*)",
+  "/create-shop(.*)",
+  "/api/shop(.*)",
+  "/api/staff(.*)",
 ]);
 
-// API routes that belong to the authenticated shop owner dashboard
-// Excludes /api/shop/public which is listed in public routes above
-const isDashboardApiRoute = createRouteMatcher([
-  "/api/shop/orders(.*)",
-  "/api/shop/update(.*)",
-  "/api/shop/staff(.*)",
-  "/api/shop/settings(.*)",
-  "/api/shop/orders-list(.*)",
-]);
-
+// ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
 export default clerkMiddleware(async (auth, req) => {
-  // ── Short-circuit public routes immediately ──────────────────────────────
-  // IMPORTANT: do this BEFORE calling auth() to avoid Clerk cold-start latency
-  // hitting every customer page load and /api/sessions call.
-  if (isPublicRoute(req)) return NextResponse.next();
-
-  // ── Only authenticated routes from here ─────────────────────────────────
-  const authObj = await auth();
-  const { userId, sessionClaims } = authObj;
-  const { pathname } = req.nextUrl;
-
-  if (!userId) {
-    return authObj.redirectToSignIn();
+  // 1. Public routes — skip Clerk entirely
+  if (isPublicRoute(req)) {
+    return NextResponse.next();
   }
 
-  const clerkRole = String((sessionClaims?.metadata as any)?.role || "").toLowerCase();
+  // 2. Resolve Clerk session
+  const { userId, sessionClaims, redirectToSignIn } = await auth();
 
-  // Admin routes
+  // 3. Admin routes — fast claims check, no DB
   if (isAdminRoute(req)) {
-    if (clerkRole !== "admin") {
+    if (!userId) {
+      return redirectToSignIn();
+    }
+    const role = (
+      (sessionClaims?.metadata as Record<string, unknown>)?.role ?? ""
+    )
+      .toString()
+      .toLowerCase();
+    if (role !== "admin") {
       return NextResponse.redirect(new URL("/unauthorized", req.url));
     }
     return NextResponse.next();
   }
 
-  // Dashboard + owner API routes — verify shop ownership via DB
-  if (isDashboardRoute(req) || isDashboardApiRoute(req)) {
-    if (clerkRole === "admin") return NextResponse.next();
-
-    try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        { auth: { persistSession: false } }
-      );
-
-      const [ownerRes, staffRes] = await Promise.all([
-        supabase.from("shops").select("id").eq("clerk_owner_id", userId).maybeSingle(),
-        supabase.from("shop_staff").select("role").eq("user_id", userId).maybeSingle(),
-      ]);
-
-      const isOwner = !!ownerRes.data;
-      const staffRole = String(staffRes.data?.role || "").trim().toLowerCase();
-      const isAuthorized = isOwner || ["owner", "manager", "staff"].includes(staffRole);
-
-      if (!isAuthorized) {
-        return NextResponse.redirect(new URL("/unauthorized", req.url));
-      }
-    } catch (error) {
-      console.error("[RBAC ERROR]", error);
-      // Fail open — don't block if DB is temporarily unreachable
-      return NextResponse.next();
+  // 4. Protected routes — require sign-in only
+  if (isProtectedRoute(req)) {
+    if (!userId) {
+      return redirectToSignIn();
     }
+    return NextResponse.next();
   }
 
+  // 5. All other routes — allow
   return NextResponse.next();
 });
 
+// ─── MATCHER ──────────────────────────────────────────────────────────────────
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Skip Next.js internals and all static assets
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|otf|eot|css|js|map|txt|xml|json|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
   ],
 };
