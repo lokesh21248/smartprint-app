@@ -8,6 +8,7 @@ const ContentSecurityPolicy = `
   script-src 'self' 'unsafe-inline' 'unsafe-eval'
     https://*.clerk.accounts.dev
     https://*.clerk.com
+    https://clerk.scan2paper.com
     https://challenges.cloudflare.com;
   style-src 'self' 'unsafe-inline'
     https://fonts.googleapis.com;
@@ -19,13 +20,17 @@ const ContentSecurityPolicy = `
   worker-src 'self' blob:;
   connect-src 'self'
     https://*.clerk.accounts.dev
+    https://*.clerk.com
+    https://clerk.scan2paper.com
     https://api.clerk.dev
     https://clerk-telemetry.com
     https://*.supabase.co
     https://*.supabase.in
     wss://*.supabase.co
     https://monitoring.smartprint.app;
-  frame-src https://challenges.cloudflare.com;
+  frame-src https://challenges.cloudflare.com
+    https://*.clerk.com
+    https://clerk.scan2paper.com;
   media-src 'none';
   object-src 'none';
 `.replace(/\n\s+/g, " ").trim();
