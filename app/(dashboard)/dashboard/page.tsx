@@ -40,7 +40,7 @@ async function getDashboardData(userId: string): Promise<{
     const [ordersResult, newOrdersResult] = await Promise.all([
       supabase
         .from("orders")
-        .select("total_amount, status, created_at, updated_at, customer_phone")
+        .select("total_amount, status, created_at, updated_at, completed_at, customer_phone")
         .eq("shop_id", shop.id)
         .gte("created_at", today.toISOString()),
       supabase
@@ -63,7 +63,7 @@ async function getDashboardData(userId: string): Promise<{
       completedOrders.length > 0
         ? completedOrders.reduce((sum, o) => {
             const diff =
-              (new Date(o.updated_at).getTime() -
+              (new Date(o.completed_at || o.updated_at).getTime() -
                 new Date(o.created_at).getTime()) /
               60000;
             return sum + diff;

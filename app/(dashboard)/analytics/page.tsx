@@ -32,7 +32,7 @@ export default async function AnalyticsPage() {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: ordersData } = await supabase
     .from("orders")
-    .select("total_amount, status, created_at, customer_phone, is_color")
+    .select("total_amount, status, created_at, updated_at, completed_at, customer_phone, is_color")
     .eq("shop_id", shop.id)
     .gte("created_at", thirtyDaysAgo)
     .order("created_at", { ascending: false })
@@ -63,6 +63,9 @@ export default async function AnalyticsPage() {
   let bwCount = 0;
   let colorCount = 0;
 
+  let totalCompletionMins = 0;
+  let completionCount = 0;
+
   for (const o of rawOrders) {
     const status = o.status || "PLACED"; // ← correct column name
     
@@ -74,8 +77,17 @@ export default async function AnalyticsPage() {
     const createdDate = new Date(o.created_at).toISOString().split("T")[0];
     if (createdDate === todayStr) {
       ordersTodayCount++;
-      revenueTodayCount += Number(o.total_amount) || 0;
-      if (status === "COMPLETED") completedTodayCount++;
+      if (status === "COMPLETED") {
+        revenueTodayCount += Number(o.total_amount) || 0;
+        completedTodayCount++;
+      }
+    }
+
+    if (status === "COMPLETED") {
+      const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
+      const diffMins = (completedTime - new Date(o.created_at).getTime()) / 60000;
+      totalCompletionMins += diffMins;
+      completionCount++;
     }
 
     if (o.customer_phone) activeCustomersSet.add(o.customer_phone);
@@ -85,11 +97,13 @@ export default async function AnalyticsPage() {
       statusCount[status]++;
     }
 
-    // Revenue Trend (group by YYYY-MM-DD)
+    // Revenue Trend (group by YYYY-MM-DD, only COMPLETED)
     if (!revenueByDate[createdDate]) {
       revenueByDate[createdDate] = { revenue: 0, orders: 0 };
     }
-    revenueByDate[createdDate].revenue += Number(o.total_amount) || 0;
+    if (status === "COMPLETED") {
+      revenueByDate[createdDate].revenue += Number(o.total_amount) || 0;
+    }
     revenueByDate[createdDate].orders++;
 
     // Peak Hours
@@ -102,13 +116,15 @@ export default async function AnalyticsPage() {
     else bwCount++;
   }
 
+  const avgCompletionMins = completionCount > 0 ? Math.round(totalCompletionMins / completionCount) : 0;
+
   const stats: DashboardStats = {
     pendingOrders: pendingOrdersCount,
     ordersToday: ordersTodayCount,
     revenueToday: revenueTodayCount,
     completedToday: completedTodayCount,
     activeCustomers: activeCustomersSet.size,
-    avgCompletionMins: 45, // Hardcoded for now
+    avgCompletionMins: avgCompletionMins,
   };
 
   // ─── Format Analytics Data ────────────────────────────────────────────────

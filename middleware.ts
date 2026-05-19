@@ -95,8 +95,8 @@ export default clerkMiddleware(async (auth, req) => {
 // ─── MATCHER ──────────────────────────────────────────────────────────────────
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static assets
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|otf|eot|css|js|map|txt|xml|json|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/((?!_next|.*\\..*).*)",
+    "/",
     "/(api|trpc)(.*)",
   ],
 };

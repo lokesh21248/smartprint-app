@@ -88,6 +88,9 @@ export async function PATCH(
       status_history: updatedHistory,
       updated_at: new Date().toISOString(),
     };
+    if (newStatus === "COMPLETED") {
+      updatePayload.completed_at = new Date().toISOString();
+    }
     if (rejectionReason) updatePayload.cancellation_reason = rejectionReason;
 
     const { error: updateError } = await supabase
