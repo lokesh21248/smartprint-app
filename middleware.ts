@@ -5,8 +5,6 @@ import { NextResponse } from "next/server";
 // These never require a Clerk session. Order matters — more specific first.
 const isPublicRoute = createRouteMatcher([
   "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
   "/login(.*)",
   "/signup(.*)",
   "/register(.*)",

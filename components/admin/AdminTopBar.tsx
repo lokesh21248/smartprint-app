@@ -31,7 +31,7 @@ export function AdminTopBar({ user }: AdminTopBarProps) {
             <p className="text-sm font-bold text-gray-900">{user?.fullName || "Admin"}</p>
             <p className="text-[10px] text-gray-500 uppercase font-bold tracking-tighter">System Administrator</p>
           </div>
-          <UserButton afterSignOutUrl="/sign-in" />
+          <UserButton afterSignOutUrl="/login" />
         </div>
       </div>
     </header>
