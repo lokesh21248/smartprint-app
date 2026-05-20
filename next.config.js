@@ -9,7 +9,8 @@ const ContentSecurityPolicy = `
     https://*.clerk.accounts.dev
     https://*.clerk.com
     https://clerk.scan2paper.com
-    https://challenges.cloudflare.com;
+    https://challenges.cloudflare.com
+    https://static.cloudflareinsights.com;
   style-src 'self' 'unsafe-inline'
     https://fonts.googleapis.com;
   img-src 'self' data: blob:
