@@ -57,7 +57,6 @@ async function getShopPricing(
  * Ensure future month partitions exist (run Section 7 of PRODUCTION_MAINTENANCE.sql monthly).
  */
 export async function POST(request: Request) {
-  console.time("order-api");
   try {
     // Initialize Supabase admin client (fresh instance per request)
     const supabase = createAdminClient();
@@ -137,8 +136,6 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (existingOrder) {
-        console.warn("[POST /api/orders] Duplicate order detected, returning existing:", existingOrder.id);
-        console.timeEnd("order-api");
         return NextResponse.json({
           success: true,
           orderId: existingOrder.id,
@@ -152,7 +149,6 @@ export async function POST(request: Request) {
     // Fetch shop pricing via cache (server-side calculation, cache TTL: 60s)
     const shopPricing = await getShopPricing(shopId);
     if (!shopPricing) {
-      console.timeEnd("order-api");
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
@@ -164,7 +160,6 @@ export async function POST(request: Request) {
 
     // Guard: never allow a zero-amount order (misconfigured shop pricing)
     if (totalAmount <= 0) {
-      console.timeEnd("order-api");
       return NextResponse.json({ error: "Shop pricing is not configured" }, { status: 422 });
     }
 
@@ -216,19 +211,17 @@ export async function POST(request: Request) {
           .limit(1)
           .maybeSingle();
 
-        console.timeEnd("order-api");
         return NextResponse.json(
-          { 
+          {
             error: "Duplicate order detected.",
-            success: true, // Mark as success for the client to proceed to tracking
+            success: true,
             orderId: existing?.id,
             shortToken: existing?.short_token,
-            duplicate: true 
+            duplicate: true
           },
           { status: 409 }
         );
       }
-      console.timeEnd("order-api");
       return NextResponse.json(
         {
           success: false,
@@ -240,21 +233,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // ─── Post-Insert Logic ───────────────────────────────────────────────────
-
-    // Trigger owner notification
+    // Trigger owner notification (fire-and-forget, non-blocking)
     const shopData = data.shops as unknown as Record<string, unknown>;
     if (shopData?.clerk_owner_id) {
-      // Background execution: DO NOT AWAIT to avoid blocking response
       import("@/lib/notifications").then(({ NotificationService }) => {
         NotificationService.alertNewOrder(shopData.clerk_owner_id as string, {
           customer_name: data.customer_name,
           total_amount: data.total_amount,
         });
-      }).catch((err: any) => console.error("FULL ERROR:", err));
+      }).catch((err: unknown) => console.error("[POST /api/orders] Notification failed:", err));
     }
 
-    console.timeEnd("order-api");
     return NextResponse.json({
       success: true,
       orderId: data.id,
@@ -262,8 +251,7 @@ export async function POST(request: Request) {
       totalAmount,
     });
   } catch (err) {
-    console.error("FULL ERROR:", err);
-    console.timeEnd("order-api");
+    console.error("[POST /api/orders] Unexpected error:", err);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

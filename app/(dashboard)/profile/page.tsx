@@ -21,8 +21,7 @@ export default async function ProfilePage() {
 
   if (!shop) redirect("/create-shop");
 
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
   return <ProfileClient shop={shop} appUrl={appUrl} />;
 }

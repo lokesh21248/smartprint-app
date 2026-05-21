@@ -36,7 +36,6 @@ async function getDashboardData(userId: string): Promise<{
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const start = performance.now();
     const [ordersResult, newOrdersResult] = await Promise.all([
       supabase
         .from("orders")
@@ -51,8 +50,6 @@ async function getDashboardData(userId: string): Promise<{
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
-    const duration = performance.now() - start;
-    console.log(`[getDashboardData] ⏱️ DB Query for ${userId} took ${duration.toFixed(2)}ms`);
 
     const rawOrders = ordersResult.data ?? [];
     const totalRevenue = rawOrders
