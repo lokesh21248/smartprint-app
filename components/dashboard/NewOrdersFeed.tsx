@@ -93,7 +93,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
           )}
         </div>
         <Link
-          href="/orders"
+          href="/dashboard/orders"
           className="text-sm text-[#2E8B57] font-medium hover:text-[#1F6B42] transition-colors"
         >
           View All →
@@ -193,7 +193,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   <X className="h-4 w-4" />
                   Reject
                 </Button>
-                <Link href={`/orders/${order.id}`}>
+                <Link href={`/dashboard/orders/${order.id}`}>
                   <Button size="sm" variant="ghost" className="px-3">
                     View
                   </Button>

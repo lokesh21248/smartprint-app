@@ -174,7 +174,7 @@ export function OrderCard({ order, onStatusChange }: OrderCardProps) {
           )}
 
           {/* View details */}
-          <Link href={`/orders/${order.id}`}>
+          <Link href={`/dashboard/orders/${order.id}`}>
             <Button id={`view-${order.id}`} variant="ghost" size="icon">
               <ChevronRight className="h-4 w-4" />
             </Button>

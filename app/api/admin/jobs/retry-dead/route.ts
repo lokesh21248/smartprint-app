@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { requireAdmin, logAdminAction } from "@/lib/auth/admin";
-import { isRateLimited } from "@/lib/auth/rate-limit";
+import { rateLimit } from "@/lib/ratelimit";
 import { headers } from "next/headers";
 
 export async function POST(req: Request) {
@@ -9,7 +9,8 @@ export async function POST(req: Request) {
   if (!authorized) return response;
 
   // 1. Rate Limiting
-  if (isRateLimited(userId!)) {
+  const rl = rateLimit(`admin_jobs_${userId}`, 5, 60);
+  if (!rl.success) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
 

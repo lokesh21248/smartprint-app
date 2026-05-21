@@ -13,6 +13,8 @@ interface ShopDisplayData {
 export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
   if (!shop || !shop.name) return null;
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://smartprint.in";
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
@@ -26,7 +28,7 @@ export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
       "addressCountry": "IN"
     },
     "telephone": shop.phone,
-    "url": `https://smartprint.in/s/${shop.slug}`,
+    "url": `${appUrl}/s/${shop.slug}`,
     "openingHours": `${shop.opening_time}-${shop.closing_time}`,
     "priceRange": "₹"
   };

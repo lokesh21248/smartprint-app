@@ -8,15 +8,15 @@ import { useOrderStore } from "@/stores/orderStore";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/orders": "Orders",
-  "/shop-profile": "My Shop",
-  "/analytics": "Analytics",
-  "/staff": "Staff",
-  "/settings": "Settings",
+  "/dashboard/orders": "Orders",
+  "/dashboard/shop-profile": "My Shop",
+  "/dashboard/analytics": "Analytics",
+  "/dashboard/staff": "Staff",
+  "/dashboard/settings": "Settings",
 };
 
 function getPageTitle(pathname: string): string {
-  if (pathname.startsWith("/orders/")) return "Order Details";
+  if (pathname.startsWith("/dashboard/orders/")) return "Order Details";
   return pageTitles[pathname] ?? "SmartPrint";
 }
 

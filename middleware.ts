@@ -65,7 +65,6 @@ export default clerkMiddleware(async (auth, req) => {
   // 3. Admin routes — fast claims check, no DB
   if (isAdminRoute(req)) {
     if (!userId) {
-      console.log(`[MIDDLEWARE DEBUG] Redirecting to sign in (no userId) for admin route: ${req.url}`);
       return redirectToSignIn();
     }
     const role = (
@@ -73,12 +72,9 @@ export default clerkMiddleware(async (auth, req) => {
     )
       .toString()
       .toLowerCase();
-    
-    console.log(`[MIDDLEWARE DEBUG] Admin route check: userId=${userId}, clerk_role=${role}`);
-      
+
     if (role !== "admin") {
-      console.log(`[MIDDLEWARE DEBUG] Redirecting to unauthorized (role !== admin) for admin route: ${req.url}, but allowing per user request`);
-      // return NextResponse.redirect(new URL("/unauthorized", req.url)); // Removed per user request
+      return NextResponse.redirect(new URL("/unauthorized", req.url));
     }
     return NextResponse.next();
   }
@@ -86,10 +82,8 @@ export default clerkMiddleware(async (auth, req) => {
   // 4. Protected routes — require sign-in only
   if (isProtectedRoute(req)) {
     if (!userId) {
-      console.log(`[MIDDLEWARE DEBUG] Redirecting to sign in (no userId) for protected route: ${req.url}`);
       return redirectToSignIn();
     }
-    console.log(`[MIDDLEWARE DEBUG] Allowing protected route: ${req.url}`);
     return NextResponse.next();
   }
 

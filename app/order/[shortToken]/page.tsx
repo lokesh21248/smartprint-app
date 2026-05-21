@@ -9,7 +9,7 @@ import {
   Sparkles, Check, ChevronRight, Navigation
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/public-client";
+import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
 import { motion, AnimatePresence } from "framer-motion";

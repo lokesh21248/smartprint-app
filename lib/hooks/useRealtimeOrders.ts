@@ -118,7 +118,7 @@ export function useRealtimeOrders(shopId: string | null) {
         duration: 10_000,
         action: {
           label: "View",
-          onClick: () => (window.location.href = `/orders/${order.id}`),
+          onClick: () => (window.location.href = `/dashboard/orders/${order.id}`),
         },
       });
     } else {
@@ -127,7 +127,7 @@ export function useRealtimeOrders(shopId: string | null) {
         duration: 8_000,
         action: {
           label: "View All",
-          onClick: () => (window.location.href = "/orders"),
+          onClick: () => (window.location.href = "/dashboard/orders"),
         },
       });
     }

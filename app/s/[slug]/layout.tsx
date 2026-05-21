@@ -48,6 +48,8 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   const title = `${shop.name} | Print Online at SmartPrint`;
   const description = `Order high-quality prints from ${shop.name} at ${shop.address_line1}. Upload PDF, pay via UPI, and pick up when ready.`;
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://smartprint.in";
+
   return {
     title,
     description,
@@ -55,7 +57,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
       title,
       description,
       type: "website",
-      url: `https://smartprint.in/s/${shop.slug}`,
+      url: `${appUrl}/s/${shop.slug}`,
     },
     twitter: {
       card: "summary_large_image",
