@@ -35,11 +35,11 @@ export async function getServerRole(): Promise<AppUserRole | null> {
     }
 
     if (staffRes.data?.role) {
-      const role = String(staffRes.data.role).trim().toLowerCase() as AppUserRole;
-      let finalRole = role;
-      if (role === "owner") finalRole = "shop_owner";
-      if (role === "manager") finalRole = "manager";
-      if (role === "staff") finalRole = "staff";
+      const rawRole = String(staffRes.data.role).trim().toLowerCase();
+      let finalRole: AppUserRole = "customer";
+      if (rawRole === "owner" || rawRole === "shop_owner") finalRole = "shop_owner";
+      else if (rawRole === "manager") finalRole = "manager";
+      else if (rawRole === "staff") finalRole = "staff";
       return finalRole;
     }
   } catch (err) {
