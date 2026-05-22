@@ -647,13 +647,14 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 if (compResult.compressed) {
                   fileToUpload = compResult.file;
                   // Save compressed file to IndexedDB and update state sizes
-                  await indexedDbStore.saveFile(fileItem.id, fileToUpload);
+                  await indexedDbStore.saveFile(fileItem.id, compResult.file);
+                  const compressedFile = compResult.file;
                   filesRef.current = filesRef.current.map((f) =>
-                    f.id === fileItem.id ? { ...f, file: fileToUpload, size: fileToUpload.size } : f
+                    f.id === fileItem.id ? { ...f, file: compressedFile, size: compressedFile.size } : f
                   );
                   onChange((prev) =>
                     prev.map((f) =>
-                      f.id === fileItem.id ? { ...f, file: fileToUpload, size: fileToUpload.size } : f
+                      f.id === fileItem.id ? { ...f, file: compressedFile, size: compressedFile.size } : f
                     )
                   );
                 }
@@ -662,9 +663,11 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
               }
             }
 
+            const finalFile: File = fileToUpload;
+
             // ── 2. Presign Token Request ──────────────────────────────────────
             updateState("uploading", 0);
-            logPresignRequest(fileItem.name, fileToUpload.size);
+            logPresignRequest(fileItem.name, finalFile.size);
 
             let presignData: { token: string; storagePath: string };
             try {
@@ -673,9 +676,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   shopId,
-                  fileName: fileToUpload.name,
-                  fileSize: fileToUpload.size,
-                  mimeType: fileToUpload.type,
+                  fileName: finalFile.name,
+                  fileSize: finalFile.size,
+                  mimeType: finalFile.type,
                   orderId,
                 }),
               });
@@ -729,10 +732,10 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             }
             const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
 
-            logUploadStart(fileItem.name, fileToUpload.size);
+            logUploadStart(fileItem.name, finalFile.size);
 
             return await new Promise<UploadedFile>((resolve, reject) => {
-              const upload = new tus.Upload(fileToUpload, {
+              const upload = new tus.Upload(finalFile, {
                 endpoint,
                 // 4 retries with increasing backoff — handles mobile 4G drops
                 retryDelays: [500, 1500, 3000, 6000],
@@ -743,7 +746,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 metadata: {
                   bucketName: "order-files",
                   objectName: storagePath,
-                  contentType: fileToUpload.type || "application/octet-stream",
+                  contentType: finalFile.type || "application/octet-stream",
                 },
                 // 5MB chunks — optimal for mobile networks
                 chunkSize: 5 * 1024 * 1024,
@@ -803,7 +806,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 },
                 onSuccess: () => {
                   const durationMs = Date.now() - startedAt;
-                  logUploadSuccess(fileItem.name, fileToUpload.size, storagePath, durationMs);
+                  logUploadSuccess(fileItem.name, finalFile.size, storagePath, durationMs);
                   activeTusUploads.delete(fileItem.id);
                   // Cancel any pending retry queue entry
                   uploadRetryQueue.cancel(fileItem.id);
