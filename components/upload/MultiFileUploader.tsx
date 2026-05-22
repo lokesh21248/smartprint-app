@@ -30,10 +30,9 @@ import {
 import { toast } from "sonner";
 import pLimit from "p-limit";
 import * as tus from "tus-js-client";
+import { indexedDbStore } from "@/lib/upload/indexedDb";
 import type { UploadedFile } from "@/types";
 import { classifyUploadError } from "@/lib/upload/errorClassifier";
-import { uploadRetryQueue } from "@/lib/upload/retryQueue";
-import { indexedDbStore } from "@/lib/upload/indexedDb";
 import {
   logUploadStart,
   logUploadChunk,
@@ -79,8 +78,9 @@ interface MultiFileUploaderProps {
 const activeTusUploads = new Map<string, tus.Upload>();
 
 export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
-  ({ files, onChange, shopId, orderId, disabled = false }, ref) => {
+  ({ files, onChange, shopId, orderId, disabled }, ref) => {
     const isUploadingRef = useRef(false);
+    const manuallyCancelledRef = useRef<Set<string>>(new Set());
     const [isOnline, setIsOnline] = useState(
       typeof navigator !== "undefined" ? navigator.onLine : true
     );
@@ -184,102 +184,25 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       rehydrate();
     }, [onChange]);
 
-    // ── Retry Queue Event Subscription ──────────────────────────────────────
-    useEffect(() => {
-      const unsubscribe = uploadRetryQueue.subscribe((event, fileId, attempt) => {
-        if (event === "enqueued" || event === "started" || event === "failed" || event === "exhausted") {
-          onChange((prev) =>
-            prev.map((f) =>
-              f.id === fileId
-                ? {
-                    ...f,
-                    retryAttempt: attempt,
-                    error: event === "exhausted" ? "Upload failed after maximum retries." : f.error,
-                  }
-                : f
-            )
-          );
-        }
-      });
-      return unsubscribe;
-    }, [onChange]);
-
     // ── Online/Offline detection with actual auto-resume ──────────────────────
     useEffect(() => {
       const handleOnline = () => {
         setIsOnline(true);
-        onChange((prev) => {
-          const offlineFailed = prev.filter(
-            (f) =>
-              f.status === "failed" &&
-              (f.error?.includes("No internet") ||
-                f.error?.includes("Network error") ||
-                f.error?.includes("offline") ||
-                f.error?.includes("Connection lost"))
-          );
-          if (offlineFailed.length > 0) {
-            offlineFailed.forEach((f) => {
-              logNetworkResume(f.name);
-              if (!uploadRetryQueue.has(f.id) && uploadSingleFileRef.current) {
-                const capturedId = f.id;
-                const capturedName = f.name;
-                uploadRetryQueue.enqueue(capturedId, capturedName, async () => {
-                  const currentFile = filesRef.current.find(x => x.id === capturedId);
-                  await uploadSingleFileRef.current({
-                    ...(currentFile || f),
-                    status: "uploading",
-                    progress: 0,
-                    error: undefined,
-                  });
-                });
-              }
-            });
-            toast.success(
-              `Back online! Auto-retrying ${offlineFailed.length} upload${offlineFailed.length > 1 ? "s" : ""}…`
-            );
-          } else {
-            toast.success("Back online!");
-          }
-          return prev;
-        });
+        toast.success("Back online!");
       };
 
       const handleOffline = () => {
         setIsOnline(false);
-        // Pause active uploads immediately and show pause status
-        onChange((prev) =>
-          prev.map((f) => {
-            if (f.status === "uploading" || f.status === "compressing") {
-              const activeUpload = activeTusUploads.get(f.id);
-              if (activeUpload) {
-                activeUpload.abort(true);
-                activeTusUploads.delete(f.id);
-              }
-              activeUploadPromisesRef.current.delete(f.id);
-
-              if (uploadSingleFileRef.current) {
-                const capturedId = f.id;
-                const capturedName = f.name;
-                uploadRetryQueue.enqueue(capturedId, capturedName, async () => {
-                  const currentFile = filesRef.current.find(x => x.id === capturedId);
-                  await uploadSingleFileRef.current({
-                    ...(currentFile || f),
-                    status: "uploading",
-                    progress: 0,
-                    error: undefined,
-                  });
-                });
-              }
-
-              return {
-                ...f,
-                status: "failed",
-                error: "Connection lost. Will resume when online.",
-              };
+        // Abort active uploads so they fail fast and enter the waiting loop immediately
+        filesRef.current.forEach((f) => {
+          if (f.status === "uploading" || f.status === "compressing" || f.status === "retrying") {
+            const activeUpload = activeTusUploads.get(f.id);
+            if (activeUpload) {
+              activeUpload.abort(true);
+              activeTusUploads.delete(f.id);
             }
-            return f;
-          })
-        );
+          }
+        });
       };
 
       window.addEventListener("online", handleOnline);
@@ -288,54 +211,25 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
       };
-    }, [onChange]);
+    }, []);
 
     // ── Watchdog Timer & Visibility Auto-recovery ───────────────────────────
     useEffect(() => {
       const checkWatchdog = () => {
         const now = Date.now();
         const uploadingFiles = filesRef.current.filter(
-          (f) => f.status === "uploading" || f.status === "compressing"
+          (f) => f.status === "uploading" || f.status === "compressing" || f.status === "retrying"
         );
 
         uploadingFiles.forEach((f) => {
           const lastProgress = lastProgressTimesRef.current.get(f.id) || now;
-          if (now - lastProgress > 6000) {
-            console.warn(`[Watchdog] Active upload hung for ${f.name}. Inactive for ${now - lastProgress}ms. Aborting/retrying.`);
+          if (now - lastProgress > 8000) {
+            console.warn(`[Watchdog] Active upload hung for ${f.name}. Inactive for ${now - lastProgress}ms. Aborting for inline retry.`);
             
             const activeUpload = activeTusUploads.get(f.id);
             if (activeUpload) {
               activeUpload.abort(true);
               activeTusUploads.delete(f.id);
-            }
-            activeUploadPromisesRef.current.delete(f.id);
-
-            onChange((prev) =>
-              prev.map((item) =>
-                item.id === f.id
-                  ? {
-                      ...item,
-                      status: "failed",
-                      progress: 0,
-                      error: "Upload interrupted by browser. Retrying...",
-                      retryAttempt: (item.retryAttempt || 0) + 1,
-                    }
-                  : item
-              )
-            );
-
-            if (uploadSingleFileRef.current) {
-              const capturedId = f.id;
-              const capturedName = f.name;
-              uploadRetryQueue.enqueue(capturedId, capturedName, async () => {
-                const currentFile = filesRef.current.find(x => x.id === capturedId);
-                await uploadSingleFileRef.current({
-                  ...(currentFile || f),
-                  status: "uploading",
-                  progress: 0,
-                  error: undefined,
-                });
-              });
             }
           }
         });
@@ -345,9 +239,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         if (document.visibilityState === "visible") {
           const now = Date.now();
           filesRef.current.forEach((f) => {
-            if (f.status === "uploading" || f.status === "compressing") {
+            if (f.status === "uploading" || f.status === "compressing" || f.status === "retrying") {
               const lastProgress = lastProgressTimesRef.current.get(f.id) || now;
-              if (now - lastProgress > 6000) {
+              if (now - lastProgress > 8000) {
                 checkWatchdog();
               }
               lastProgressTimesRef.current.set(f.id, now);
@@ -362,7 +256,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         clearInterval(intervalId);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
       };
-    }, [onChange]);
+    }, []);
 
     // ── Beforeunload guard during active uploads ──────────────────────────────
     useEffect(() => {
@@ -374,13 +268,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       };
       window.addEventListener("beforeunload", handleBeforeUnload);
       return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-    }, []);
-
-    // ── Cleanup retry queue entries on unmount ───────────────────────────────
-    useEffect(() => {
-      return () => {
-        filesRef.current.forEach((f) => uploadRetryQueue.cancel(f.id));
-      };
     }, []);
 
     // ── PDF Page Count Parser ─────────────────────────────────────────────────
@@ -518,6 +405,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
     const handleRemoveFile = useCallback(
       (id: string) => {
         if (disabled) return;
+        manuallyCancelledRef.current.add(id);
         // Cancel any active TUS upload
         const activeUpload = activeTusUploads.get(id);
         if (activeUpload) {
@@ -526,8 +414,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           const fileItem = filesRef.current.find((f) => f.id === id);
           if (fileItem) logUploadCancelled(fileItem.name);
         }
-        // Cancel any queued retry
-        uploadRetryQueue.cancel(id);
         activeUploadPromisesRef.current.delete(id);
         indexedDbStore.deleteFile(id);
         onChange((prev) => prev.filter((f) => f.id !== id));
@@ -538,6 +424,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
     // ── Cancel Active Upload ──────────────────────────────────────────────────
     const handleCancelUpload = useCallback(
       (id: string) => {
+        manuallyCancelledRef.current.add(id);
         const activeUpload = activeTusUploads.get(id);
         if (activeUpload) {
           activeUpload.abort(true);
@@ -545,7 +432,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           const fileItem = filesRef.current.find((f) => f.id === id);
           if (fileItem) logUploadCancelled(fileItem.name);
         }
-        uploadRetryQueue.cancel(id);
         activeUploadPromisesRef.current.delete(id);
         onChange((prev) =>
           prev.map((f) =>
@@ -665,12 +551,23 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
             const finalFile: File = fileToUpload;
 
-            // ── 2. Presign Token Request ──────────────────────────────────────
-            updateState("uploading", 0);
-            logPresignRequest(fileItem.name, finalFile.size);
+            // Define token tracking variables
+            let token = "";
+            let storagePath = "";
+            let tokenFetchedAt = 0;
+            const tokenTTL = 240 * 1000; // 4 minutes proactive refresh
 
-            let presignData: { token: string; storagePath: string };
-            try {
+            const fetchTokenIfNeeded = async () => {
+              const now = Date.now();
+              if (token && (now - tokenFetchedAt < tokenTTL)) {
+                return { alreadyExists: false, storagePath };
+              }
+
+              updateState("retrying", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
+                error: "Refreshing secure upload session..."
+              });
+              logPresignRequest(fileItem.name, finalFile.size);
+
               const presignRes = await fetch("/api/storage/presign", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -687,135 +584,56 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 const errBody = (await presignRes.json().catch(() => ({}))) as { error?: string };
                 const presignError = new Error(errBody.error || `Server error (${presignRes.status})`);
                 logPresignResult(fileItem.name, false, presignError.message);
-                const classified = classifyUploadError(
-                  {
-                    originalResponse: {
-                      getStatus: () => presignRes.status,
-                      getBody: () => errBody.error ?? "",
-                    },
-                  },
-                  "presign"
-                );
-                updateState("failed", 0, { error: classified.userMessage });
                 throw presignError;
               }
 
-              presignData = (await presignRes.json()) as { token: string; storagePath: string };
+              const resData = (await presignRes.json()) as {
+                token?: string;
+                storagePath: string;
+                alreadyExists?: boolean;
+              };
               logPresignResult(fileItem.name, true);
-            } catch (presignErr) {
-              // Only classify if not already classified above
-              const current = filesRef.current.find((f) => f.id === fileItem.id);
-              if (current && !current.error) {
-                const classified = classifyUploadError(presignErr, "presign");
-                filesRef.current = filesRef.current.map((f) =>
-                  f.id === fileItem.id
-                    ? { ...f, status: "failed" as const, progress: 0, error: classified.userMessage }
-                    : f
-                );
-                onChange((prev) =>
-                  prev.map((f) =>
-                    f.id === fileItem.id
-                      ? { ...f, status: "failed" as const, progress: 0, error: classified.userMessage }
-                      : f
-                  )
-                );
+
+              if (resData.alreadyExists) {
+                return { alreadyExists: true, storagePath: resData.storagePath };
               }
-              throw presignErr;
-            }
 
-            const { token, storagePath } = presignData;
+              if (!resData.token) {
+                throw new Error("Presign response missing token");
+              }
 
-            // ── 3. TUS Resumable Upload ───────────────────────────────────────
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            if (!supabaseUrl) {
-              throw new Error("NEXT_PUBLIC_SUPABASE_URL is not configured");
-            }
-            const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+              token = resData.token;
+              storagePath = resData.storagePath;
+              tokenFetchedAt = Date.now();
+              return { alreadyExists: false, storagePath };
+            };
 
-            logUploadStart(fileItem.name, finalFile.size);
+            // Loop parameters for retrying
+            let attempt = 0;
+            const maxAttempts = 10;
+            let success = false;
+            let finalResult: UploadedFile | null = null;
 
-            return await new Promise<UploadedFile>((resolve, reject) => {
-              const upload = new tus.Upload(finalFile, {
-                endpoint,
-                // 4 retries with increasing backoff — handles mobile 4G drops
-                retryDelays: [500, 1500, 3000, 6000],
-                headers: {
-                  "x-signature": token,
-                  "x-upsert": "true",
-                },
-                metadata: {
-                  bucketName: "order-files",
-                  objectName: storagePath,
-                  contentType: finalFile.type || "application/octet-stream",
-                },
-                // 5MB chunks — optimal for mobile networks
-                chunkSize: 5 * 1024 * 1024,
-                onBeforeRequest: (req) => {
-                  if (!navigator.onLine) {
-                    logNetworkPause(fileItem.name);
-                  }
-                  lastProgressTimesRef.current.set(fileItem.id, Date.now());
-                },
-                onError: (error) => {
-                  const classified = classifyUploadError(error, "tus");
-                  logUploadFailure(fileItem.name, classified.code, classified.userMessage, 1);
-                  updateState("failed", 0, { error: classified.userMessage });
-                  activeTusUploads.delete(fileItem.id);
+            while (attempt < maxAttempts && !success) {
+              // Check network connection first
+              while (!navigator.onLine) {
+                updateState("retrying", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
+                  error: "Waiting for network..."
+                });
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+              }
 
-                  // Auto-enqueue into background retry queue for network-related errors
-                  if (classified.retryable && classified.code !== "CANCELLED") {
-                    uploadRetryQueue.enqueue(fileItem.id, fileItem.name, async () => {
-                      const currentFile = filesRef.current.find(x => x.id === fileItem.id);
-                      await uploadSingleFileRef.current({
-                        ...(currentFile || fileItem),
-                        status: "uploading",
-                        progress: 0,
-                        error: undefined,
-                      });
-                    });
-                  }
-
-                  reject(error);
-                },
-                onProgress: (bytesSent, bytesTotal) => {
-                  const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
-                  logUploadChunk(fileItem.name, pct, bytesSent, bytesTotal);
-
-                  // Refresh watchdog progress timer
-                  lastProgressTimesRef.current.set(fileItem.id, Date.now());
-
-                  // Calculate upload speed
-                  const now = Date.now();
-                  const elapsed = (now - lastTimestamp) / 1000;
-                  if (elapsed > 0.5) {
-                    const bytesDelta = bytesSent - lastBytesSent;
-                    speedBytesPerSec = Math.round(bytesDelta / elapsed);
-                    lastBytesSent = bytesSent;
-                    lastTimestamp = now;
-                  }
-
-                  // Calculate ETA
-                  const remainingBytes = bytesTotal - bytesSent;
-                  const etaSecs =
-                    speedBytesPerSec > 0 ? Math.ceil(remainingBytes / speedBytesPerSec) : null;
-
-                  updateState("uploading", pct, {
-                    uploadSpeed: speedBytesPerSec,
-                    etaSeconds: etaSecs ?? undefined,
-                  });
-                },
-                onSuccess: () => {
+              try {
+                // Get or refresh token
+                const tokenResult = await fetchTokenIfNeeded();
+                if (tokenResult && tokenResult.alreadyExists) {
                   const durationMs = Date.now() - startedAt;
-                  logUploadSuccess(fileItem.name, finalFile.size, storagePath, durationMs);
-                  activeTusUploads.delete(fileItem.id);
-                  // Cancel any pending retry queue entry
-                  uploadRetryQueue.cancel(fileItem.id);
-
+                  logUploadSuccess(fileItem.name, finalFile.size, tokenResult.storagePath, durationMs);
                   const result: UploadedFile = {
                     ...fileItem,
                     status: "uploaded",
                     progress: 100,
-                    storagePath,
+                    storagePath: tokenResult.storagePath,
                     error: undefined,
                     uploadSpeed: undefined,
                     etaSeconds: undefined,
@@ -824,54 +642,194 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                   onChange((prev) =>
                     prev.map((f) => (f.id === fileItem.id ? result : f))
                   );
-                  resolve(result);
-                },
-                onShouldRetry: (error, retryAttempt) => {
-                  const classified = classifyUploadError(error, "tus");
-                  if (!classified.retryable) return false;
-                  // If token expired, we want to fail and fetch a fresh signature via the background retry queue
-                  if (classified.code === "TOKEN_EXPIRED") {
-                    console.log(`[TUS] Token expired. Failing fast to allow external retry to fetch new signature.`);
-                    return false;
-                  }
-                  const delay = [500, 1500, 3000, 6000][retryAttempt] ?? 6000;
-                  logRetryAttempt(fileItem.name, retryAttempt + 1, delay);
-                  updateState("uploading", 0, {
-                    error: `Retrying… (attempt ${retryAttempt + 1} of 4)`,
-                  });
-                  return true;
-                },
-              });
-
-              activeTusUploads.set(fileItem.id, upload);
-
-              // ── TUS Resumable Upload URL Resumption ─────────────────────
-              upload.findPreviousUploads().then((previousUploads) => {
-                if (previousUploads.length) {
-                  upload.resumeFromPreviousUpload(previousUploads[0]);
+                  success = true;
+                  finalResult = result;
+                  break;
                 }
-                upload.start();
-              }).catch(() => {
-                upload.start();
-              });
-            });
+
+                // If not alreadyExists, do standard upload
+                updateState("uploading", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0);
+
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+                if (!supabaseUrl) {
+                  throw new Error("NEXT_PUBLIC_SUPABASE_URL is not configured");
+                }
+                const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+
+                logUploadStart(fileItem.name, finalFile.size);
+
+                // Run the actual TUS upload in a Promise
+                const result = await new Promise<UploadedFile>((resolvePromise, rejectPromise) => {
+                  let isFirstProgress = true;
+                  const upload = new tus.Upload(finalFile, {
+                    endpoint,
+                    retryDelays: [], // managing retries manually in while loop
+                    headers: {
+                      "x-signature": token,
+                      "x-upsert": "true",
+                    },
+                    metadata: {
+                      bucketName: "order-files",
+                      objectName: storagePath,
+                      contentType: finalFile.type || "application/octet-stream",
+                    },
+                    chunkSize: 5 * 1024 * 1024,
+                    onBeforeRequest: (req) => {
+                      if (!navigator.onLine) {
+                        logNetworkPause(fileItem.name);
+                      }
+                      lastProgressTimesRef.current.set(fileItem.id, Date.now());
+                    },
+                    onError: (error) => {
+                      activeTusUploads.delete(fileItem.id);
+                      rejectPromise(error);
+                    },
+                    onProgress: (bytesSent, bytesTotal) => {
+                      const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
+                      logUploadChunk(fileItem.name, pct, bytesSent, bytesTotal);
+
+                      // Refresh watchdog progress timer
+                      lastProgressTimesRef.current.set(fileItem.id, Date.now());
+
+                      // Calculate upload speed
+                      const now = Date.now();
+                      const elapsed = (now - lastTimestamp) / 1000;
+                      if (elapsed > 0.5) {
+                        const bytesDelta = bytesSent - lastBytesSent;
+                        speedBytesPerSec = Math.round(bytesDelta / elapsed);
+                        lastBytesSent = bytesSent;
+                        lastTimestamp = now;
+                      }
+
+                      // Calculate ETA
+                      const remainingBytes = bytesTotal - bytesSent;
+                      const etaSecs =
+                        speedBytesPerSec > 0 ? Math.ceil(remainingBytes / speedBytesPerSec) : null;
+
+                      let errorMsg: string | undefined = undefined;
+                      if (isFirstProgress) {
+                        isFirstProgress = false;
+                        if (pct > 0) {
+                          errorMsg = "Upload resumed successfully";
+                          setTimeout(() => {
+                            const cur = filesRef.current.find(f => f.id === fileItem.id);
+                            if (cur && cur.status === "uploading" && cur.error === "Upload resumed successfully") {
+                              updateState("uploading", cur.progress, { error: undefined });
+                            }
+                          }, 2000);
+                        }
+                      }
+
+                      updateState("uploading", pct, {
+                        uploadSpeed: speedBytesPerSec,
+                        etaSeconds: etaSecs ?? undefined,
+                        error: errorMsg,
+                      });
+
+                      // Proactive token refresh check during active progress:
+                      const tokenAge = Date.now() - tokenFetchedAt;
+                      if (tokenAge > 200 * 1000) {
+                        fetchTokenIfNeeded().then((refreshed) => {
+                          if (refreshed && !refreshed.alreadyExists) {
+                            if (!upload.options.headers) {
+                              upload.options.headers = {};
+                            }
+                            upload.options.headers["x-signature"] = token;
+                            console.log(`[TUS] Proactively refreshed token mid-upload for ${fileItem.name}`);
+                          }
+                        }).catch((err) => {
+                          console.warn(`[TUS] Proactive token refresh failed:`, err);
+                        });
+                      }
+                    },
+                    onSuccess: () => {
+                      const durationMs = Date.now() - startedAt;
+                      logUploadSuccess(fileItem.name, finalFile.size, storagePath, durationMs);
+                      activeTusUploads.delete(fileItem.id);
+
+                      const resVal: UploadedFile = {
+                        ...fileItem,
+                        status: "uploaded",
+                        progress: 100,
+                        storagePath,
+                        error: undefined,
+                        uploadSpeed: undefined,
+                        etaSeconds: undefined,
+                      };
+                      filesRef.current = filesRef.current.map((f) => (f.id === fileItem.id ? resVal : f));
+                      onChange((prev) =>
+                        prev.map((f) => (f.id === fileItem.id ? resVal : f))
+                      );
+                      resolvePromise(resVal);
+                    },
+                    onShouldRetry: (error, retryAttempt) => {
+                      return false; // let manual/inline retry logic catch and handle it
+                    },
+                  });
+
+                  activeTusUploads.set(fileItem.id, upload);
+
+                  // Resume logic
+                  upload.findPreviousUploads().then((previousUploads) => {
+                    if (previousUploads.length) {
+                      upload.resumeFromPreviousUpload(previousUploads[0]);
+                    }
+                    upload.start();
+                  }).catch(() => {
+                    upload.start();
+                  });
+                });
+
+                success = true;
+                finalResult = result;
+              } catch (err) {
+                // If manually cancelled, don't retry and throw/propagate
+                if (manuallyCancelledRef.current.has(fileItem.id)) {
+                  manuallyCancelledRef.current.delete(fileItem.id);
+                  throw err;
+                }
+
+                const classified = classifyUploadError(err, "tus");
+                if (classified.code === "CANCELLED") {
+                  throw err;
+                }
+
+                if (!classified.retryable) {
+                  updateState("failed", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
+                    error: classified.userMessage
+                  });
+                  throw err;
+                }
+
+                attempt++;
+                if (attempt >= maxAttempts) {
+                  logUploadFailure(fileItem.name, classified.code, classified.userMessage, attempt);
+                  updateState("failed", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
+                    error: classified.userMessage
+                  });
+                  throw err;
+                }
+
+                const backoffDelay = Math.min(1000 * 2 ** attempt, 30000);
+                logRetryAttempt(fileItem.name, attempt, backoffDelay);
+                updateState("retrying", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
+                  error: `Reconnecting upload...`
+                });
+
+                await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+              }
+            }
+
+            if (success && finalResult) {
+              return finalResult;
+            } else {
+              throw new Error("Upload failed after retry limit reached.");
+            }
           } catch (err) {
-            // Final safety net: classify any unhandled error using functional update
             const current = filesRef.current.find((f) => f.id === fileItem.id);
-            if (current && !current.error) {
+            if (current && current.status !== "uploaded") {
               const classified = classifyUploadError(err, "general");
-              filesRef.current = filesRef.current.map((f) =>
-                f.id === fileItem.id
-                  ? { ...f, status: "failed" as const, progress: 0, error: classified.userMessage }
-                  : f
-              );
-              onChange((prev) =>
-                prev.map((f) =>
-                  f.id === fileItem.id
-                    ? { ...f, status: "failed" as const, progress: 0, error: classified.userMessage }
-                    : f
-                )
-              );
+              updateState("failed", current.progress || 0, { error: classified.userMessage });
             }
             throw err;
           }
@@ -888,7 +846,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       [shopId, orderId, onChange]
     );
 
-    // Keep the ref in sync so closures inside retryQueue always get the latest version
+    // Keep the ref in sync
     useEffect(() => {
       uploadSingleFileRef.current = uploadSingleFile;
     }, [uploadSingleFile]);
@@ -898,7 +856,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       if (disabled) return;
 
       const activeUploads = files.filter(
-        (f) => f.status === "uploading" || f.status === "compressing"
+        (f) => f.status === "uploading" || f.status === "compressing" || f.status === "retrying"
       );
       const activeCount = activeUploads.length;
       const slotsAvailable = 2 - activeCount;
@@ -946,7 +904,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           const waitForAllSettled = async (): Promise<UploadedFile[]> => {
             while (true) {
               const activeCount = filesRef.current.filter(
-                (f) => f.status === "uploading" || f.status === "compressing"
+                (f) => f.status === "uploading" || f.status === "compressing" || f.status === "retrying"
               ).length;
 
               const queued = filesRef.current.filter(
@@ -961,16 +919,13 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                     console.warn(`[uploadAll] Auto-start queued file failed for ${f.name}:`, err)
                   );
                 });
-                // Wait a microtask to allow promises to register
                 await new Promise((resolve) => setTimeout(resolve, 50));
                 continue;
               }
 
               const activePromises = Array.from(activeUploadPromisesRef.current.values());
               if (activePromises.length > 0) {
-                // Wait for at least one to settle
                 await Promise.race(activePromises.map((p) => p.catch(() => {})));
-                // Brief pause to allow state setters to complete
                 await new Promise((resolve) => setTimeout(resolve, 50));
                 continue;
               }
@@ -1002,9 +957,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         const failedFiles = filesRef.current.filter((f) => f.status === "failed");
         if (failedFiles.length === 0) return;
 
-        // Cancel any pending retry queue entries
-        failedFiles.forEach((f) => uploadRetryQueue.cancel(f.id));
-
         onChange((prev) =>
           prev.map((f) =>
             f.status === "failed"
@@ -1027,9 +979,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         const fileItem = filesRef.current.find((f) => f.id === id);
         if (!fileItem || disabled) return;
 
-        // Cancel any existing queue entry
-        uploadRetryQueue.cancel(id);
-
         onChange((prev) =>
           prev.map((f) =>
             f.id === id
@@ -1046,9 +995,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       const failedFiles = filesRef.current.filter((f) => f.status === "failed");
       if (failedFiles.length === 0 || disabled) return;
 
-      // Cancel all queued entries first
-      failedFiles.forEach((f) => uploadRetryQueue.cancel(f.id));
-
       onChange((prev) =>
         prev.map((f) =>
           f.status === "failed"
@@ -1064,7 +1010,11 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
     const successCount = files.filter((f) => f.status === "uploaded").length;
     const failedCount = files.filter((f) => f.status === "failed").length;
     const uploadingCount = files.filter(
-      (f) => f.status === "uploading" || f.status === "compressing"
+      (f) =>
+        f.status === "uploading" ||
+        f.status === "compressing" ||
+        f.status === "retrying" ||
+        f.status === "finalizing"
     ).length;
     const queuedCount = files.filter((f) => f.status === "queued").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
@@ -1192,7 +1142,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                   onClick={() => {
                     activeTusUploads.forEach((upload) => upload.abort(true));
                     activeTusUploads.clear();
-                    files.forEach((f) => uploadRetryQueue.cancel(f.id));
                     activeUploadPromisesRef.current.clear();
                     onChange([]);
                   }}
@@ -1217,7 +1166,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
               <ReorderItemRow
                 key={fileItem.id}
                 fileItem={fileItem}
-                disabled={disabled}
+                disabled={!!disabled}
                 onRemove={handleRemoveFile}
                 onUpdateConfig={handleUpdateConfig}
                 onRetry={handleRetryFile}
@@ -1258,7 +1207,9 @@ function ReorderItemRow({
   const isActivelyUploading =
     fileItem.status === "uploading" ||
     fileItem.status === "compressing" ||
-    fileItem.status === "queued";
+    fileItem.status === "queued" ||
+    fileItem.status === "retrying" ||
+    fileItem.status === "finalizing";
 
   // Local object URL for image thumbnail
   const [thumbUrl, setThumbUrl] = useState<string>("");
@@ -1270,31 +1221,7 @@ function ReorderItemRow({
     }
   }, [fileItem.file, isPdf]);
 
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (fileItem.status === "failed" && uploadRetryQueue.has(fileItem.id)) {
-      const attempt = fileItem.retryAttempt || 0;
-      const delays = [0.5, 1, 3, 5];
-      const maxSeconds = delays[attempt] || 5;
-      
-      let current = Math.ceil(maxSeconds);
-      setSecondsLeft(current);
 
-      timer = setInterval(() => {
-        current -= 1;
-        if (current <= 0) {
-          setSecondsLeft(null);
-          clearInterval(timer);
-        } else {
-          setSecondsLeft(current);
-        }
-      }, 1000);
-    } else {
-      setSecondsLeft(null);
-    }
-    return () => clearInterval(timer);
-  }, [fileItem.id, fileItem.status, fileItem.retryAttempt]);
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 B";
@@ -1325,6 +1252,8 @@ function ReorderItemRow({
       case "uploaded":
         return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
       case "uploading":
+      case "retrying":
+      case "finalizing":
         return "border-emerald-200 shadow-sm";
       case "compressing":
         return "border-indigo-200 shadow-sm";
@@ -1348,7 +1277,7 @@ function ReorderItemRow({
       className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${cardStyle}`}
     >
       {/* Progress bar at very top of card */}
-      {fileItem.status === "uploading" && (
+      {(fileItem.status === "uploading" || fileItem.status === "retrying") && (
         <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
           <motion.div
             className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"
@@ -1594,6 +1523,20 @@ function ReorderItemRow({
                       </span>
                     </>
                   )}
+                  {fileItem.status === "retrying" && (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                      <span className="text-amber-700">
+                        {fileItem.error ? fileItem.error : "Reconnecting upload…"}
+                      </span>
+                    </>
+                  )}
+                  {fileItem.status === "finalizing" && (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                      <span className="text-emerald-700">Finalizing…</span>
+                    </>
+                  )}
                   {fileItem.status === "queued" && (
                     <>
                       <Clock className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
@@ -1601,7 +1544,7 @@ function ReorderItemRow({
                     </>
                   )}
                 </span>
-                {fileItem.status === "uploading" && (
+                {(fileItem.status === "uploading" || fileItem.status === "retrying") && (
                   <span className="font-extrabold text-emerald-600 tabular-nums">
                     {fileItem.progress}%
                   </span>
@@ -1627,7 +1570,7 @@ function ReorderItemRow({
                 )}
 
               {/* Thick progress bar */}
-              {fileItem.status === "uploading" && (
+              {(fileItem.status === "uploading" || fileItem.status === "retrying") && (
                 <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
@@ -1662,22 +1605,18 @@ function ReorderItemRow({
               <div className="flex items-start gap-1.5">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
                 <p className="text-[10px] font-bold text-rose-700 leading-snug">
-                  {uploadRetryQueue.has(fileItem.id) && secondsLeft !== null
-                    ? `Connection lost. Auto-retrying (attempt ${(fileItem.retryAttempt || 0) + 1}/4) in ${secondsLeft}s…`
-                    : fileItem.error ?? "Upload failed. Tap Retry to try again."}
+                  {fileItem.error ?? "Upload failed. Tap Retry to try again."}
                 </p>
               </div>
-              {!uploadRetryQueue.has(fileItem.id) && (
-                <button
-                  type="button"
-                  onClick={() => onRetry(fileItem.id)}
-                  disabled={disabled}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-[10px] font-black text-rose-800 uppercase tracking-wider transition active:scale-95 disabled:opacity-50"
-                >
-                  <RefreshCw className="w-3 h-3 shrink-0" />
-                  Retry file
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => onRetry(fileItem.id)}
+                disabled={disabled}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-[10px] font-black text-rose-800 uppercase tracking-wider transition active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className="w-3 h-3 shrink-0" />
+                Retry file
+              </button>
             </motion.div>
           )}
         </div>

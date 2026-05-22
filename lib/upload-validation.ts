@@ -50,8 +50,8 @@ const DANGEROUS_EXTENSIONS = new Set([
 /** Supabase Storage bucket name. */
 export const UPLOAD_BUCKET = "order-files";
 
-/** Signed URL TTL in seconds. Extended to 300s to support large file chunk uploads on slow mobile. */
-export const UPLOAD_URL_TTL_SECONDS = 300;
+/** Signed URL TTL in seconds. Extended to 3600s (1 hour) to support large file chunk uploads on slow mobile. */
+export const UPLOAD_URL_TTL_SECONDS = 3600;
 
 // ─── Validation result type ─────────────────────────────────────────────────
 

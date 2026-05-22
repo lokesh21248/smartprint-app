@@ -93,7 +93,7 @@ function OrderUploadPageInner() {
   const uploadPhase = useMemo<UploadPhase>(() => {
     if (orderStatus === "success") return "success";
     if (files.some((f) => f.status === "compressing")) return "compressing";
-    if (files.some((f) => f.status === "uploading" || f.status === "queued")) return "uploading";
+    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "retrying" || f.status === "finalizing" || f.status === "paused")) return "uploading";
     if (orderStatus === "saving") return "saving";
     return "idle";
   }, [orderStatus, files]);
@@ -769,7 +769,7 @@ function OrderUploadPageInner() {
                   ) : orderStatus === "saving" ? (
                     <>
                       <Loader2 className="animate-spin w-4 h-4" />
-                      Saving order…
+                      Finalizing order…
                     </>
                   ) : orderStatus === "failed" ? (
                     <>

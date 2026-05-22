@@ -117,6 +117,27 @@ export async function POST(request: Request) {
       ? `orders/${orderId}/${validation.sanitizedName}`
       : generateStoragePath(shopId, validation.extension!);
 
+    // Check if file already exists in storage and matches size
+    if (orderId) {
+      try {
+        const { data: fileInfo } = await supabase.storage
+          .from(UPLOAD_BUCKET)
+          .info(storagePath);
+
+        if (fileInfo && fileInfo.size === fileSize) {
+          console.log(`[presign] File ${storagePath} already exists in storage with matching size ${fileSize}. Skipping upload.`);
+          return NextResponse.json({
+            alreadyExists: true,
+            storagePath,
+            sanitizedName: validation.sanitizedName,
+            expiresIn: UPLOAD_URL_TTL_SECONDS,
+          });
+        }
+      } catch (err) {
+        console.warn(`[presign] File existence check failed for path ${storagePath}:`, err);
+      }
+    }
+
     // 7. Issue signed upload URL (client PUTs the file directly to this URL)
     const { data: signedData, error: signError } = await supabase.storage
       .from(UPLOAD_BUCKET)

@@ -115,8 +115,11 @@ export type UploadStatus =
   | "queued"
   | "compressing"
   | "uploading"
+  | "paused"
+  | "retrying"
   | "uploaded"
-  | "failed";
+  | "failed"
+  | "finalizing";
 
 export interface UploadedFile {
   id: string;
