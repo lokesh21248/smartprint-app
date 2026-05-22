@@ -111,6 +111,13 @@ export interface OrderFileRecord {
   created_at?: string;
 }
 
+export type UploadStatus =
+  | "queued"
+  | "compressing"
+  | "uploading"
+  | "uploaded"
+  | "failed";
+
 export interface UploadedFile {
   id: string;
   file: File;
@@ -119,7 +126,7 @@ export interface UploadedFile {
   pages: number | null;
   pdfParseFailed: boolean;
   progress: number;
-  status: "idle" | "compressing" | "uploading" | "success" | "failed" | "retrying";
+  status: UploadStatus;
   storagePath?: string;
   error?: string;
   copies: number;

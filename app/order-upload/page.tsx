@@ -82,11 +82,21 @@ function OrderUploadPageInner() {
   });
 
   // Submission state
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
+  type OrderStatus = "idle" | "saving" | "success" | "failed";
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [canRetry, setCanRetry] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+
+  const isSubmitting = orderStatus === "saving" || orderStatus === "success";
+  const canRetry = orderStatus === "failed";
+
+  const uploadPhase = useMemo<UploadPhase>(() => {
+    if (orderStatus === "success") return "success";
+    if (files.some((f) => f.status === "compressing")) return "compressing";
+    if (files.some((f) => f.status === "uploading" || f.status === "queued")) return "uploading";
+    if (orderStatus === "saving") return "saving";
+    return "idle";
+  }, [orderStatus, files]);
 
   // Refs — these survive re-renders without causing them
   const isSubmittingRef = useRef(false);
@@ -139,6 +149,16 @@ function OrderUploadPageInner() {
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  // ── Invalidate idempotency key on changes ──────────────────────────────────
+  const orderConfigSignature = useMemo(() => {
+    const fileSpecs = files.map((f) => `${f.id}:${f.copies}:${f.color}:${f.doubleSided}`).join(";");
+    return `${customerName}|${customerPhone}|${notes}|${fileSpecs}`;
+  }, [files, customerName, customerPhone, notes]);
+
+  useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [orderConfigSignature]);
 
   // ── Load shop ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -232,6 +252,7 @@ function OrderUploadPageInner() {
       return;
     }
 
+
     const formattedName = customerName
       .trim()
       .split(" ")
@@ -240,9 +261,8 @@ function OrderUploadPageInner() {
 
     // Set up submission state
     isSubmittingRef.current = true;
-    setIsSubmitting(true);
+    setOrderStatus("saving");
     setErrorMessage(null);
-    setCanRetry(false);
 
     const tracker = createOrderTracker(shop.id);
     const controller = new AbortController();
@@ -263,26 +283,31 @@ function OrderUploadPageInner() {
     }
 
     try {
-      // ── Step 1: Upload all files in parallel (using ref) ──────────────────
-      setUploadPhase("uploading");
-      tracker.markUploadStart();
-
-      const uploadResult = await uploaderRef.current?.uploadAll();
-      if (!uploadResult || !uploadResult.success) {
-        const failedCount = uploadResult?.failedCount ?? 1;
-        const noun = failedCount === 1 ? "file" : "files";
-        // Per-file error messages are already shown inline in each file card.
-        // Surface a concise summary with guidance in the page-level error banner.
-        throw new Error(
-          `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
-        );
+      // ── Step 1: Double-check uploads are completed ──────────────────────
+      const needsUpload = files.some((f) => f.status !== "uploaded");
+      if (needsUpload) {
+        tracker.markUploadStart();
+        if (uploaderRef.current) {
+          const uploadResult = await uploaderRef.current.uploadAll();
+          if (!uploadResult || !uploadResult.success) {
+            const failedCount = uploadResult?.failedCount ?? 1;
+            const noun = failedCount === 1 ? "file" : "files";
+            throw new Error(
+              `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
+            );
+          }
+        } else {
+          const failedCount = files.filter((f) => f.status !== "uploaded").length;
+          const noun = failedCount === 1 ? "file" : "files";
+          throw new Error(
+            `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
+          );
+        }
+        const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
+        tracker.markUploadEnd(totalFilesSize);
       }
 
-      const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
-      tracker.markUploadEnd(totalFilesSize);
-
       // ── Step 2: Save order metadata to DB ───────────────────────────────────
-      setUploadPhase("saving");
       tracker.markInsertStart();
 
       // Structure files array for backend schema validator
@@ -350,7 +375,7 @@ function OrderUploadPageInner() {
       }
 
       if (res.ok && data.shortToken) {
-        setUploadPhase("success");
+        setOrderStatus("success");
         tracker.markSuccess();
         setTimeout(() => {
           router.push(`/order/${data.shortToken}`);
@@ -377,13 +402,11 @@ function OrderUploadPageInner() {
 
       console.error("[order] submission failed:", err);
       setErrorMessage(userMessage);
-      setCanRetry(true);
-      setUploadPhase("idle");
-      toast.error(userMessage, { duration: 6000 });
+      setOrderStatus("failed");
+      toast.error("Please review the errors below to complete your order.");
     } finally {
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
-      setIsSubmitting(false);
     }
   }, [files, shop, customerName, customerPhone, isOffline, notes, router]);
 
@@ -715,7 +738,7 @@ function OrderUploadPageInner() {
                   id="place-order-btn"
                   onClick={handlePlaceOrder}
                   disabled={
-                    isSubmitting ||
+                    orderStatus === "saving" ||
                     isOffline ||
                     !customerName ||
                     customerName.trim().length < 3 ||
@@ -727,16 +750,27 @@ function OrderUploadPageInner() {
                       : "bg-emerald-500 hover:bg-emerald-600 text-white"
                   }`}
                 >
-                  {isSubmitting ? (
+                  {orderStatus === "success" ? (
                     <>
                       <Loader2 className="animate-spin w-4 h-4" />
-                      {uploadPhase === "uploading"
-                        ? `Uploading ${overallUploadPercent}%`
-                        : uploadPhase === "saving"
-                        ? "Saving order…"
-                        : "Starting…"}
+                      Redirecting…
                     </>
-                  ) : canRetry ? (
+                  ) : uploadPhase === "compressing" ? (
+                    <>
+                      <Loader2 className="animate-spin w-4 h-4" />
+                      Compressing…
+                    </>
+                  ) : uploadPhase === "uploading" ? (
+                    <>
+                      <Loader2 className="animate-spin w-4 h-4" />
+                      Uploading ({overallUploadPercent}%)…
+                    </>
+                  ) : orderStatus === "saving" ? (
+                    <>
+                      <Loader2 className="animate-spin w-4 h-4" />
+                      Saving order…
+                    </>
+                  ) : orderStatus === "failed" ? (
                     <>
                       <RefreshCw className="w-4 h-4" /> Retry Order
                     </>
