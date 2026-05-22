@@ -164,7 +164,7 @@ export function FilePondDropzone({
           // ── File rules ──────────────────────────────────────────────────
           allowMultiple={false}
           maxFiles={1}
-          acceptedFileTypes={["application/pdf", "image/png", "image/jpeg"]}
+          acceptedFileTypes={["application/pdf", "image/png", "image/jpeg", "image/jpg"]}
           maxFileSize="25MB"
           // ── Upload: DISABLED — we use existing presign flow ─────────────
           server={null}

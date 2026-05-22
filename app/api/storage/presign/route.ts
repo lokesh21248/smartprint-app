@@ -11,6 +11,8 @@ import {
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
+let isBucketConfigured = false;
+
 /**
  * POST /api/storage/presign
  *
@@ -68,6 +70,27 @@ export async function POST(request: Request) {
 
     // 5. Confirm shop exists and is active (prevent orphan uploads)
     const supabase = createAdminClient();
+
+    // Programmatically ensure the bucket allows PDF and image MIME types.
+    // Done once per warm container instance via service role.
+    if (!isBucketConfigured) {
+      try {
+        const { error: updateError } = await supabase.storage.updateBucket(UPLOAD_BUCKET, {
+          public: false,
+          allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/jpg"],
+          fileSizeLimit: 25 * 1024 * 1024, // 25 MB
+        });
+        if (updateError) {
+          console.warn("[presign] Failed to update bucket configuration programmatically:", updateError.message);
+        } else {
+          isBucketConfigured = true;
+          console.log("[presign] Successfully configured bucket allowed MIME types programmatically");
+        }
+      } catch (err) {
+        console.error("[presign] Error while updating bucket:", err);
+      }
+    }
+
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id, is_active")
