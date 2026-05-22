@@ -47,6 +47,13 @@ const NETWORK_PATTERNS = [
   "err_internet_disconnected",
   "load failed",
   "the internet connection appears to be offline",
+  "could not connect",                    // Android WebView
+  "connection refused",
+  "connection reset",
+  "net::err",                              // Chromium/Android
+  "the network connection was lost",       // iOS Safari WebKit
+  "a server with the specified hostname",  // DNS failure on iOS
+  "cors",                                  // CORS preflight failure
 ];
 
 const TIMEOUT_PATTERNS = [
@@ -55,6 +62,9 @@ const TIMEOUT_PATTERNS = [
   "signal is aborted",
   "aborted",
   "request timeout",
+  "deadline exceeded",
+  "408",
+  "524",  // Cloudflare timeout
 ];
 
 const SIZE_PATTERNS = [

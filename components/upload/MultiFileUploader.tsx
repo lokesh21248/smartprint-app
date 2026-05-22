@@ -1,18 +1,38 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useCallback, useEffect, useImperativeHandle, forwardRef, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+  useRef,
+} from "react";
 import { Reorder, useDragControls, motion, AnimatePresence } from "framer-motion";
-import { 
-  FileText, Trash2, GripVertical, Plus, Minus, 
-  CheckCircle2, AlertCircle, RefreshCw, Loader2, 
-  Image as ImageIcon, WifiOff, X, Upload
+import {
+  FileText,
+  Trash2,
+  GripVertical,
+  Plus,
+  Minus,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Loader2,
+  Image as ImageIcon,
+  WifiOff,
+  X,
+  Upload,
+  Zap,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import pLimit from "p-limit";
 import * as tus from "tus-js-client";
 import type { UploadedFile } from "@/types";
 import { classifyUploadError } from "@/lib/upload/errorClassifier";
+import { uploadRetryQueue } from "@/lib/upload/retryQueue";
 import {
   logUploadStart,
   logUploadChunk,
@@ -47,7 +67,7 @@ export interface MultiFileUploaderRef {
 
 interface MultiFileUploaderProps {
   files: UploadedFile[];
-  onChange: (files: UploadedFile[]) => void;
+  onChange: (files: UploadedFile[] | ((prev: UploadedFile[]) => UploadedFile[])) => void;
   shopId: string;
   orderId: string;
   disabled?: boolean;
@@ -58,35 +78,55 @@ const activeTusUploads = new Map<string, tus.Upload>();
 
 export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
   ({ files, onChange, shopId, orderId, disabled = false }, ref) => {
-    // Track if any files are currently uploading (for beforeunload guard)
     const isUploadingRef = useRef(false);
     const [isOnline, setIsOnline] = useState(
       typeof navigator !== "undefined" ? navigator.onLine : true
     );
+    // Keep a stable ref to the latest uploadSingleFile — avoids stale closures in callbacks
+    const uploadSingleFileRef = useRef<(fileItem: UploadedFile) => Promise<UploadedFile>>(
+      null as unknown as (fileItem: UploadedFile) => Promise<UploadedFile>
+    );
 
-    // ── Online/Offline detection with auto-resume ──────────────────────────
+    // ── Online/Offline detection with actual auto-resume ──────────────────────
     useEffect(() => {
       const handleOnline = () => {
         setIsOnline(true);
-        // Find files that failed due to offline and auto-resume them
-        const failedFiles = files.filter(
-          (f) =>
-            f.status === "failed" &&
-            (f.error?.includes("No internet") || f.error?.includes("Network error"))
-        );
-        if (failedFiles.length > 0) {
-          failedFiles.forEach((f) => logNetworkResume(f.name));
-          toast.success(`Back online! Resuming ${failedFiles.length} upload${failedFiles.length > 1 ? "s" : ""}…`);
-          // Mark as idle so they get picked up in the next uploadAll call
-          onChange(
-            files.map((f) =>
-              failedFiles.some((ff) => ff.id === f.id)
-                ? { ...f, status: "idle", progress: 0, error: undefined }
-                : f
-            )
+        // The retryQueue handles re-scheduling automatically — but for any files
+        // that failed offline and weren't enqueued, we enqueue them now.
+        onChange((prev) => {
+          const offlineFailed = prev.filter(
+            (f) =>
+              f.status === "failed" &&
+              (f.error?.includes("No internet") ||
+                f.error?.includes("Network error") ||
+                f.error?.includes("offline"))
           );
-        }
+          if (offlineFailed.length > 0) {
+            offlineFailed.forEach((f) => {
+              logNetworkResume(f.name);
+              // Enqueue into background retry queue if not already there
+              if (!uploadRetryQueue.has(f.id) && uploadSingleFileRef.current) {
+                const capturedFile = f;
+                uploadRetryQueue.enqueue(f.id, f.name, async () => {
+                  await uploadSingleFileRef.current({
+                    ...capturedFile,
+                    status: "retrying",
+                    progress: 0,
+                    error: undefined,
+                  });
+                });
+              }
+            });
+            toast.success(
+              `Back online! Auto-retrying ${offlineFailed.length} upload${offlineFailed.length > 1 ? "s" : ""}…`
+            );
+          } else {
+            toast.success("Back online!");
+          }
+          return prev; // state unchanged — retryQueue handles the work
+        });
       };
+
       const handleOffline = () => {
         setIsOnline(false);
       };
@@ -97,9 +137,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
       };
-    }, [files, onChange]);
+    }, [onChange]);
 
-    // ── Beforeunload guard during active uploads ───────────────────────────
+    // ── Beforeunload guard during active uploads ──────────────────────────────
     useEffect(() => {
       const handleBeforeUnload = (e: BeforeUnloadEvent) => {
         if (isUploadingRef.current) {
@@ -111,7 +151,16 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       return () => window.removeEventListener("beforeunload", handleBeforeUnload);
     }, []);
 
-    // ── PDF Page Count Parser ──────────────────────────────────────────────
+    // ── Cleanup retry queue entries when files are removed ───────────────────
+    useEffect(() => {
+      return () => {
+        // On unmount, cancel all queued retries
+        files.forEach((f) => uploadRetryQueue.cancel(f.id));
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ── PDF Page Count Parser ─────────────────────────────────────────────────
     const parsePdfPages = useCallback(async (file: File): Promise<{ count: number; failed: boolean }> => {
       try {
         const arrayBuffer = await file.arrayBuffer();
@@ -124,7 +173,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       }
     }, []);
 
-    // ── File Selection Handler ─────────────────────────────────────────────
+    // ── File Selection Handler ────────────────────────────────────────────────
     const handleFilesSelected = useCallback(
       async (newFiles: File[]) => {
         if (disabled) return;
@@ -146,10 +195,12 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             type === "image/png" ||
             type === "image/jpeg" ||
             type === "image/jpg" ||
+            type === "image/webp" ||
             ext === "pdf" ||
             ext === "png" ||
             ext === "jpg" ||
-            ext === "jpeg";
+            ext === "jpeg" ||
+            ext === "webp";
 
           if (!isAllowedType) {
             toast.error(
@@ -167,6 +218,17 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           // Empty file check
           if (file.size === 0) {
             toast.error(`"${file.name}" is empty and cannot be uploaded.`);
+            continue;
+          }
+
+          // Malicious filename check
+          if (
+            file.name.includes("..") ||
+            file.name.includes("/") ||
+            file.name.includes("\\") ||
+            file.name.includes("\0")
+          ) {
+            toast.error(`"${file.name}" has an invalid filename.`);
             continue;
           }
 
@@ -202,8 +264,8 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           // Parse PDF pages in background
           if (isPdf) {
             parsePdfPages(file).then(({ count, failed }) => {
-              onChange(
-                updatedList.map((f) =>
+              onChange((prev) =>
+                prev.map((f) =>
                   f.id === fileId ? { ...f, pages: count, pdfParseFailed: failed } : f
                 )
               );
@@ -221,11 +283,11 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       [files, onChange, disabled, parsePdfPages]
     );
 
-    // ── Remove File Handler ────────────────────────────────────────────────
+    // ── Remove File Handler ───────────────────────────────────────────────────
     const handleRemoveFile = useCallback(
       (id: string) => {
         if (disabled) return;
-        // Abort any active TUS upload for this file
+        // Cancel any active TUS upload
         const activeUpload = activeTusUploads.get(id);
         if (activeUpload) {
           activeUpload.abort(true);
@@ -233,12 +295,14 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           const fileItem = files.find((f) => f.id === id);
           if (fileItem) logUploadCancelled(fileItem.name);
         }
-        onChange(files.filter((f) => f.id !== id));
+        // Cancel any queued retry
+        uploadRetryQueue.cancel(id);
+        onChange((prev) => prev.filter((f) => f.id !== id));
       },
       [files, onChange, disabled]
     );
 
-    // ── Cancel Active Upload ───────────────────────────────────────────────
+    // ── Cancel Active Upload ──────────────────────────────────────────────────
     const handleCancelUpload = useCallback(
       (id: string) => {
         const activeUpload = activeTusUploads.get(id);
@@ -248,43 +312,51 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           const fileItem = files.find((f) => f.id === id);
           if (fileItem) logUploadCancelled(fileItem.name);
         }
-        onChange(
-          files.map((f) =>
-            f.id === id ? { ...f, status: "idle", progress: 0, error: undefined } : f
+        uploadRetryQueue.cancel(id);
+        onChange((prev) =>
+          prev.map((f) =>
+            f.id === id
+              ? { ...f, status: "idle" as const, progress: 0, error: undefined }
+              : f
           )
         );
       },
       [files, onChange]
     );
 
-    // ── Update Print Config ────────────────────────────────────────────────
+    // ── Update Print Config ───────────────────────────────────────────────────
     const handleUpdateConfig = useCallback(
       (
         id: string,
         updates: Partial<Pick<UploadedFile, "copies" | "color" | "doubleSided" | "pages">>
       ) => {
-        onChange(files.map((f) => (f.id === id ? { ...f, ...updates } : f)));
+        onChange((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
       },
-      [files, onChange]
+      [onChange]
     );
 
-    // ── Core Single-File Upload ────────────────────────────────────────────
+    // ── Core Single-File Upload ───────────────────────────────────────────────
     const uploadSingleFile = useCallback(
       async (fileItem: UploadedFile): Promise<UploadedFile> => {
-        // Skip if already uploaded (orphan recovery)
+        // Idempotency: skip if already uploaded
         if (fileItem.status === "success" && fileItem.storagePath) {
           return fileItem;
         }
 
         const startedAt = Date.now();
+        // Track bytes + timestamps for speed calculation
+        let lastBytesSent = 0;
+        let lastTimestamp = Date.now();
+        let speedBytesPerSec = 0;
 
+        // ── Functional state updater (never stale) ────────────────────────────
         const updateState = (
           status: UploadedFile["status"],
           progress: number,
           extra: Partial<UploadedFile> = {}
         ) => {
-          onChange((prevFiles) =>
-            prevFiles.map((f) =>
+          onChange((prev) =>
+            prev.map((f) =>
               f.id === fileItem.id ? { ...f, status, progress, ...extra } : f
             )
           );
@@ -298,7 +370,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             updateState("compressing", 0);
             try {
               const { compressImageIfNeeded } = await import("@/lib/upload/compressImage");
-              // Compress anything > 500KB (previously 3MB — much more aggressive now)
               const compResult = await compressImageIfNeeded(fileToUpload, 500 * 1024);
               logCompressionResult(
                 fileItem.name,
@@ -333,25 +404,38 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             });
 
             if (!presignRes.ok) {
-              const errBody = await presignRes.json().catch(() => ({})) as { error?: string };
+              const errBody = (await presignRes.json().catch(() => ({}))) as { error?: string };
               const presignError = new Error(errBody.error || `Server error (${presignRes.status})`);
               logPresignResult(fileItem.name, false, presignError.message);
-              // For auth / rate-limit errors, classify from the HTTP status
               const classified = classifyUploadError(
-                { originalResponse: { getStatus: () => presignRes.status, getBody: () => errBody.error ?? "" } },
+                {
+                  originalResponse: {
+                    getStatus: () => presignRes.status,
+                    getBody: () => errBody.error ?? "",
+                  },
+                },
                 "presign"
               );
               updateState("failed", 0, { error: classified.userMessage });
               throw presignError;
             }
 
-            presignData = await presignRes.json() as { token: string; storagePath: string };
+            presignData = (await presignRes.json()) as { token: string; storagePath: string };
             logPresignResult(fileItem.name, true);
           } catch (presignErr) {
-            if (!(presignErr instanceof Error && presignErr.message.startsWith("Server error"))) {
-              const classified = classifyUploadError(presignErr, "presign");
-              updateState("failed", 0, { error: classified.userMessage });
-            }
+            // Only classify if not already classified above
+            onChange((prev) => {
+              const current = prev.find((f) => f.id === fileItem.id);
+              if (current && !current.error) {
+                const classified = classifyUploadError(presignErr, "presign");
+                return prev.map((f) =>
+                  f.id === fileItem.id
+                    ? { ...f, status: "failed" as const, progress: 0, error: classified.userMessage }
+                    : f
+                );
+              }
+              return prev;
+            });
             throw presignErr;
           }
 
@@ -369,7 +453,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           return new Promise<UploadedFile>((resolve, reject) => {
             const upload = new tus.Upload(fileToUpload, {
               endpoint,
-              // Retry up to 4 times with increasing backoff — handles mobile 4G drops
+              // 4 retries with increasing backoff — handles mobile 4G drops
               retryDelays: [500, 1500, 3000, 6000],
               headers: {
                 "x-signature": token,
@@ -380,31 +464,65 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 objectName: storagePath,
                 contentType: fileToUpload.type || "application/octet-stream",
               },
-              // 5MB chunks — slightly below 6MB Supabase requirement for network safety
+              // 5MB chunks — optimal for mobile networks
               chunkSize: 5 * 1024 * 1024,
               onBeforeRequest: (req) => {
-                // Pause if we've gone offline mid-upload
                 if (!navigator.onLine) {
                   logNetworkPause(fileItem.name);
                 }
-                return req;
+                // Return void — tus-js-client onBeforeRequest must not return the request
               },
               onError: (error) => {
                 const classified = classifyUploadError(error, "tus");
                 logUploadFailure(fileItem.name, classified.code, classified.userMessage, 1);
                 updateState("failed", 0, { error: classified.userMessage });
                 activeTusUploads.delete(fileItem.id);
+
+                // Auto-enqueue into background retry queue for network-related errors
+                if (classified.retryable && classified.code !== "CANCELLED") {
+                  uploadRetryQueue.enqueue(fileItem.id, fileItem.name, async () => {
+                    const latestFile: UploadedFile = {
+                      ...fileItem,
+                      status: "retrying",
+                      progress: 0,
+                      error: undefined,
+                    };
+                    await uploadSingleFileRef.current(latestFile);
+                  });
+                }
+
                 reject(error);
               },
               onProgress: (bytesSent, bytesTotal) => {
                 const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
                 logUploadChunk(fileItem.name, pct, bytesSent, bytesTotal);
-                updateState("uploading", pct);
+
+                // Calculate upload speed
+                const now = Date.now();
+                const elapsed = (now - lastTimestamp) / 1000;
+                if (elapsed > 0.5) {
+                  const bytesDelta = bytesSent - lastBytesSent;
+                  speedBytesPerSec = Math.round(bytesDelta / elapsed);
+                  lastBytesSent = bytesSent;
+                  lastTimestamp = now;
+                }
+
+                // Calculate ETA
+                const remainingBytes = bytesTotal - bytesSent;
+                const etaSecs =
+                  speedBytesPerSec > 0 ? Math.ceil(remainingBytes / speedBytesPerSec) : null;
+
+                updateState("uploading", pct, {
+                  uploadSpeed: speedBytesPerSec,
+                  etaSeconds: etaSecs ?? undefined,
+                });
               },
               onSuccess: () => {
                 const durationMs = Date.now() - startedAt;
                 logUploadSuccess(fileItem.name, fileToUpload.size, storagePath, durationMs);
                 activeTusUploads.delete(fileItem.id);
+                // Cancel any pending retry queue entry
+                uploadRetryQueue.cancel(fileItem.id);
 
                 const result: UploadedFile = {
                   ...fileItem,
@@ -412,40 +530,56 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                   progress: 100,
                   storagePath,
                   error: undefined,
+                  uploadSpeed: undefined,
+                  etaSeconds: undefined,
                 };
-                onChange((prevFiles) =>
-                  prevFiles.map((f) => (f.id === fileItem.id ? result : f))
+                onChange((prev) =>
+                  prev.map((f) => (f.id === fileItem.id ? result : f))
                 );
                 resolve(result);
               },
               onShouldRetry: (error, retryAttempt) => {
                 const classified = classifyUploadError(error, "tus");
-                // Don't retry non-retryable errors (wrong file type, auth failed permanently etc)
                 if (!classified.retryable) return false;
-                logRetryAttempt(fileItem.name, retryAttempt + 1, [500, 1500, 3000, 6000][retryAttempt] ?? 6000);
-                updateState("retrying", 0, { error: `Retrying… (attempt ${retryAttempt + 1})` });
+                const delay = [500, 1500, 3000, 6000][retryAttempt] ?? 6000;
+                logRetryAttempt(fileItem.name, retryAttempt + 1, delay);
+                updateState("retrying", 0, {
+                  error: `Retrying… (attempt ${retryAttempt + 1} of 4)`,
+                });
                 return true;
               },
             });
 
-            // Track for cancel support
             activeTusUploads.set(fileItem.id, upload);
             upload.start();
           });
         } catch (err) {
-          // Only classify & set state if not already set by inner catch blocks
-          const fileState = files.find((f) => f.id === fileItem.id);
-          if (!fileState?.error) {
-            const classified = classifyUploadError(err, "general");
-            updateState("failed", 0, { error: classified.userMessage });
-          }
+          // Final safety net: classify any unhandled error using functional update
+          onChange((prev) => {
+            const current = prev.find((f) => f.id === fileItem.id);
+            if (current && !current.error) {
+              const classified = classifyUploadError(err, "general");
+              return prev.map((f) =>
+                f.id === fileItem.id
+                  ? { ...f, status: "failed" as const, progress: 0, error: classified.userMessage }
+                  : f
+              );
+            }
+            return prev;
+          });
           throw err;
         }
       },
-      [shopId, orderId, onChange, files]
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [shopId, orderId, onChange]
     );
 
-    // ── uploadAll (exposed via ref) ────────────────────────────────────────
+    // Keep the ref in sync so closures inside retryQueue always get the latest version
+    useEffect(() => {
+      uploadSingleFileRef.current = uploadSingleFile;
+    }, [uploadSingleFile]);
+
+    // ── uploadAll (exposed via ref) ───────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       async uploadAll() {
         if (files.length === 0) {
@@ -467,15 +601,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             if (fileItem.status === "success" && fileItem.storagePath) {
               return fileItem;
             }
-            if (fileItem.status === "failed") {
-              onChange((prev) =>
-                prev.map((f) =>
-                  f.id === fileItem.id
-                    ? { ...f, status: "retrying" as const, progress: 0, error: undefined }
-                    : f
-                )
-              );
-            }
+            // Cancel any pending retry queue entry before manually uploading
+            uploadRetryQueue.cancel(fileItem.id);
+
             return uploadSingleFile({ ...fileItem, status: "uploading", progress: 0 });
           })
         );
@@ -494,7 +622,6 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           });
 
           if (failedCount > 0) {
-            // Error is already shown inline per-file — don't show generic toast
             return { success: false, files: successFiles, failedCount };
           }
 
@@ -515,6 +642,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         await Promise.allSettled(
           failedFiles.map((fileItem) =>
             limit(async () => {
+              uploadRetryQueue.cancel(fileItem.id);
               onChange((prev) =>
                 prev.map((f) =>
                   f.id === fileItem.id
@@ -534,11 +662,14 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       },
     }));
 
-    // ── Individual file retry ──────────────────────────────────────────────
+    // ── Individual file retry ─────────────────────────────────────────────────
     const handleRetryFile = useCallback(
       async (id: string) => {
         const fileItem = files.find((f) => f.id === id);
         if (!fileItem || disabled) return;
+
+        // Cancel any existing queue entry
+        uploadRetryQueue.cancel(id);
 
         onChange((prev) =>
           prev.map((f) =>
@@ -552,18 +683,51 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           await uploadSingleFile({ ...fileItem, status: "retrying", progress: 0, error: undefined });
           toast.success(`"${fileItem.name}" uploaded successfully!`);
         } catch {
-          // Error already surfaced inline in the file card
+          // Error already surfaced inline
         }
       },
       [files, uploadSingleFile, onChange, disabled]
     );
 
-    // ─── Computed summary ─────────────────────────────────────────────────
+    // ── Retry all failed files ────────────────────────────────────────────────
+    const handleRetryAll = useCallback(async () => {
+      const failedFiles = files.filter((f) => f.status === "failed");
+      if (failedFiles.length === 0 || disabled) return;
+
+      // Cancel all queued entries first
+      failedFiles.forEach((f) => uploadRetryQueue.cancel(f.id));
+
+      onChange((prev) =>
+        prev.map((f) =>
+          f.status === "failed"
+            ? { ...f, status: "retrying" as const, progress: 0, error: undefined }
+            : f
+        )
+      );
+
+      toast.info(`Retrying ${failedFiles.length} file${failedFiles.length > 1 ? "s" : ""}…`);
+
+      const limit = pLimit(2);
+      await Promise.allSettled(
+        failedFiles.map((fileItem) =>
+          limit(async () => {
+            try {
+              await uploadSingleFile({ ...fileItem, status: "retrying", progress: 0 });
+            } catch {
+              // Inline error shown per-file
+            }
+          })
+        )
+      );
+    }, [files, uploadSingleFile, onChange, disabled]);
+
+    // ─── Computed summary ─────────────────────────────────────────────────────
     const successCount = files.filter((f) => f.status === "success").length;
     const failedCount = files.filter((f) => f.status === "failed").length;
     const uploadingCount = files.filter(
       (f) => f.status === "uploading" || f.status === "compressing" || f.status === "retrying"
     ).length;
+    const idleCount = files.filter((f) => f.status === "idle").length;
 
     return (
       <div className="space-y-5">
@@ -578,10 +742,39 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             >
               <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-amber-800">
                 <WifiOff className="w-4 h-4 shrink-0 text-amber-600" />
-                <p className="text-xs font-bold">
-                  You&apos;re offline — uploads will resume automatically when reconnected.
+                <div className="min-w-0">
+                  <p className="text-xs font-bold">
+                    You&apos;re offline — uploads paused
+                  </p>
+                  <p className="text-[10px] font-medium text-amber-700 mt-0.5">
+                    Active uploads will resume automatically when you reconnect.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Sticky upload status strip — visible during batch uploads */}
+        <AnimatePresence>
+          {uploadingCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="bg-emerald-600 rounded-2xl px-4 py-2.5 flex items-center gap-3"
+            >
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Loader2 className="w-3.5 h-3.5 text-emerald-200 animate-spin shrink-0" />
+                <p className="text-xs font-bold text-white truncate">
+                  Uploading {uploadingCount} file{uploadingCount > 1 ? "s" : ""}
+                  {idleCount > 0 ? ` · ${idleCount} queued` : ""}
                 </p>
               </div>
+              {/* Overall progress pill */}
+              <span className="text-[10px] font-black text-emerald-200 tabular-nums shrink-0">
+                {successCount}/{files.length} done
+              </span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -595,65 +788,84 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         </div>
 
         {/* Header row */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Files ({files.length}/20)
-            </p>
-            {/* Upload status badges */}
-            <AnimatePresence>
-              {uploadingCount > 0 && (
-                <motion.span
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wider"
+        {files.length > 0 && (
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Files ({files.length}/20)
+              </p>
+              {/* Upload status badges */}
+              <AnimatePresence mode="popLayout">
+                {uploadingCount > 0 && (
+                  <motion.span
+                    key="uploading"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wider"
+                  >
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    Uploading {uploadingCount}
+                  </motion.span>
+                )}
+                {successCount > 0 && uploadingCount === 0 && failedCount === 0 && (
+                  <motion.span
+                    key="success"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wider"
+                  >
+                    <CheckCircle2 className="w-2.5 h-2.5" />
+                    {successCount} Ready
+                  </motion.span>
+                )}
+                {failedCount > 0 && (
+                  <motion.span
+                    key="failed"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full text-[9px] font-black uppercase tracking-wider"
+                  >
+                    <AlertCircle className="w-2.5 h-2.5" />
+                    {failedCount} Failed
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Retry All Failed button */}
+              {failedCount > 0 && !disabled && (
+                <button
+                  onClick={handleRetryAll}
+                  className="flex items-center gap-1 text-xs font-extrabold text-amber-600 hover:text-amber-700 transition active:scale-95"
                 >
-                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                  Uploading {uploadingCount}
-                </motion.span>
+                  <RefreshCw className="w-3 h-3 shrink-0" />
+                  Retry All
+                </button>
               )}
-              {successCount > 0 && uploadingCount === 0 && failedCount === 0 && (
-                <motion.span
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wider"
+              {/* Clear All */}
+              {files.length > 0 && !disabled && (
+                <button
+                  onClick={() => {
+                    activeTusUploads.forEach((upload) => upload.abort(true));
+                    activeTusUploads.clear();
+                    files.forEach((f) => uploadRetryQueue.cancel(f.id));
+                    onChange([]);
+                  }}
+                  className="text-xs font-extrabold text-red-500 hover:text-red-600 transition"
                 >
-                  <CheckCircle2 className="w-2.5 h-2.5" />
-                  {successCount} Ready
-                </motion.span>
+                  Clear All
+                </button>
               )}
-              {failedCount > 0 && (
-                <motion.span
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full text-[9px] font-black uppercase tracking-wider"
-                >
-                  <AlertCircle className="w-2.5 h-2.5" />
-                  {failedCount} Failed
-                </motion.span>
-              )}
-            </AnimatePresence>
+            </div>
           </div>
-          {files.length > 0 && !disabled && (
-            <button
-              onClick={() => {
-                // Abort all active uploads
-                activeTusUploads.forEach((upload) => upload.abort(true));
-                activeTusUploads.clear();
-                onChange([]);
-              }}
-              className="text-xs font-extrabold text-red-500 hover:text-red-600 transition"
-            >
-              Clear All
-            </button>
-          )}
-        </div>
+        )}
 
         {/* Reorderable Files List */}
         <Reorder.Group
           values={files}
-          onReorder={onChange}
+          onReorder={(newOrder) => onChange(newOrder)}
           className="space-y-3"
           axis="y"
         >
@@ -691,7 +903,10 @@ function ReorderItemRow({
   fileItem: UploadedFile;
   disabled: boolean;
   onRemove: (id: string) => void;
-  onUpdateConfig: (id: string, updates: Partial<Pick<UploadedFile, "copies" | "color" | "doubleSided" | "pages">>) => void;
+  onUpdateConfig: (
+    id: string,
+    updates: Partial<Pick<UploadedFile, "copies" | "color" | "doubleSided" | "pages">>
+  ) => void;
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
 }) {
@@ -720,6 +935,36 @@ function ReorderItemRow({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
+  const formatSpeed = (bytesPerSec: number) => {
+    if (bytesPerSec <= 0) return "";
+    if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+    if (bytesPerSec >= 1024) return `${Math.round(bytesPerSec / 1024)} KB/s`;
+    return `${bytesPerSec} B/s`;
+  };
+
+  const formatEta = (secs: number) => {
+    if (secs <= 0) return "";
+    if (secs < 60) return `~${secs}s`;
+    return `~${Math.ceil(secs / 60)}m`;
+  };
+
+  // Determine border / shadow style based on status
+  const cardStyle = (() => {
+    switch (fileItem.status) {
+      case "failed":
+        return "border-rose-200 shadow-rose-50 shadow-sm bg-rose-50/30";
+      case "success":
+        return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
+      case "uploading":
+      case "retrying":
+        return "border-emerald-200 shadow-sm";
+      case "compressing":
+        return "border-indigo-200 shadow-sm";
+      default:
+        return "border-slate-100 shadow-sm";
+    }
+  })();
+
   return (
     <Reorder.Item
       value={fileItem}
@@ -730,12 +975,7 @@ function ReorderItemRow({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20, height: 0 }}
       transition={{ duration: 0.2 }}
-      className={`
-        bg-white rounded-2xl border transition-all duration-200 overflow-hidden
-        ${fileItem.status === "failed" ? "border-rose-200 shadow-rose-50 shadow-sm" : 
-          fileItem.status === "success" ? "border-emerald-100 shadow-emerald-50 shadow-sm" : 
-          "border-slate-100 shadow-sm"}
-      `}
+      className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${cardStyle}`}
     >
       {/* Progress bar at very top of card */}
       {(fileItem.status === "uploading" || fileItem.status === "retrying") && (
@@ -750,9 +990,15 @@ function ReorderItemRow({
       )}
       {fileItem.status === "compressing" && (
         <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 rounded-full animate-pulse" 
-               style={{ width: "60%" }} />
+          <div
+            className="h-full bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 rounded-full animate-pulse"
+            style={{ width: "60%" }}
+          />
         </div>
+      )}
+      {/* Success: full green bar */}
+      {fileItem.status === "success" && (
+        <div className="h-0.5 w-full bg-emerald-400" />
       )}
 
       <div className="p-4 flex gap-3 items-start">
@@ -771,9 +1017,13 @@ function ReorderItemRow({
         {/* Thumbnail */}
         <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
           {fileItem.status === "success" && (
-            <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10">
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10"
+            >
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-            </div>
+            </motion.div>
           )}
           {isPdf ? (
             <div className="w-full h-full bg-rose-50 flex flex-col items-center justify-center text-rose-500">
@@ -792,7 +1042,10 @@ function ReorderItemRow({
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-start gap-2">
             <div className="min-w-0">
-              <h4 className="text-sm font-extrabold text-slate-800 truncate" title={fileItem.name}>
+              <h4
+                className="text-sm font-extrabold text-slate-800 truncate"
+                title={fileItem.name}
+              >
                 {fileItem.name}
               </h4>
               <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
@@ -835,7 +1088,9 @@ function ReorderItemRow({
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
                 <button
                   type="button"
-                  onClick={() => onUpdateConfig(fileItem.id, { copies: Math.max(1, fileItem.copies - 1) })}
+                  onClick={() =>
+                    onUpdateConfig(fileItem.id, { copies: Math.max(1, fileItem.copies - 1) })
+                  }
                   disabled={disabled}
                   className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
                 >
@@ -846,7 +1101,9 @@ function ReorderItemRow({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onUpdateConfig(fileItem.id, { copies: Math.min(50, fileItem.copies + 1) })}
+                  onClick={() =>
+                    onUpdateConfig(fileItem.id, { copies: Math.min(50, fileItem.copies + 1) })
+                  }
                   disabled={disabled}
                   className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
                 >
@@ -912,7 +1169,9 @@ function ReorderItemRow({
                   </span>
                   <button
                     type="button"
-                    onClick={() => onUpdateConfig(fileItem.id, { pages: Math.max(1, (fileItem.pages || 1) - 1) })}
+                    onClick={() =>
+                      onUpdateConfig(fileItem.id, { pages: Math.max(1, (fileItem.pages || 1) - 1) })
+                    }
                     disabled={disabled}
                     className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition"
                   >
@@ -923,7 +1182,11 @@ function ReorderItemRow({
                   </span>
                   <button
                     type="button"
-                    onClick={() => onUpdateConfig(fileItem.id, { pages: Math.min(500, (fileItem.pages || 1) + 1) })}
+                    onClick={() =>
+                      onUpdateConfig(fileItem.id, {
+                        pages: Math.min(500, (fileItem.pages || 1) + 1),
+                      })
+                    }
                     disabled={disabled}
                     className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition"
                   >
@@ -936,13 +1199,13 @@ function ReorderItemRow({
 
           {/* Upload Progress State */}
           {isActivelyUploading && (
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-3 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-500 flex items-center gap-1.5">
                   {fileItem.status === "compressing" && (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                      <span className="text-indigo-600">Compressing image…</span>
+                      <span className="text-indigo-600">Optimizing image…</span>
                     </>
                   )}
                   {fileItem.status === "uploading" && (
@@ -966,20 +1229,57 @@ function ReorderItemRow({
                   </span>
                 )}
               </div>
+
+              {/* Speed + ETA row */}
+              {fileItem.status === "uploading" &&
+                (fileItem.uploadSpeed ?? 0) > 0 && (
+                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-emerald-400" />
+                      {formatSpeed(fileItem.uploadSpeed ?? 0)}
+                    </span>
+                    {(fileItem.etaSeconds ?? 0) > 0 && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-300" />
+                        {formatEta(fileItem.etaSeconds ?? 0)}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+              {/* Thick progress bar */}
+              {fileItem.status === "uploading" && (
+                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${fileItem.progress}%` }}
+                    transition={{ duration: 0.35, ease: "easeOut" }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
           {/* Success State */}
           {fileItem.status === "success" && (
-            <div className="mt-2.5 flex items-center gap-1.5 text-[10px] font-bold text-emerald-700">
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-2.5 flex items-center gap-1.5 text-[10px] font-bold text-emerald-700"
+            >
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              Upload complete
-            </div>
+              Upload complete — ready for print
+            </motion.div>
           )}
 
-          {/* Failure Panel — shows exact reason + retry */}
+          {/* Failure Panel — exact reason + retry */}
           {fileItem.status === "failed" && (
-            <div className="mt-2.5 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5 space-y-1.5">
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-2.5 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5 space-y-2"
+            >
               <div className="flex items-start gap-1.5">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
                 <p className="text-[10px] font-bold text-rose-700 leading-snug">
@@ -990,12 +1290,12 @@ function ReorderItemRow({
                 type="button"
                 onClick={() => onRetry(fileItem.id)}
                 disabled={disabled}
-                className="inline-flex items-center gap-1 text-[10px] font-black text-rose-800 hover:text-rose-950 uppercase tracking-wider hover:underline disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-[10px] font-black text-rose-800 uppercase tracking-wider transition active:scale-95 disabled:opacity-50"
               >
                 <RefreshCw className="w-3 h-3 shrink-0" />
                 Retry file
               </button>
-            </div>
+            </motion.div>
           )}
         </div>
       </div>

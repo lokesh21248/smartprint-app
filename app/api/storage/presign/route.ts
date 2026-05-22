@@ -78,7 +78,8 @@ export async function POST(request: Request) {
       try {
         const { error: updateError } = await supabase.storage.updateBucket(UPLOAD_BUCKET, {
           public: false,
-          allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/jpg"],
+          // image/webp added: client compressor converts large PNG/JPG → WebP before upload
+          allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"],
           fileSizeLimit: 25 * 1024 * 1024, // 25 MB
         });
         if (updateError) {

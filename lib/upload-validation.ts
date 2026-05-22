@@ -13,12 +13,13 @@
 /** Hard cap: 25 MB. Matches Supabase Storage free tier default. */
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
-/** Allowed MIME types — PDF and common image formats. */
+/** Allowed MIME types — PDF and common image formats + WebP (output of client compressor). */
 export const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "image/png",
   "image/jpeg",
   "image/jpg",
+  "image/webp", // Client-side compressor converts large PNG/JPG → WebP for faster mobile uploads
 ]);
 
 /** Allowed file extensions (lowercase, without dot). */
@@ -27,6 +28,7 @@ export const ALLOWED_EXTENSIONS = new Set([
   "png",
   "jpg",
   "jpeg",
+  "webp", // Output of client-side compression
 ]);
 
 /**
@@ -48,8 +50,8 @@ const DANGEROUS_EXTENSIONS = new Set([
 /** Supabase Storage bucket name. */
 export const UPLOAD_BUCKET = "order-files";
 
-/** Signed URL TTL in seconds. Client has this long to complete the PUT. */
-export const UPLOAD_URL_TTL_SECONDS = 120;
+/** Signed URL TTL in seconds. Extended to 300s to support large file chunk uploads on slow mobile. */
+export const UPLOAD_URL_TTL_SECONDS = 300;
 
 // ─── Validation result type ─────────────────────────────────────────────────
 
@@ -249,7 +251,11 @@ export function generateStoragePath(shopId: string, extension: string): string {
 /**
  * Validates a storage path is well-formed and not a traversal attack.
  *
- * Expected format: `orders/{uuid}/{filename}`
+ * Supported formats:
+ *   - `orders/{orderId}/{filename}`   (new: orderId-based, used by presign when orderId is provided)
+ *   - `orders/{shopId}/{timestamp}-{random}.{ext}` (legacy: shopId-based)
+ *
+ * The second path segment can be either an orderId or a shopId — both are UUIDs.
  */
 export function validateStoragePath(path: string): {
   valid: boolean;
@@ -266,12 +272,19 @@ export function validateStoragePath(path: string): {
     return { valid: false, error: "Invalid path format" };
   }
 
-  // Basic UUID format check for shopId segment
-  const shopId = segments[1];
+  // Accept both orderId and shopId — both must be UUID format
+  const idSegment = segments[1];
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(shopId)) {
+  // Also accept legacy timestamp-random format for the filename segment
+  if (!uuidRegex.test(idSegment)) {
     return { valid: false, error: "Invalid path format" };
   }
 
-  return { valid: true, shopId };
+  // Validate the filename segment exists and has no dangerous characters
+  const filename = segments.slice(2).join("/");
+  if (!filename || filename.length === 0) {
+    return { valid: false, error: "Missing filename in path" };
+  }
+
+  return { valid: true, shopId: idSegment };
 }

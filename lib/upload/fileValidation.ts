@@ -22,16 +22,18 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
   "image/jpg",
+  "image/webp", // Output of client-side compressor (Chrome/Safari WebP encoding)
 ]);
 
 /** Extensions accepted by the presign API (lowercase, no dot). */
-export const ALLOWED_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg"]);
+export const ALLOWED_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
 
 /** FilePond acceptedFileTypes format. */
 export const FILEPOND_ACCEPTED_TYPES = [
   "application/pdf",
   "image/png",
   "image/jpeg",
+  "image/webp",
 ];
 
 /** Max FilePond size string. */

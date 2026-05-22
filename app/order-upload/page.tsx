@@ -684,7 +684,11 @@ function OrderUploadPageInner() {
                     exit={{ opacity: 0 }}
                     className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"
                   >
-                    <UploadProgressBar phase={uploadPhase} uploadPercent={overallUploadPercent} />
+                    <UploadProgressBar
+                      phase={uploadPhase}
+                      uploadPercent={overallUploadPercent}
+                      fileCount={files.length}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>

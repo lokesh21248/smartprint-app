@@ -125,6 +125,10 @@ export interface UploadedFile {
   copies: number;
   color: boolean;
   doubleSided: boolean;
+  /** Current upload speed in bytes/sec — populated during "uploading" phase */
+  uploadSpeed?: number;
+  /** Estimated seconds remaining — populated during "uploading" phase */
+  etaSeconds?: number;
 }
 
 export interface ShopStaff {
