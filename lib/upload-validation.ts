@@ -13,14 +13,20 @@
 /** Hard cap: 25 MB. Matches Supabase Storage free tier default. */
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
-/** Allowed MIME types — PDF only for now. Extend as business needs grow. */
+/** Allowed MIME types — PDF and common image formats. */
 export const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
 ]);
 
 /** Allowed file extensions (lowercase, without dot). */
 export const ALLOWED_EXTENSIONS = new Set([
   "pdf",
+  "png",
+  "jpg",
+  "jpeg",
 ]);
 
 /**
@@ -93,7 +99,7 @@ export function validateUploadRequest(params: {
   if (!ALLOWED_MIME_TYPES.has(mimeType.toLowerCase())) {
     return {
       valid: false,
-      error: `File type "${mimeType}" is not allowed. Only PDF files are accepted.`,
+      error: `File type "${mimeType}" is not allowed. Only PDF and image files (PNG, JPG) are accepted.`,
       statusCode: 415,
     };
   }
@@ -112,7 +118,7 @@ export function validateUploadRequest(params: {
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     return {
       valid: false,
-      error: `File extension ".${ext}" is not allowed. Only .pdf files are accepted.`,
+      error: `File extension ".${ext}" is not allowed. Only .pdf, .png, .jpg, .jpeg files are accepted.`,
       statusCode: 415,
     };
   }

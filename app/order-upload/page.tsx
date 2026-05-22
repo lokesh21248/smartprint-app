@@ -1,32 +1,28 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useMemo } from "react";
+import { Suspense, useState, useEffect, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Loader2,
-  Upload,
   FileText,
   Plus,
   Minus,
-  Check,
   User,
   ShieldCheck,
-  Zap,
   Clock,
   Printer,
   ChevronRight,
   Phone,
-  Sparkles,
   ArrowLeft,
   X,
-  FileSpreadsheet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
+import { ModernUploaderV2 } from "@/components/upload/ModernUploaderV2";
+import type { FileReadyPayload } from "@/components/upload/ModernUploaderV2";
 
 interface ShopDisplay {
   id?: string;
@@ -51,8 +47,6 @@ function OrderUploadPageInner() {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-
   const [copies, setCopies] = useState(1);
   const [isColor, setIsColor] = useState(false); // B&W as default for cost friendliness
   const [isDoubleSided, setIsDoubleSided] = useState(true); // Double sided default to save paper
@@ -78,7 +72,14 @@ function OrderUploadPageInner() {
   const [pdfParseFailed, setPdfParseFailed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeoutError, setTimeoutError] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle file ready from ModernUploaderV2
+  const handleFileReady = ({ file, pageCount: pages, pdfParseFailed: parseFailed }: FileReadyPayload) => {
+    setFile(file);
+    setPageCount(pages);
+    setPdfParseFailed(parseFailed);
+    setStep(2);
+  };
 
   // Load shop
   useEffect(() => {
@@ -117,49 +118,6 @@ function OrderUploadPageInner() {
     loadShop();
   }, [shopSlug]);
 
-  // Handle file upload
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-
-    if (selectedFile.size === 0) {
-      toast.error("File is empty.");
-      return;
-    }
-
-    const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
-    if (!isPdf) {
-      toast.error("Please upload a valid PDF file");
-      return;
-    }
-
-    if (selectedFile.size > 50 * 1024 * 1024) {
-      toast.error("File size limit is 50MB");
-      return;
-    }
-
-    setFile(selectedFile);
-    setIsProcessing(true);
-    setPdfParseFailed(false);
-
-    try {
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      const { PDFDocument } = await import("pdf-lib");
-      const pdfDoc = await PDFDocument.load(arrayBuffer);
-      const numPages = pdfDoc.getPageCount();
-
-      setPageCount(numPages);
-      toast.success(`PDF analyzed: ${numPages} pages detected`);
-    } catch (err) {
-      console.error("[PDF Parsing] Failed:", err);
-      toast.error("Could not automatically count pages. Please enter them manually.");
-      setPdfParseFailed(true);
-      setPageCount(1);
-    } finally {
-      setIsProcessing(false);
-      setStep(2); // Proceed to config
-    }
-  };
 
   // Calculate total
   const totalAmount = useMemo(() => {
@@ -341,7 +299,6 @@ function OrderUploadPageInner() {
       <main className="max-w-2xl mx-auto px-4 mt-6">
         <AnimatePresence mode="wait">
           
-          {/* STEP 1: UPLOAD SCREEN */}
           {step === 1 && (
             <motion.div
               key="step1"
@@ -351,49 +308,16 @@ function OrderUploadPageInner() {
               transition={{ duration: 0.4 }}
               className="space-y-6"
             >
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-8 text-center space-y-6">
-                
-                <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100/50 flex items-center justify-center mx-auto shadow-inner text-emerald-600">
-                  <Upload className="w-8 h-8" />
-                </div>
-                
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Upload Documents</h2>
-                  <p className="text-slate-500 text-sm">Tap the card below to select your PDF file.</p>
-                </div>
-
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-emerald-50 rounded-full text-emerald-700 text-[10px] font-extrabold uppercase tracking-widest">
-                  <ShieldCheck className="w-3.5 h-3.5" /> 2-Hour Auto-Delete Privacy Active
-                </div>
-
-                <motion.div
-                  onClick={() => fileInputRef.current?.click()}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  className="border-3 border-dashed border-slate-200/80 rounded-2xl p-10 cursor-pointer hover:border-emerald-500 hover:bg-emerald-500/[0.01] transition-all bg-slate-50/50 flex flex-col items-center justify-center group relative overflow-hidden"
-                >
-                  <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
-                  
-                  {isProcessing ? (
-                    <div className="flex flex-col items-center space-y-3 py-4">
-                      <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
-                      <p className="font-extrabold text-slate-700 text-sm">Analyzing PDF structure...</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center space-y-4">
-                      <div className="p-3.5 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-400 group-hover:text-emerald-600 transition-colors">
-                        <FileText className="w-7 h-7" />
-                      </div>
-                      <div className="text-center space-y-1">
-                        <p className="font-extrabold text-slate-800 text-base">Select PDF Document</p>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">PDF format up to 50MB</p>
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
+                <ModernUploaderV2
+                  onFileReady={handleFileReady}
+                  onFileRemoved={() => { setFile(null); setStep(1); }}
+                  shopId={shop?.id}
+                  disabled={isSubmitting}
+                />
               </div>
 
-              {/* Supported details card */}
+              {/* Same-Day Pickup info card */}
               <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-100 flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
                   <Clock className="w-5 h-5" />
