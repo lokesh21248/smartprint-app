@@ -23,8 +23,8 @@ export interface RetryEntry {
   timerId?: ReturnType<typeof setTimeout>;
 }
 
-const BACKOFF_DELAYS_MS = [500, 1_000, 3_000, 5_000] as const;
-const MAX_AUTO_RETRIES = BACKOFF_DELAYS_MS.length;
+export const BACKOFF_DELAYS_MS = [500, 1_000, 3_000, 5_000] as const;
+export const MAX_AUTO_RETRIES = BACKOFF_DELAYS_MS.length;
 
 type QueueEventType = "enqueued" | "started" | "succeeded" | "failed" | "exhausted" | "cancelled";
 type QueueListener = (event: QueueEventType, fileId: string, attempt: number) => void;

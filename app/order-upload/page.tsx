@@ -318,8 +318,7 @@ function OrderUploadPageInner() {
         url: f.storagePath!, // Presigned token path direct to Supabase bucket
         copies: f.copies,
         color: f.color,
-        doubleSided: f.doubleSided,
-        mimeType: f.file.type || "application/octet-stream",
+        mimeType: f.mimeType || f.file?.type || "application/octet-stream",
       }));
 
       // Construct request body (supporting relational array + single file fallback)
@@ -377,6 +376,8 @@ function OrderUploadPageInner() {
       if (res.ok && data.shortToken) {
         setOrderStatus("success");
         tracker.markSuccess();
+        // Clear session on successful order placement
+        uploaderRef.current?.clearSession?.();
         setTimeout(() => {
           router.push(`/order/${data.shortToken}`);
         }, 600);
@@ -577,7 +578,7 @@ function OrderUploadPageInner() {
                     <div key={fileItem.id} className="py-3 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                          fileItem.file.type === "application/pdf" || fileItem.name.endsWith(".pdf")
+                          fileItem.file?.type === "application/pdf" || fileItem.name.endsWith(".pdf")
                             ? "bg-rose-50 border-rose-100 text-rose-500"
                             : "bg-emerald-50 border-emerald-100 text-emerald-500"
                         }`}>
@@ -596,7 +597,7 @@ function OrderUploadPageInner() {
                         <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase">
                           {fileItem.color ? "Color" : "B&W"}
                         </span>
-                        {(fileItem.file.type === "application/pdf" || fileItem.name.endsWith(".pdf")) && (
+                        {(fileItem.file?.type === "application/pdf" || fileItem.name.endsWith(".pdf")) && (
                           <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase">
                             {fileItem.doubleSided ? "2-Sided" : "1-Sided"}
                           </span>

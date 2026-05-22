@@ -29,6 +29,13 @@ export type UploadErrorCode =
   | "PRESIGN_FAILED"
   | "SUPABASE_ERROR"
   | "CANCELLED"
+  | "TOKEN_EXPIRED"
+  | "PERMISSION_REJECTED"
+  | "FILE_ACCESS_REVOKED"
+  | "UPLOAD_INTERRUPTED"
+  | "BROWSER_SUSPENDED"
+  | "CHUNK_FAILED"
+  | "CONNECTION_LOST"
   | "UNKNOWN";
 
 export interface ClassifiedError {
@@ -96,6 +103,16 @@ const STORAGE_PATTERNS = [
   "storage error",
 ];
 
+const FILE_ACCESS_PATTERNS = [
+  "notreadableerror",
+  "notallowederror",
+  "permissiondeniederror",
+  "securityerror",
+  "file access revoked",
+  "read error",
+  "not readable",
+];
+
 function matchesAny(msg: string, patterns: string[]): boolean {
   const lower = msg.toLowerCase();
   return patterns.some((p) => lower.includes(p));
@@ -103,12 +120,19 @@ function matchesAny(msg: string, patterns: string[]): boolean {
 
 // ─── HTTP Status → Error Code Mapping ────────────────────────────────────────
 
-function fromHttpStatus(status: number): ClassifiedError | null {
+function fromHttpStatus(status: number, context: string): ClassifiedError | null {
   switch (true) {
     case status === 401 || status === 403:
+      if (context === "presign") {
+        return {
+          code: "PERMISSION_REJECTED",
+          userMessage: "Upload permission denied. The store configuration or token is invalid.",
+          retryable: false,
+        };
+      }
       return {
-        code: "AUTH_FAILED",
-        userMessage: "Permission denied. The upload link may have expired — please try again.",
+        code: "TOKEN_EXPIRED",
+        userMessage: "Upload session expired. Retrying and refreshing token...",
         retryable: true,
       };
     case status === 413:
@@ -161,12 +185,40 @@ export function classifyUploadError(
     };
   }
 
+  // Check custom browser suspended message
+  const rawMessage = error instanceof Error ? error.message : String(error ?? "Unknown error");
+  if (rawMessage === "BROWSER_SUSPENDED") {
+    return {
+      code: "BROWSER_SUSPENDED",
+      userMessage: "Mobile browser suspended the upload. Resuming...",
+      retryable: true,
+    };
+  }
+
+  if (rawMessage === "UPLOAD_INTERRUPTED") {
+    return {
+      code: "UPLOAD_INTERRUPTED",
+      userMessage: "Upload was interrupted. Resuming...",
+      retryable: true,
+    };
+  }
+
   // ── Offline check (at the moment of classification) ───────────────────────
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     return {
-      code: "OFFLINE",
-      userMessage: "No internet connection. Your upload will resume when you're back online.",
+      code: "CONNECTION_LOST",
+      userMessage: "Connection lost. Upload will resume when you're back online.",
       retryable: true,
+    };
+  }
+
+  // ── File Permission Revoked Check ─────────────────────────────────────────
+  if (matchesAny(rawMessage, FILE_ACCESS_PATTERNS) || 
+      (error instanceof Error && (error.name === "NotReadableError" || error.name === "NotAllowedError"))) {
+    return {
+      code: "FILE_ACCESS_REVOKED",
+      userMessage: "Device revoked file permission. Please remove and re-add this file.",
+      retryable: false,
     };
   }
 
@@ -178,7 +230,7 @@ export function classifyUploadError(
 
   if (tusError?.originalResponse?.getStatus) {
     const status = tusError.originalResponse.getStatus();
-    const fromStatus = fromHttpStatus(status);
+    const fromStatus = fromHttpStatus(status, context);
     if (fromStatus) return fromStatus;
 
     // Try to get body for more detail
@@ -200,7 +252,6 @@ export function classifyUploadError(
   }
 
   // ── String / Error message matching ──────────────────────────────────────
-  const rawMessage = error instanceof Error ? error.message : String(error ?? "Unknown error");
 
   if (matchesAny(rawMessage, TIMEOUT_PATTERNS)) {
     return {
@@ -212,7 +263,7 @@ export function classifyUploadError(
 
   if (matchesAny(rawMessage, NETWORK_PATTERNS)) {
     return {
-      code: "OFFLINE",
+      code: "CONNECTION_LOST",
       userMessage: "Network error. Check your internet connection and tap Retry.",
       retryable: true,
     };
@@ -243,9 +294,16 @@ export function classifyUploadError(
   }
 
   if (matchesAny(rawMessage, AUTH_PATTERNS)) {
+    if (context === "presign") {
+      return {
+        code: "PERMISSION_REJECTED",
+        userMessage: "Upload permission denied. The store configuration or token is invalid.",
+        retryable: false,
+      };
+    }
     return {
-      code: "AUTH_FAILED",
-      userMessage: "Upload permission denied. Please refresh the page and try again.",
+      code: "TOKEN_EXPIRED",
+      userMessage: "Upload session expired. Retrying and refreshing token...",
       retryable: true,
     };
   }
@@ -293,6 +351,13 @@ export function errorCodeLabel(code: UploadErrorCode): string {
     PRESIGN_FAILED: "Presign Failed",
     SUPABASE_ERROR: "Supabase Error",
     CANCELLED: "Cancelled",
+    TOKEN_EXPIRED: "Upload Token Expired",
+    PERMISSION_REJECTED: "Storage Permission Rejected",
+    FILE_ACCESS_REVOKED: "File Access Revoked",
+    UPLOAD_INTERRUPTED: "Upload Interrupted",
+    BROWSER_SUSPENDED: "Mobile Browser Suspended Upload",
+    CHUNK_FAILED: "Chunk Upload Failed",
+    CONNECTION_LOST: "Connection Lost",
     UNKNOWN: "Unknown",
   };
   return labels[code] ?? code;

@@ -79,22 +79,16 @@ export function MultiFileDropzone({ onFilesSelected, disabled = false }: MultiFi
     pondInstanceRef.current = instance;
   }, []);
 
-  const handleUpdateFiles = useCallback(
-    (fileItems: FilePondFile[]) => {
-      if (fileItems.length === 0) return;
-
-      const validFiles: File[] = [];
-      fileItems.forEach((item) => {
-        const nativeFile = item.file as unknown as File;
-        if (nativeFile) validFiles.push(nativeFile);
-      });
-
-      if (validFiles.length > 0) {
-        onFilesSelected(validFiles);
-        // Clear FilePond's internal list immediately — we render our own file cards
+  const handleAddFile = useCallback(
+    (error: any, item: FilePondFile) => {
+      if (error) return;
+      const nativeFile = item.file as unknown as File;
+      if (nativeFile) {
+        onFilesSelected([nativeFile]);
+        // Clear this file from FilePond's internal list immediately
         setTimeout(() => {
-          pondInstanceRef.current?.removeFiles();
-        }, 80);
+          pondInstanceRef.current?.removeFile(item.id);
+        }, 50);
       }
     },
     [onFilesSelected]
@@ -140,7 +134,7 @@ export function MultiFileDropzone({ onFilesSelected, disabled = false }: MultiFi
           labelMaxFileSize="Max 25 MB per file"
           credits={false}
           disabled={disabled}
-          onupdatefiles={handleUpdateFiles}
+          onaddfile={handleAddFile}
           allowImagePreview={false}
         />
       </div>

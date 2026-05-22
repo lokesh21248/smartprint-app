@@ -120,7 +120,7 @@ export type UploadStatus =
 
 export interface UploadedFile {
   id: string;
-  file: File;
+  file?: File;
   name: string;
   size: number;
   pages: number | null;
@@ -132,6 +132,8 @@ export interface UploadedFile {
   copies: number;
   color: boolean;
   doubleSided: boolean;
+  mimeType?: string;
+  retryAttempt?: number;
   /** Current upload speed in bytes/sec — populated during "uploading" phase */
   uploadSpeed?: number;
   /** Estimated seconds remaining — populated during "uploading" phase */
