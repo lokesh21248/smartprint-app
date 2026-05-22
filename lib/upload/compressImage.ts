@@ -8,17 +8,20 @@
  * - Skip PDFs and non-image files (returned as-is)
  * - Skip files already under SIZE_THRESHOLD_BYTES
  * - Resize to fit within MAX_DIMENSION while preserving aspect ratio
- * - Re-encode as JPEG at JPEG_QUALITY
+ * - Re-encode as WebP (browsers that support it) or JPEG as fallback
+ * - Fill white background before encoding (safe for transparent PNGs)
  * - Fall back to original file if canvas API fails
  *
  * Typical results on mobile:
- * - 5MB HEIC/PNG → ~400KB JPEG  (~8x compression)
- * - 2MB JPEG → ~700KB JPEG      (~3x compression, already small)
+ * - 5MB HEIC/PNG → ~300KB WebP  (~16x compression)
+ * - 2MB JPEG → ~500KB WebP      (~4x compression)
+ * - Small 200KB PNG → skipped   (threshold not met)
  */
 
-const MAX_DIMENSION = 1600;      // px — max width or height after resize
-const JPEG_QUALITY = 0.82;       // 0–1 — good balance of quality vs size
-const SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // Only compress if > 3MB
+const MAX_DIMENSION = 1600;       // px — max width or height after resize
+const JPEG_QUALITY = 0.82;        // 0–1 — good quality/size balance for print
+const WEBP_QUALITY = 0.85;        // WebP is more efficient so can use slightly higher quality
+const SIZE_THRESHOLD_BYTES = 500 * 1024; // 500KB — aggressive: compress more for faster mobile uploads
 
 export interface CompressionResult {
   file: File;
@@ -26,6 +29,16 @@ export interface CompressionResult {
   originalSizeBytes: number;
   finalSizeBytes: number;
   compressionRatio: number; // 0–1, lower = more compressed
+  format: "webp" | "jpeg" | "original";
+}
+
+/** Detect WebP encoding support in this browser. */
+function supportsWebP(): boolean {
+  if (typeof document === "undefined") return false;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  return canvas.toDataURL("image/webp").startsWith("data:image/webp");
 }
 
 /**
@@ -43,6 +56,7 @@ export async function compressImageIfNeeded(
     originalSizeBytes,
     finalSizeBytes: originalSizeBytes,
     compressionRatio: 1,
+    format: "original",
   };
 
   // Only compress images
@@ -51,28 +65,30 @@ export async function compressImageIfNeeded(
   if (file.size <= sizeThresholdBytes) return noOp;
 
   try {
-    const compressed = await resizeAndEncode(file);
+    const useWebP = supportsWebP();
+    const compressed = await resizeAndEncode(file, useWebP);
     const finalSizeBytes = compressed.size;
 
-    // If compression made it bigger somehow, return original
+    // If compression made it bigger, return original
     if (finalSizeBytes >= originalSizeBytes) {
       console.warn("[compressImage] Compressed file is larger than original — using original");
       return noOp;
     }
 
     const ratio = finalSizeBytes / originalSizeBytes;
+    const format = useWebP ? "webp" : "jpeg";
     console.log(
-      `[compressImage] ${file.name}: ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB → ${(finalSizeBytes / 1024 / 1024).toFixed(1)}MB (${Math.round((1 - ratio) * 100)}% smaller)`
+      `[compressImage] ${file.name}: ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB → ${(finalSizeBytes / 1024 / 1024).toFixed(1)}MB (${Math.round((1 - ratio) * 100)}% smaller, ${format})`
     );
 
-    return { file: compressed, compressed: true, originalSizeBytes, finalSizeBytes, compressionRatio: ratio };
+    return { file: compressed, compressed: true, originalSizeBytes, finalSizeBytes, compressionRatio: ratio, format };
   } catch (err) {
     console.warn("[compressImage] Compression failed — using original file:", err);
     return noOp;
   }
 }
 
-async function resizeAndEncode(file: File): Promise<File> {
+async function resizeAndEncode(file: File, useWebP: boolean): Promise<File> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
@@ -82,7 +98,7 @@ async function resizeAndEncode(file: File): Promise<File> {
 
       let { width, height } = img;
 
-      // Scale down to fit within MAX_DIMENSION
+      // Scale down to fit within MAX_DIMENSION (maintain aspect ratio)
       if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
         const scale = MAX_DIMENSION / Math.max(width, height);
         width = Math.round(width * scale);
@@ -99,10 +115,14 @@ async function resizeAndEncode(file: File): Promise<File> {
         return;
       }
 
-      // Fill white background (for transparent PNGs converted to JPEG)
+      // Fill white background (safe for transparent PNGs → JPEG/WebP)
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
+
+      const mimeType = useWebP ? "image/webp" : "image/jpeg";
+      const quality = useWebP ? WEBP_QUALITY : JPEG_QUALITY;
+      const ext = useWebP ? ".webp" : ".jpg";
 
       canvas.toBlob(
         (blob) => {
@@ -110,12 +130,11 @@ async function resizeAndEncode(file: File): Promise<File> {
             reject(new Error("canvas.toBlob returned null"));
             return;
           }
-          // Preserve original name but mark as JPEG
-          const outputName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
-          resolve(new File([blob], outputName, { type: "image/jpeg", lastModified: Date.now() }));
+          const outputName = file.name.replace(/\.[^.]+$/, "") + ext;
+          resolve(new File([blob], outputName, { type: mimeType, lastModified: Date.now() }));
         },
-        "image/jpeg",
-        JPEG_QUALITY
+        mimeType,
+        quality
       );
     };
 

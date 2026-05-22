@@ -3,16 +3,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { 
-  CheckCircle2, Clock, Printer, Package, 
-  XCircle, ArrowLeft, Loader2, MapPin, Phone,
+  CheckCircle2, Clock, Printer, 
+  XCircle, ArrowLeft, Phone,
   FileText, RefreshCcw, AlertCircle, Store,
-  Sparkles, Check, ChevronRight, Navigation
+  Sparkles, Check, Navigation
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatFileSize } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 export default function OrderStatusPage() {
   const params = useParams();

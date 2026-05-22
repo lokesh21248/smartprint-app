@@ -106,15 +106,20 @@ function OrderUploadPageInner() {
     }
   }, [isLoaded, user, nameParam]);
 
-  // ── Network detection ──────────────────────────────────────────────────────
+  // ── Network detection + auto-retry guidance ────────────────────────────────
   useEffect(() => {
     const onOffline = () => {
       setIsOffline(true);
-      toast.error("You're offline. Please check your connection.");
+      toast.error("You're offline — uploads paused. Will resume automatically when reconnected.");
     };
     const onOnline = () => {
       setIsOffline(false);
-      toast.success("Back online!");
+      const failedFiles = files.filter((f) => f.status === "failed");
+      if (failedFiles.length > 0) {
+        toast.success(`Back online! Auto-retrying ${failedFiles.length} failed upload${failedFiles.length > 1 ? "s" : ""}…`);
+      } else {
+        toast.success("Back online!");
+      }
     };
 
     setIsOffline(!navigator.onLine);
@@ -125,6 +130,7 @@ function OrderUploadPageInner() {
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("online", onOnline);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
@@ -263,7 +269,13 @@ function OrderUploadPageInner() {
 
       const uploadResult = await uploaderRef.current?.uploadAll();
       if (!uploadResult || !uploadResult.success) {
-        throw new Error("One or more files failed to upload. Please retry failed files and try again.");
+        const failedCount = uploadResult?.failedCount ?? 1;
+        const noun = failedCount === 1 ? "file" : "files";
+        // Per-file error messages are already shown inline in each file card.
+        // Surface a concise summary with guidance in the page-level error banner.
+        throw new Error(
+          `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
+        );
       }
 
       const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
@@ -715,9 +727,9 @@ function OrderUploadPageInner() {
                     <>
                       <Loader2 className="animate-spin w-4 h-4" />
                       {uploadPhase === "uploading"
-                        ? `${overallUploadPercent}%`
+                        ? `Uploading ${overallUploadPercent}%`
                         : uploadPhase === "saving"
-                        ? "Saving…"
+                        ? "Saving order…"
                         : "Starting…"}
                     </>
                   ) : canRetry ? (
