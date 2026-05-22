@@ -24,7 +24,7 @@ interface OrderDetailErrorProps {
 export function OrderDetailError({
   title,
   message,
-  backHref = "/orders",
+  backHref = "/dashboard/orders",
   showRefresh = false,
 }: OrderDetailErrorProps) {
   const Icon = title.includes("Access") ? ShieldX : FileSearch;

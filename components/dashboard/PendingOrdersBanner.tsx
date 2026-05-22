@@ -41,7 +41,7 @@ export function PendingOrdersBanner({ count: initialCount }: PendingOrdersBanner
         </div>
       </div>
 
-      <Link href="/orders" className="relative flex-shrink-0">
+      <Link href="/dashboard/orders" className="relative flex-shrink-0">
         <Button
           id="view-pending-btn"
           className="bg-white text-[#B91C1C] hover:bg-red-50 font-bold shadow-lg"

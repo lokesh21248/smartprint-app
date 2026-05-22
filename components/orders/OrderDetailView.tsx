@@ -62,7 +62,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
     <div className="space-y-6">
       {/* Back + Header */}
       <div className="flex items-center gap-4">
-        <Link href="/orders">
+        <Link href="/dashboard/orders">
           <Button variant="ghost" size="icon-sm" aria-label="Back to orders">
             <ArrowLeft className="h-4 w-4" />
           </Button>

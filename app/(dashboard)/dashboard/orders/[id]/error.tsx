@@ -49,7 +49,7 @@ export default function OrderDetailErrorBoundary({ error, reset }: ErrorBoundary
           >
             <RefreshCw className="w-4 h-4" /> Try Again
           </Button>
-          <Link href="/orders">
+          <Link href="/dashboard/orders">
             <Button
               variant="outline"
               className="w-full h-12 rounded-xl border-slate-200 font-bold gap-2"

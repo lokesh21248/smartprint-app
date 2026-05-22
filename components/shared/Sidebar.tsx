@@ -25,7 +25,7 @@ import { LogoutButton } from "@/components/auth/LogoutButton";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/orders", label: "Orders", icon: ShoppingBag, badge: true },
+  { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, badge: true },
   { href: "/shop-profile", label: "My Shop", icon: Store },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },

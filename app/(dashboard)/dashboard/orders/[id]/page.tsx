@@ -170,7 +170,7 @@ export default async function OrderDetailPage({
           <OrderDetailError
             title="Order Not Found"
             message="This order doesn't exist or may have been removed."
-            backHref="/orders"
+            backHref="/dashboard/orders"
           />
         );
       case "unauthorized":
@@ -179,7 +179,7 @@ export default async function OrderDetailPage({
           <OrderDetailError
             title="Access Denied"
             message="You don't have permission to view this order."
-            backHref="/orders"
+            backHref="/dashboard/orders"
           />
         );
       case "error":
@@ -189,7 +189,7 @@ export default async function OrderDetailPage({
           <OrderDetailError
             title="Something went wrong"
             message="We couldn't load this order. Please try refreshing the page."
-            backHref="/orders"
+            backHref="/dashboard/orders"
             showRefresh
           />
         );
