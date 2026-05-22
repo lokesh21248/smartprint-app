@@ -1,29 +1,11 @@
 "use client";
 
-/**
- * order-upload/page.tsx — SmartPrint Customer Order Flow
- *
- * PRODUCTION FIXES IMPLEMENTED:
- * ─────────────────────────────────────────────────────
- * [FIX-1] FINALLY BLOCK: setIsSubmitting(false) always runs — no more stuck loaders.
- * [FIX-2] TIMEOUT: Reduced to 15s from 25s. AbortController tied to finally.
- * [FIX-3] DOUBLE-SUBMIT GUARD: useRef flag prevents concurrent submits.
- * [FIX-4] ORPHAN RECOVERY: storagePath stored in ref; retry skips re-upload.
- * [FIX-5] IDEMPOTENCY KEY: X-Idempotency-Key header prevents duplicate orders.
- * [FIX-6] PROGRESS BAR: XHR-based upload with real onprogress events.
- * [FIX-7] RETRY: Exponential backoff via fetchWithRetry on order insert.
- * [FIX-8] IMAGE COMPRESSION: Large images auto-compressed before upload.
- * [FIX-9] NETWORK DETECTION: navigator.onLine + online/offline events.
- * [FIX-10] PERFORMANCE LOGGING: createOrderTracker with console.time spans.
- */
-
 import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   Loader2,
   FileText,
-  Plus,
-  Minus,
   User,
   ShieldCheck,
   Clock,
@@ -35,18 +17,32 @@ import {
   WifiOff,
   RefreshCw,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
-import { ModernUploaderV2 } from "@/components/upload/ModernUploaderV2";
-import type { FileReadyPayload } from "@/components/upload/ModernUploaderV2";
 import { UploadProgressBar } from "@/components/upload/UploadProgressBar";
 import type { UploadPhase } from "@/components/upload/UploadProgressBar";
 import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
 import { createOrderTracker } from "@/lib/monitoring/orderMetrics";
+import type { UploadedFile } from "@/types";
+import type { MultiFileUploaderRef } from "@/components/upload/MultiFileUploader";
+
+// Dynamic import for MultiFileUploader to ensure SSR safety
+const MultiFileUploader = dynamic(
+  () => import("@/components/upload/MultiFileUploader").then((m) => m.MultiFileUploader),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-44 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+      </div>
+    ),
+  }
+);
 
 interface ShopDisplay {
   id?: string;
@@ -58,52 +54,12 @@ interface ShopDisplay {
   price_color_per_page?: number;
 }
 
-// ─── XHR Upload with Progress ────────────────────────────────────────────────
-// fetch() doesn't expose upload progress; XMLHttpRequest does.
-function xhrUpload(
-  url: string,
-  file: File,
-  onProgress: (percent: number) => void,
-  signal: AbortSignal
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    });
-
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(100);
-        resolve();
-      } else {
-        reject(new Error(`Upload failed: HTTP ${xhr.status}`));
-      }
-    });
-
-    xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
-    xhr.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
-
-    // Propagate AbortController signal to XHR
-    signal.addEventListener("abort", () => xhr.abort(), { once: true });
-
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-    xhr.send(file);
-  });
-}
-
 // ─── Generate idempotency key ─────────────────────────────────────────────────
-function generateIdempotencyKey(shopId: string, phone: string, fileName: string): string {
-  // Deterministic key from stable fields — same inputs = same key
-  return `${shopId}:${phone}:${fileName}:${Date.now().toString(36)}`;
+function generateIdempotencyKey(shopId: string, phone: string, fileNames: string): string {
+  return `${shopId}:${phone}:${fileNames}:${Date.now().toString(36)}`;
 }
 
 // ─── Inner Page Component ─────────────────────────────────────────────────────
-
 function OrderUploadPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -113,28 +69,30 @@ function OrderUploadPageInner() {
   // ── State ──────────────────────────────────────────────────────────────────
   const [shop, setShop] = useState<ShopDisplay | null>(null);
   const [isLoadingShop, setIsLoadingShop] = useState(true);
-  const [step, setStep] = useState(1);
-  const [file, setFile] = useState<File | null>(null);
-  const [pageCount, setPageCount] = useState<number | null>(null);
-  const [copies, setCopies] = useState(1);
-  const [isColor, setIsColor] = useState(false);
-  const [isDoubleSided, setIsDoubleSided] = useState(true);
+  const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [notes, setNotes] = useState("");
-  const [pdfParseFailed, setPdfParseFailed] = useState(false);
+
+  // Pre-generate unique orderId for this session (for TUS folder structuring)
+  const [orderId] = useState(() => {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return "f" + Math.random().toString(36).substring(2, 15) + "-" + Date.now();
+  });
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
-  const [uploadPercent, setUploadPercent] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
   // Refs — these survive re-renders without causing them
-  const isSubmittingRef = useRef(false); // [FIX-3] double-submit guard
-  const storedStoragePath = useRef<string | null>(null); // [FIX-4] orphan recovery
-  const idempotencyKeyRef = useRef<string | null>(null); // [FIX-5] idempotency
-  const abortControllerRef = useRef<AbortController | null>(null); // cleanup
+  const isSubmittingRef = useRef(false);
+  const uploaderRef = useRef<MultiFileUploaderRef>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const { user, isLoaded } = useUser();
   const [customerName, setCustomerName] = useState(nameParam);
@@ -149,7 +107,6 @@ function OrderUploadPageInner() {
   }, [isLoaded, user, nameParam]);
 
   // ── Network detection ──────────────────────────────────────────────────────
-  // [FIX-9] Detect offline/online transitions and show UI feedback.
   useEffect(() => {
     const onOffline = () => {
       setIsOffline(true);
@@ -212,39 +169,44 @@ function OrderUploadPageInner() {
     loadShop();
   }, [shopSlug]);
 
-  // ── Handle file ready ──────────────────────────────────────────────────────
-  const handleFileReady = ({ file, pageCount: pages, pdfParseFailed: parseFailed }: FileReadyPayload) => {
-    setFile(file);
-    setPageCount(pages);
-    setPdfParseFailed(parseFailed);
-    setStep(2);
-    // Reset any prior submission state when a new file is chosen
-    storedStoragePath.current = null;
-    idempotencyKeyRef.current = null;
-    setErrorMessage(null);
-    setCanRetry(false);
-  };
-
-  // ── Total amount ───────────────────────────────────────────────────────────
+  // ── Aggregated Price and Volume Calculations ──────────────────────────────
   const totalAmount = useMemo(() => {
-    if (!pageCount || !shop) return 0;
-    const rate = isColor
-      ? (shop.price_color_per_page || 0)
-      : (shop.price_bw_per_page || 0);
-    return pageCount * copies * rate;
-  }, [pageCount, copies, isColor, shop]);
+    if (!shop || files.length === 0) return 0;
+    return files.reduce((sum, f) => {
+      const rate = f.color
+        ? (shop.price_color_per_page || 0)
+        : (shop.price_bw_per_page || 0);
+      return sum + (f.pages || 1) * f.copies * rate;
+    }, 0);
+  }, [files, shop]);
+
+  const totalPages = useMemo(() => {
+    return files.reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
+  }, [files]);
+
+  const totalCopies = useMemo(() => {
+    return files.reduce((sum, f) => sum + f.copies, 0);
+  }, [files]);
+
+  // Dynamic overall upload percentage based on files sizes & progress
+  const overallUploadPercent = useMemo(() => {
+    if (files.length === 0) return 0;
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    if (totalSize === 0) return 0;
+    const uploadedBytes = files.reduce((sum, f) => sum + f.size * (f.progress / 100), 0);
+    return Math.round((uploadedBytes / totalSize) * 100);
+  }, [files]);
 
   // ── Core submit handler ────────────────────────────────────────────────────
   const handlePlaceOrder = useCallback(async () => {
-    if (!file || !shop?.id) return;
+    if (files.length === 0 || !shop?.id) return;
 
-    // [FIX-3] Hard double-submit guard using ref (immune to stale closure)
     if (isSubmittingRef.current) {
       console.warn("[order] double-submit blocked");
       return;
     }
 
-    // Validation
+    // Input Validation
     if (!customerName || customerName.trim().length < 3) {
       toast.error("Please enter your name");
       return;
@@ -270,116 +232,83 @@ function OrderUploadPageInner() {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ");
 
-    // ── Set up submission state ─────────────────────────────────────────────
+    // Set up submission state
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setErrorMessage(null);
     setCanRetry(false);
-    setUploadPercent(0);
 
     const tracker = createOrderTracker(shop.id);
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // 15-second hard timeout [FIX-2]
+    // 60-second timeout for multiple files
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 15_000);
+    }, 60_000);
 
-    // Generate a stable idempotency key for this attempt [FIX-5]
+    // Generate unique idempotency key
     if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current = generateIdempotencyKey(shop.id, cleanedPhone, file.name);
+      idempotencyKeyRef.current = generateIdempotencyKey(
+        shop.id,
+        cleanedPhone,
+        files.map((f) => f.name).join(",")
+      );
     }
 
     try {
-      let storagePath = storedStoragePath.current;
+      // ── Step 1: Upload all files in parallel (using ref) ──────────────────
+      setUploadPhase("uploading");
+      tracker.markUploadStart();
 
-      // ── Upload phase (skip if we already have a path from a prior attempt) ──
-      // [FIX-4] Orphan recovery: if upload succeeded but insert failed last time,
-      //         we reuse the existing storagePath and skip presign + upload entirely.
-      if (!storagePath) {
-        // ── Presign ────────────────────────────────────────────────────────
-        setUploadPhase("compressing");
-        
-        // [FIX-8] Compress image if large (runs in background before presign)
-        let fileToUpload = file;
-        if (file.type.startsWith("image/") && file.size > 3 * 1024 * 1024) {
-          try {
-            const { compressImageIfNeeded } = await import("@/lib/upload/compressImage");
-            const result = await compressImageIfNeeded(file);
-            if (result.compressed) {
-              fileToUpload = result.file;
-              console.log(
-                `[order] compressed image: ${(result.originalSizeBytes / 1024 / 1024).toFixed(1)}MB → ${(result.finalSizeBytes / 1024 / 1024).toFixed(1)}MB`
-              );
-            }
-          } catch (compressErr) {
-            console.warn("[order] compression failed, using original:", compressErr);
-          }
-        }
-
-        setUploadPhase("uploading");
-        tracker.markUploadStart();
-
-        const presignRes = await fetch("/api/storage/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            shopId: shop.id,
-            fileName: fileToUpload.name,
-            fileSize: fileToUpload.size,
-            mimeType: fileToUpload.type,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!presignRes.ok) {
-          const { error } = await presignRes.json().catch(() => ({ error: "Failed to prepare upload" }));
-          throw new Error(error || "Failed to prepare upload");
-        }
-
-        const { signedUrl, storagePath: newPath } = await presignRes.json();
-
-        // ── XHR Upload with real progress [FIX-6] ─────────────────────────
-        await xhrUpload(signedUrl, fileToUpload, setUploadPercent, controller.signal);
-
-        tracker.markUploadEnd(fileToUpload.size);
-
-        // Store path for orphan recovery [FIX-4]
-        storedStoragePath.current = newPath;
-        storagePath = newPath;
-      } else {
-        console.log("[order] reusing existing storagePath (orphan recovery):", storagePath);
-        tracker.incrementRetry();
-        setUploadPhase("saving");
+      const uploadResult = await uploaderRef.current?.uploadAll();
+      if (!uploadResult || !uploadResult.success) {
+        throw new Error("One or more files failed to upload. Please retry failed files and try again.");
       }
 
-      // ── Order Insert (with retry) ──────────────────────────────────────────
+      const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
+      tracker.markUploadEnd(totalFilesSize);
+
+      // ── Step 2: Save order metadata to DB ───────────────────────────────────
       setUploadPhase("saving");
       tracker.markInsertStart();
 
+      // Structure files array for backend schema validator
+      const filesPayload = files.map((f) => ({
+        name: f.name,
+        size: f.size,
+        pages: f.pages || 1,
+        url: f.storagePath!, // Presigned token path direct to Supabase bucket
+        copies: f.copies,
+        color: f.color,
+        doubleSided: f.doubleSided,
+        mimeType: f.file.type || "application/octet-stream",
+      }));
+
+      // Construct request body (supporting relational array + single file fallback)
       const orderBody = JSON.stringify({
         shopId: shop.id,
-        filePath: storagePath,
-        fileName: file.name,
-        fileSize: file.size,
-        pageCount: Math.max(1, parseInt(String(pageCount)) || 1),
-        copies: Math.max(1, parseInt(String(copies)) || 1),
-        color: Boolean(isColor),
-        doubleSided: Boolean(isDoubleSided),
+        // Legacy fields mapping (using the first file in the array)
+        filePath: files[0].storagePath!,
+        fileName: files[0].name,
+        fileSize: files[0].size,
+        pageCount: files[0].pages || 1,
+        copies: files[0].copies,
+        color: files[0].color,
+        doubleSided: files[0].doubleSided,
         notes: notes?.trim() || "",
         customerName: formattedName,
         customerPhone: cleanedPhone,
+        // Multi-file array
+        files: filesPayload,
       });
 
-      // [FIX-7] fetchWithRetry with 2 retries, backoff 600ms/1.8s
       const res = await fetchWithRetry(
         "/api/orders",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // [FIX-5] Idempotency key prevents duplicate orders on retry
             ...(idempotencyKeyRef.current
               ? { "x-idempotency-key": idempotencyKeyRef.current }
               : {}),
@@ -411,7 +340,6 @@ function OrderUploadPageInner() {
       if (res.ok && data.shortToken) {
         setUploadPhase("success");
         tracker.markSuccess();
-        // Brief success flash before navigation
         setTimeout(() => {
           router.push(`/order/${data.shortToken}`);
         }, 600);
@@ -420,11 +348,9 @@ function OrderUploadPageInner() {
       }
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === "AbortError";
-      const isTimeout = isAbort && !controller.signal.aborted === false;
-
       let userMessage: string;
       if (isAbort) {
-        userMessage = "Request timed out. Your file is safe — tap Retry to complete your order.";
+        userMessage = "Request timed out. Successfully uploaded files are saved — tap Retry to complete your order.";
         tracker.markFailure("timeout");
       } else if (!navigator.onLine) {
         userMessage = "You went offline. Reconnect and tap Retry.";
@@ -439,22 +365,17 @@ function OrderUploadPageInner() {
 
       console.error("[order] submission failed:", err);
       setErrorMessage(userMessage);
-      setCanRetry(true); // Show retry button
+      setCanRetry(true);
       setUploadPhase("idle");
       toast.error(userMessage, { duration: 6000 });
-      void isTimeout; // suppress unused warning
     } finally {
-      // [FIX-1] ALWAYS clear loading state — no exceptions.
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [
-    file, shop, customerName, customerPhone, isOffline,
-    pageCount, copies, isColor, isDoubleSided, notes, router,
-  ]);
+  }, [files, shop, customerName, customerPhone, isOffline, notes, router]);
 
-  // ── Loading screen ─────────────────────────────────────────────────────────
+  // Loading Screen
   if (isLoadingShop) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9FAFB]">
@@ -481,7 +402,6 @@ function OrderUploadPageInner() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white pb-24 font-sans antialiased font-medium text-slate-800">
-
       {/* Offline Banner */}
       <AnimatePresence>
         {isOffline && (
@@ -505,7 +425,7 @@ function OrderUploadPageInner() {
           <div className="flex items-center gap-3">
             {step === 2 && (
               <button
-                onClick={() => { setStep(1); setFile(null); }}
+                onClick={() => setStep(1)}
                 className="p-2 hover:bg-slate-100 rounded-xl transition"
                 disabled={isSubmitting}
               >
@@ -536,8 +456,7 @@ function OrderUploadPageInner() {
 
       <main className="max-w-2xl mx-auto px-4 mt-6">
         <AnimatePresence mode="wait">
-
-          {/* STEP 1: File Upload */}
+          {/* STEP 1: Multiple File Upload & Config */}
           {step === 1 && (
             <motion.div
               key="step1"
@@ -548,29 +467,62 @@ function OrderUploadPageInner() {
               className="space-y-6"
             >
               <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
-                <ModernUploaderV2
-                  onFileReady={handleFileReady}
-                  onFileRemoved={() => { setFile(null); setStep(1); }}
-                  shopId={shop?.id}
+                <MultiFileUploader
+                  ref={uploaderRef}
+                  files={files}
+                  onChange={setFiles}
+                  shopId={shop?.id || ""}
+                  orderId={orderId}
                   disabled={isSubmitting}
                 />
               </div>
+
+              {files.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
+                    <Printer className="w-40 h-40" />
+                  </div>
+
+                  <div className="z-10">
+                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
+                      Estimated Cost
+                    </span>
+                    <p className="text-3xl font-black text-emerald-400 mt-1">
+                      {formatCurrency(totalAmount)}
+                    </p>
+                    <p className="text-[10px] text-slate-300 font-bold mt-1">
+                      {files.length} {files.length === 1 ? "file" : "files"} · {totalPages} total print sheets
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={() => setStep(2)}
+                    className="px-8 h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-2 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20"
+                  >
+                    Checkout Details <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </motion.div>
+              )}
 
               <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-100 flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
                   <Clock className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-800 text-sm">Same-Day Pickup ready</h3>
+                  <h3 className="font-extrabold text-slate-800 text-sm">Same-Day Counter Pickup</h3>
                   <p className="text-slate-500 text-xs font-medium">
-                    Place your order online, pick it up at the shop instantly.
+                    Customize your documents, upload, and collect them immediately at the counter.
                   </p>
                 </div>
               </div>
             </motion.div>
           )}
 
-          {/* STEP 2: Configuration & Checkout */}
+          {/* STEP 2: Customer Details & Order Placement */}
           {step === 2 && (
             <motion.div
               key="step2"
@@ -580,176 +532,47 @@ function OrderUploadPageInner() {
               transition={{ duration: 0.4 }}
               className="space-y-6"
             >
-
-              {/* Document Overview */}
-              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center shrink-0 text-rose-500">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-extrabold text-slate-800 text-base truncate">{file?.name}</h3>
-                    <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
-                      {formatSize(file?.size || 0)} · {pageCount} {pageCount === 1 ? "page" : "pages"}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => { setStep(1); setFile(null); storedStoragePath.current = null; }}
-                  disabled={isSubmitting}
-                  className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 transition disabled:opacity-40"
-                  title="Remove file"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Print Preferences */}
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-                    <Printer className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight">Print Preferences</h2>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                      Choose your ink &amp; paper options
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Ink Mode */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
-                      Ink Mode
-                    </label>
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                      <button
-                        onClick={() => setIsColor(false)}
-                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
-                          !isColor ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        B&amp;W
-                      </button>
-                      <button
-                        onClick={() => setIsColor(true)}
-                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
-                          isColor
-                            ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm"
-                            : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        Color
-                      </button>
+              {/* Order Document Review List */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-4">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">
+                  Review Files ({files.length})
+                </h3>
+                <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto pr-1">
+                  {files.map((fileItem) => (
+                    <div key={fileItem.id} className="py-3 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                          fileItem.file.type === "application/pdf" || fileItem.name.endsWith(".pdf")
+                            ? "bg-rose-50 border-rose-100 text-rose-500"
+                            : "bg-emerald-50 border-emerald-100 text-emerald-500"
+                        }`}>
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-extrabold text-slate-700 truncate" title={fileItem.name}>
+                            {fileItem.name}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                            {formatSize(fileItem.size)} · {fileItem.pages || 1} pgs · {fileItem.copies} copies
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase">
+                          {fileItem.color ? "Color" : "B&W"}
+                        </span>
+                        {(fileItem.file.type === "application/pdf" || fileItem.name.endsWith(".pdf")) && (
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase">
+                            {fileItem.doubleSided ? "2-Sided" : "1-Sided"}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Sidedness */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
-                      Sidedness
-                    </label>
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                      <button
-                        onClick={() => setIsDoubleSided(false)}
-                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
-                          !isDoubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        1-Sided
-                      </button>
-                      <button
-                        onClick={() => setIsDoubleSided(true)}
-                        className={`flex-1 py-3 rounded-lg text-xs font-extrabold transition-all ${
-                          isDoubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        2-Sided
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rate Display */}
-                <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between border border-slate-100/80">
-                  <span className="text-xs font-bold text-slate-500">Current Print Rate</span>
-                  <span className="text-xs font-black text-slate-800">
-                    {formatCurrency(isColor ? shop?.price_color_per_page || 0 : shop?.price_bw_per_page || 0)} / page
-                  </span>
-                </div>
-
-                {/* Manual Page Count (PDF parse failed) */}
-                {pdfParseFailed && (
-                  <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
-                    <div>
-                      <p className="font-extrabold text-amber-900 text-sm">Specify Page Count</p>
-                      <p className="text-[9px] text-amber-600 font-bold uppercase tracking-wider">
-                        Please type or set manually
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4 bg-white rounded-xl p-1 shadow-sm border border-amber-100">
-                      <button
-                        onClick={() => setPageCount(Math.max(1, (pageCount || 1) - 1))}
-                        className="w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
-                      >
-                        <Minus className="w-3 h-3 text-slate-400" />
-                      </button>
-                      <span className="text-lg font-black text-slate-800 w-6 text-center">
-                        {pageCount || 1}
-                      </span>
-                      <button
-                        onClick={() => setPageCount(Math.min(500, (pageCount || 1) + 1))}
-                        className="w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
-                      >
-                        <Plus className="w-3 h-3 text-emerald-600" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Copies */}
-                <div className="p-5 bg-slate-50 rounded-2xl flex items-center justify-between border border-slate-100/50">
-                  <div>
-                    <p className="font-extrabold text-slate-800 text-sm">Number of Copies</p>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
-                      Total sets to produce
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4 bg-white rounded-xl p-1 shadow-sm border border-slate-100">
-                    <button
-                      onClick={() => setCopies(Math.max(1, copies - 1))}
-                      className="w-9 h-9 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
-                    >
-                      <Minus className="w-3.5 h-3.5 text-slate-400" />
-                    </button>
-                    <span className="text-xl font-black text-slate-900 w-6 text-center">{copies}</span>
-                    <button
-                      onClick={() => setCopies(Math.min(50, copies + 1))}
-                      className="w-9 h-9 rounded-lg hover:bg-slate-50 flex items-center justify-center transition"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-emerald-600" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
-                    Special Instructions
-                  </label>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="E.g. Staple top-left, spiral binding requested..."
-                    className="w-full bg-slate-50/50 rounded-2xl p-4 text-sm border border-slate-100 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none min-h-[90px] transition-all placeholder:text-slate-400"
-                    disabled={isSubmitting}
-                  />
+                  ))}
                 </div>
               </div>
 
-              {/* Customer Details */}
+              {/* Delivery Info */}
               <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
@@ -806,6 +629,20 @@ function OrderUploadPageInner() {
                 </div>
               </div>
 
+              {/* Notes */}
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
+                  Special Instructions (Optional)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="E.g. Staple top-left, spiral binding requested..."
+                  className="w-full bg-slate-50/50 rounded-2xl p-4 text-sm border border-slate-100 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none min-h-[90px] transition-all placeholder:text-slate-400"
+                  disabled={isSubmitting}
+                />
+              </div>
+
               {/* Error / Retry Banner */}
               <AnimatePresence>
                 {errorMessage && (
@@ -818,11 +655,9 @@ function OrderUploadPageInner() {
                     <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-red-700">{errorMessage}</p>
-                      {storedStoragePath.current && (
-                        <p className="text-[10px] text-red-500 font-bold mt-1">
-                          ✓ Your file was uploaded successfully — just the order save needs to retry.
-                        </p>
-                      )}
+                      <p className="text-[10px] text-red-500 font-bold mt-1">
+                        ✓ Successfully uploaded files are saved — only the order save will retry.
+                      </p>
                     </div>
                   </motion.div>
                 )}
@@ -837,7 +672,7 @@ function OrderUploadPageInner() {
                     exit={{ opacity: 0 }}
                     className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"
                   >
-                    <UploadProgressBar phase={uploadPhase} uploadPercent={uploadPercent} />
+                    <UploadProgressBar phase={uploadPhase} uploadPercent={overallUploadPercent} />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -856,8 +691,7 @@ function OrderUploadPageInner() {
                     {formatCurrency(totalAmount)}
                   </p>
                   <p className="text-[10px] text-slate-300 font-bold mt-1">
-                    {pageCount} {pageCount === 1 ? "page" : "pages"} · {copies}{" "}
-                    {copies === 1 ? "copy" : "copies"}
+                    {files.length} {files.length === 1 ? "file" : "files"} · {totalPages} total pages
                   </p>
                 </div>
 
@@ -881,7 +715,7 @@ function OrderUploadPageInner() {
                     <>
                       <Loader2 className="animate-spin w-4 h-4" />
                       {uploadPhase === "uploading"
-                        ? `${uploadPercent}%`
+                        ? `${overallUploadPercent}%`
                         : uploadPhase === "saving"
                         ? "Saving…"
                         : "Starting…"}
@@ -898,7 +732,7 @@ function OrderUploadPageInner() {
                 </Button>
               </div>
 
-              {/* Help */}
+              {/* Help Support */}
               <div className="text-center pt-2 pb-6">
                 <div className="inline-flex items-center gap-2 bg-white px-5 py-2.5 rounded-full border border-slate-100 shadow-sm text-slate-500 hover:scale-[1.02] transition">
                   <Phone className="w-3.5 h-3.5 text-emerald-600" />
@@ -907,7 +741,6 @@ function OrderUploadPageInner() {
                   </span>
                 </div>
               </div>
-
             </motion.div>
           )}
         </AnimatePresence>

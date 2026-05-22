@@ -69,7 +69,16 @@ export interface Order {
   cancelled_at?: string;
   created_at: string;
   updated_at: string;
-  files?: Array<{ name: string; size: number; pages: number; url: string }>;
+  files?: Array<{
+    name: string;
+    size: number;
+    pages: number;
+    url: string;
+    copies?: number;
+    color?: boolean;
+    doubleSided?: boolean;
+  }>;
+  order_files?: OrderFileRecord[];
   shops?: Shop;
 }
 
@@ -86,6 +95,36 @@ export interface OrderFile {
   size: number;
   pages: number;
   url: string;
+  copies?: number;
+  color?: boolean;
+  doubleSided?: boolean;
+}
+
+export interface OrderFileRecord {
+  id: string;
+  order_id: string;
+  file_name: string;
+  storage_path: string;
+  file_size: number;
+  page_count: number;
+  mime_type: string;
+  created_at?: string;
+}
+
+export interface UploadedFile {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  pages: number | null;
+  pdfParseFailed: boolean;
+  progress: number;
+  status: "idle" | "compressing" | "uploading" | "success" | "failed" | "retrying";
+  storagePath?: string;
+  error?: string;
+  copies: number;
+  color: boolean;
+  doubleSided: boolean;
 }
 
 export interface ShopStaff {

@@ -111,6 +111,10 @@ export const OrderCreateSchema = z.object({
       .refine((u) => !u.includes("..") && !u.includes("\0"), {
         message: "Invalid file path",
       }),
+    copies: z.coerce.number().int().min(1).max(50).optional().default(1),
+    color: z.boolean().optional().default(false),
+    doubleSided: z.boolean().optional().default(false),
+    mimeType: z.string().optional(),
   })).min(1, "At least one file is required").optional(),
   // Legacy single-file fields (optional for backward compatibility)
   filePath: z.string().trim().min(1)

@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatFileSize } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -109,6 +109,7 @@ export default function OrderStatusPage() {
 
   const shop = order.shops as unknown as Shop;
   const status = order.order_status;
+  const hasMultipleFiles = order.files && order.files.length > 0;
   
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white pb-16 font-sans antialiased font-medium text-slate-800">
@@ -321,34 +322,64 @@ export default function OrderStatusPage() {
             <FileText className="w-5 h-5 text-emerald-600 shrink-0" /> Order Details
           </h3>
           
-          <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
-            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500">
-              <FileText className="w-5.5 h-5.5" />
+          {hasMultipleFiles ? (
+            <div className="space-y-3">
+              {order.files?.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
+                  <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500">
+                    <FileText className="w-5.5 h-5.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-extrabold text-slate-900 truncate text-sm" title={file.name}>{file.name}</p>
+                    <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                      {formatFileSize(file.size)} · {file.pages} {file.pages === 1 ? "Page" : "Pages"} · {file.copies || 1} {(file.copies || 1) === 1 ? "Copy" : "Copies"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
+                      file.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
+                    }`}>
+                      {file.color ? "Color" : "B&W"}
+                    </div>
+                    <div className="px-2.5 py-1 rounded-lg text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100/50 font-extrabold uppercase tracking-wider">
+                      {file.doubleSided ? "2-Sided" : "1-Sided"}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-extrabold text-slate-900 truncate text-sm">{order.file_name || "Document"}</p>
-              <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
-                {order.page_count} Pages · {order.copies} {order.copies === 1 ? "Copy" : "Copies"}
-              </p>
+          ) : (
+            <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500">
+                <FileText className="w-5.5 h-5.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-extrabold text-slate-900 truncate text-sm">{order.file_name || "Document"}</p>
+                <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                  {order.page_count} Pages · {order.copies} {order.copies === 1 ? "Copy" : "Copies"}
+                </p>
+              </div>
+              <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
+                order.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
+              }`}>
+                {order.color ? "Color" : "B&W"}
+              </div>
             </div>
-            <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
-              order.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
-            }`}>
-              {order.color ? "Color" : "B&W"}
-            </div>
-          </div>
+          )}
           
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100/50">
               <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">Print Sides</span>
               <span className="font-extrabold text-slate-800 text-sm mt-1 block">
-                {order.double_sided ? "Double-Sided" : "Single-Sided"}
+                {hasMultipleFiles ? "Mixed" : (order.double_sided ? "Double-Sided" : "Single-Sided")}
               </span>
             </div>
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100/50">
               <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">Order Volume</span>
               <span className="font-extrabold text-slate-800 text-sm mt-1 block">
-                {order.page_count * order.copies} Total Pages
+                {hasMultipleFiles 
+                  ? `${order.files?.reduce((acc, f) => acc + (f.pages * (f.copies || 1)), 0) || 0} Total Pages`
+                  : `${order.page_count * order.copies} Total Pages`}
               </span>
             </div>
           </div>

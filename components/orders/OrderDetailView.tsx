@@ -28,6 +28,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
   const [isOpeningPdf, setIsOpeningPdf] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [previewIndex, setPreviewIndex] = useState(0);
   const { updateStatus, processing } = useOrderStatus(order.id, {
     onSuccess: (newStatus) => setOrder((o) => ({ ...o, order_status: newStatus })),
   });
@@ -161,10 +162,9 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
             </h2>
             <div className="space-y-2 text-sm">
               {[
-                ["Type", order.color ? "Color" : "Black & White"],
-                ["Copies", order.copies.toString()],
-                ["Sides", order.double_sided ? "Double-sided" : "Single-sided"],
-                ["Total Pages", order.page_count.toString()],
+                ["Total Files", (order.files?.length || 1).toString()],
+                ["Total Copies", (order.files?.reduce((sum, f) => sum + (f.copies || 1), 0) || order.copies).toString()],
+                ["Total Pages to Print", (order.files?.reduce((sum, f) => sum + (f.pages || 1) * (f.copies || 1), 0) || (order.page_count * order.copies)).toString()],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between py-1.5 border-b border-[#F3F4F6] last:border-0">
                   <span className="text-[#6B7280]">{label}</span>
@@ -232,71 +232,113 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
           <div className="bg-white rounded-2xl border border-[#E5E7EB] p-5">
             <h2 className="font-bold text-[#111827] mb-3 flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              Document
+              Documents List
             </h2>
             <div className="space-y-3">
-              {(order.files && order.files.length > 0 ? order.files : [
-                { name: order.file_name, size: 0, pages: order.page_count, url: order.file_s3_key }
-              ]).map((file, idx) => (
-                <div key={idx} className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB]">
-                  <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
-                    <FileText className="h-5 w-5 text-red-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#374151] truncate">{file.name || "Document.pdf"}</p>
-                    <p className="text-xs text-[#9CA3AF]">
-                      {file.pages} pages {file.size > 0 && `· ${formatFileSize(file.size)}`}
-                    </p>
-                  </div>
-                  {file.url && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-[#6B7280]"
-                      loading={isOpeningPdf}
-                      onClick={() => handleOpenPdf(file.url)}
+              {(() => {
+                const filesList = order.files && order.files.length > 0 ? order.files : [
+                  { name: order.file_name, size: 0, pages: order.page_count, url: order.file_s3_key, copies: order.copies, color: order.color, doubleSided: order.double_sided }
+                ];
+                return filesList.map((file, idx) => {
+                  const isSelected = idx === previewIndex;
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => setPreviewIndex(idx)}
+                      className={`w-full flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? "border-[#2E8B57] bg-[#2E8B57]/5 shadow-sm"
+                          : "border-[#E5E7EB] bg-[#F9FAFB] hover:border-slate-300"
+                      }`}
                     >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          file.name?.toLowerCase().endsWith(".pdf") ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+                        }`}>
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-[#374151] truncate">{file.name || "Document.pdf"}</p>
+                          <p className="text-xs text-[#9CA3AF] mt-0.5">
+                            {file.pages} pages {file.size > 0 && `· ${formatFileSize(file.size)}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded bg-white border border-[#E5E7EB] text-[#374151] text-[10px] font-semibold">
+                            {file.copies ?? 1} copies
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-white border border-[#E5E7EB] text-[#374151] text-[10px] font-semibold">
+                            {file.color ? "Color" : "B&W"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-white border border-[#E5E7EB] text-[#374151] text-[10px] font-semibold">
+                            {file.doubleSided ? "2-sided" : "1-sided"}
+                          </span>
+                        </div>
+                        {file.url && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-[#6B7280] hover:text-[#2E8B57] hover:bg-emerald-50 shrink-0"
+                            loading={isOpeningPdf}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPdf(file.url);
+                            }}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 
           {/* PDF Preview (Simplified for production) */}
-          <div className="bg-white rounded-2xl border border-[#E5E7EB] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-[#F3F4F6]">
-              <h2 className="font-bold text-[#111827] text-sm">
-                Preview: {order.file_name || "Document"}
-              </h2>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className="bg-[#2E8B57] hover:bg-[#1F6B42]"
-                  loading={isOpeningPdf}
-                  onClick={() => handleOpenPdf()}
-                >
-                  <Printer className="h-4 w-4 mr-2" />
-                  Open PDF
-                </Button>
-              </div>
-            </div>
-            <div className="bg-[#F3F4F6] flex items-center justify-center p-12" style={{ height: "400px" }}>
-              <div className="text-center">
-                <div className="w-16 h-16 rounded-2xl bg-white border border-[#E5E7EB] flex items-center justify-center mx-auto mb-3 shadow-sm">
-                  <FileText className="h-8 w-8 text-red-500" />
+          {(() => {
+            const filesList = order.files && order.files.length > 0 ? order.files : [
+              { name: order.file_name, size: 0, pages: order.page_count, url: order.file_s3_key }
+            ];
+            const currentFile = filesList[previewIndex] || filesList[0];
+            return (
+              <div className="bg-white rounded-2xl border border-[#E5E7EB] overflow-hidden">
+                <div className="flex items-center justify-between p-4 border-b border-[#F3F4F6]">
+                  <h2 className="font-bold text-[#111827] text-sm truncate max-w-[70%]">
+                    Preview: {currentFile?.name || "Document"}
+                  </h2>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-[#2E8B57] hover:bg-[#1F6B42]"
+                      loading={isOpeningPdf}
+                      onClick={() => handleOpenPdf(currentFile?.url)}
+                    >
+                      <Printer className="h-4 w-4 mr-2" />
+                      Open PDF
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-[#374151] font-medium">{order.file_name || "Document.pdf"}</p>
-                <p className="text-sm text-[#9CA3AF] mt-1">
-                  Ready to print · {order.page_count} pages
-                </p>
-                <Button variant="outline" className="mt-4" loading={isOpeningPdf} onClick={() => handleOpenPdf()}>
-                  View Full Document
-                </Button>
+                <div className="bg-[#F3F4F6] flex items-center justify-center p-12" style={{ height: "400px" }}>
+                  <div className="text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-white border border-[#E5E7EB] flex items-center justify-center mx-auto mb-3 shadow-sm">
+                      <FileText className="h-8 w-8 text-red-500" />
+                    </div>
+                    <p className="text-[#374151] font-medium max-w-xs truncate mx-auto">{currentFile?.name || "Document.pdf"}</p>
+                    <p className="text-sm text-[#9CA3AF] mt-1">
+                      Ready to print · {currentFile?.pages || 1} pages
+                    </p>
+                    <Button variant="outline" className="mt-4" loading={isOpeningPdf} onClick={() => handleOpenPdf(currentFile?.url)}>
+                      View Full Document
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Status History */}
           <div className="bg-white rounded-2xl border border-[#E5E7EB] p-5">

@@ -33,7 +33,8 @@ export interface CompressionResult {
  * Returns original file unchanged for PDFs, small images, and on canvas failure.
  */
 export async function compressImageIfNeeded(
-  file: File
+  file: File,
+  sizeThresholdBytes = SIZE_THRESHOLD_BYTES
 ): Promise<CompressionResult> {
   const originalSizeBytes = file.size;
   const noOp: CompressionResult = {
@@ -47,7 +48,7 @@ export async function compressImageIfNeeded(
   // Only compress images
   if (!file.type.startsWith("image/")) return noOp;
   // Skip tiny files — compression overhead isn't worth it
-  if (file.size <= SIZE_THRESHOLD_BYTES) return noOp;
+  if (file.size <= sizeThresholdBytes) return noOp;
 
   try {
     const compressed = await resizeAndEncode(file);

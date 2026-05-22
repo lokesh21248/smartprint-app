@@ -36,6 +36,13 @@ async function run() {
   await checkColumn("shops", "owner_id");
   await checkColumn("webhook_jobs", "id");
   await checkColumn("worker_locks", "id");
+  await checkColumn("order_files", "id");
+  await checkColumn("order_files", "order_id");
+  await checkColumn("order_files", "file_name");
+  await checkColumn("order_files", "storage_path");
+  await checkColumn("order_files", "file_size");
+  await checkColumn("order_files", "page_count");
+  await checkColumn("order_files", "mime_type");
 
   if (errors.length > 0) {
     console.error("\n🚨 SCHEMA VALIDATION FAILED 🚨");

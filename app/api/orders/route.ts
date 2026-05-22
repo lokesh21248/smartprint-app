@@ -246,39 +246,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
-    const pricePerPage = color
-      ? shopPricing.price_color_per_page
-      : shopPricing.price_bw_per_page;
-    const totalAmount = pageCount * copies * pricePerPage;
+    // Support pricing for mixed multiple files or single file
+    let totalAmount = 0;
+    if (files.length > 0) {
+      for (const f of files) {
+        const filePricePerPage = f.color
+          ? shopPricing.price_color_per_page
+          : shopPricing.price_bw_per_page;
+        totalAmount += f.pages * f.copies * filePricePerPage;
+      }
+    } else {
+      const pricePerPage = color
+        ? shopPricing.price_color_per_page
+        : shopPricing.price_bw_per_page;
+      totalAmount = pageCount * copies * pricePerPage;
+    }
 
     if (totalAmount <= 0) {
       console.timeEnd("[orders:POST:total]");
       return NextResponse.json(
-        { error: "Shop pricing is not configured" },
+        { error: "Shop pricing is not configured or total amount is zero" },
         { status: 422 }
       );
     }
 
     // ── 6. Single Flat INSERT — NO JOIN ───────────────────────────────────────
-    // ✅ KEY FIX: Removed shops(clerk_owner_id) join from .select().
     // clerk_owner_id is already in the pricing cache above.
-    // This saves one DB round-trip + JOIN overhead per order.
+    const firstFile = files.length > 0 ? files[0] : null;
     const orderInsertPayload = {
       shop_id: shopId,
       customer_name: customerName,
       customer_phone: customerPhone,
       customer_ip: ip,
-      file_s3_key: files.length > 0 ? files[0].url : filePath!,
-      file_name: files.length > 0 ? files[0].name : fileName!,
-      file_size_bytes: files.length > 0 ? files[0].size : fileSize,
+      file_s3_key: firstFile ? firstFile.url : filePath!,
+      file_name: firstFile ? firstFile.name : fileName!,
+      file_size_bytes: firstFile ? firstFile.size : fileSize,
       files:
         files.length > 0
           ? files
-          : [{ name: fileName, size: fileSize, pages: pageCount, url: filePath }],
-      page_count: Number(pageCount || 1),
-      copies: Number(copies || 1),
-      is_color: Boolean(color),
-      is_double_sided: Boolean(doubleSided),
+          : [{ name: fileName, size: fileSize, pages: pageCount, url: filePath, copies, color, doubleSided }],
+      page_count: Number(firstFile ? (firstFile.pages || 1) : (pageCount || 1)),
+      copies: Number(firstFile ? (firstFile.copies ?? 1) : (copies || 1)),
+      is_color: Boolean(firstFile ? (firstFile.color ?? false) : (color ?? false)),
+      is_double_sided: Boolean(firstFile ? (firstFile.doubleSided ?? false) : (doubleSided ?? false)),
       notes: String(notes || "").trim(),
       total_amount: Number(totalAmount || 0),
       status: "PLACED",
@@ -288,7 +298,7 @@ export async function POST(request: Request) {
     const { data, error } = await supabase
       .from("orders")
       .insert(orderInsertPayload)
-      .select("id, short_token, customer_name, total_amount") // ✅ No JOIN
+      .select("id, short_token, customer_name, total_amount")
       .single();
     console.timeEnd("[orders:POST:insert]");
 
@@ -306,7 +316,7 @@ export async function POST(request: Request) {
           .select("id, short_token")
           .eq("shop_id", shopId)
           .eq("customer_phone", customerPhone)
-          .eq("file_name", fileName)
+          .eq("file_name", fileName || (firstFile ? firstFile.name : ""))
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -334,6 +344,46 @@ export async function POST(request: Request) {
         },
         { status: 500 }
       );
+    }
+
+    // Write child files to order_files (enabling relational lookups)
+    if (data) {
+      const filesToInsert = files.length > 0
+        ? files
+        : [{ name: fileName!, url: filePath!, size: fileSize, pages: pageCount, mimeType: "application/pdf" }];
+
+      const orderFilesPayload = filesToInsert.map((f) => ({
+        order_id: data.id,
+        file_name: f.name,
+        storage_path: f.url,
+        file_size: f.size,
+        page_count: f.pages,
+        mime_type: f.mimeType || (f.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
+      }));
+
+      const { error: filesError } = await supabase
+        .from("order_files")
+        .insert(orderFilesPayload);
+
+      if (filesError) {
+        console.error("[orders:POST] Child files insert failed, rolling back order:", filesError);
+        // Delete parent order row to preserve transaction consistency
+        await supabase
+          .from("orders")
+          .delete()
+          .eq("id", data.id);
+
+        console.timeEnd("[orders:POST:total]");
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Failed to save order files relation",
+            details: filesError.details,
+            code: filesError.code,
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // ── 7. Cache idempotency result ───────────────────────────────────────────
@@ -445,6 +495,13 @@ export async function GET(request: Request) {
       );
     }
 
+    // Fetch files JSONB and notes from the orders table directly by short_token
+    const { data: rawOrder } = await supabase
+      .from("orders")
+      .select("files, notes")
+      .eq("short_token", shortToken)
+      .maybeSingle();
+
     const mappedOrder = {
       short_token: shortToken,
       customer_name: data.customer_name,
@@ -454,6 +511,8 @@ export async function GET(request: Request) {
       double_sided: data.is_double_sided,
       total_amount: data.total_amount,
       order_status: data.status,
+      notes: rawOrder?.notes || null,
+      files: rawOrder?.files || null,
       shops: {
         name: data.shop_name,
         address_line1: data.shop_address,

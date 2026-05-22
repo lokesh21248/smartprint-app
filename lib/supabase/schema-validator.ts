@@ -34,6 +34,14 @@ export async function validateSchema() {
     checkColumn("webhook_jobs", "id"),
     checkColumn("webhook_jobs", "status"),
     checkColumn("worker_locks", "id"),
+    // 3. Verify Order Files (new multiple file upload schema)
+    checkColumn("order_files", "id"),
+    checkColumn("order_files", "order_id"),
+    checkColumn("order_files", "file_name"),
+    checkColumn("order_files", "storage_path"),
+    checkColumn("order_files", "file_size"),
+    checkColumn("order_files", "page_count"),
+    checkColumn("order_files", "mime_type"),
   ]);
 
   if (errors.length > 0) {

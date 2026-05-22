@@ -44,11 +44,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { shopId, fileName, fileSize, mimeType } = body as {
+    const { shopId, fileName, fileSize, mimeType, orderId } = body as {
       shopId?: string;
       fileName?: string;
       fileSize?: number;
       mimeType?: string;
+      orderId?: string;
     };
 
     // 3. Validate shopId
@@ -109,14 +110,16 @@ export async function POST(request: Request) {
     }
 
     // 6. Generate unique, collision-safe storage path
-    //    Uses timestamp + random — original filename is NOT used to prevent
-    //    path traversal, collisions, and encoding issues.
-    const storagePath = generateStoragePath(shopId, validation.extension!);
+    //    If orderId is provided, we structure as orders/{orderId}/{filename}.
+    //    Otherwise, we use the legacy timestamp-random format.
+    const storagePath = orderId
+      ? `orders/${orderId}/${validation.sanitizedName}`
+      : generateStoragePath(shopId, validation.extension!);
 
     // 7. Issue signed upload URL (client PUTs the file directly to this URL)
     const { data: signedData, error: signError } = await supabase.storage
       .from(UPLOAD_BUCKET)
-      .createSignedUploadUrl(storagePath, { upsert: false });
+      .createSignedUploadUrl(storagePath, { upsert: true });
 
     if (signError || !signedData) {
       console.error("[presign] Failed to create signed URL:", signError?.message);

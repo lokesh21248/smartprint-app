@@ -55,12 +55,26 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Ownership verification ────────────────────────────────────────────────
-    // The shopId was validated by validateStoragePath above.
+    // The pathCheck.shopId segment can be either shopId or orderId.
+    const uuid = pathCheck.shopId!;
+    let shopId = uuid;
     const supabase = createAdminClient();
+
+    // Check if uuid is an orderId to find its shopId
+    const { data: orderData } = await supabase
+      .from("orders")
+      .select("shop_id")
+      .eq("id", uuid)
+      .maybeSingle();
+
+    if (orderData) {
+      shopId = orderData.shop_id;
+    }
+
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id")
-      .eq("id", pathCheck.shopId!)
+      .eq("id", shopId)
       .eq("clerk_owner_id", userId)
       .limit(1)
       .maybeSingle();
