@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import pLimit from "p-limit";
 import * as tus from "tus-js-client";
 import { indexedDbStore } from "@/lib/upload/indexedDb";
+import { clearStaleTusFingerprints, clearAllTusFingerprints } from "@/lib/upload/tusFingerprint";
 import type { UploadedFile } from "@/types";
 import { classifyUploadError } from "@/lib/upload/errorClassifier";
 import {
@@ -74,8 +75,14 @@ interface MultiFileUploaderProps {
   disabled?: boolean;
 }
 
-// Track active TUS uploads so we can abort them on cancel
-const activeTusUploads = new Map<string, tus.Upload>();
+// ─── Mobile detection (used for concurrency + chunk size) ────────────────────
+function detectMobile(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.innerWidth <= 768 ||
+    (typeof navigator !== "undefined" && navigator.maxTouchPoints > 1)
+  );
+}
 
 export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
   ({ files, onChange, shopId, orderId, disabled }, ref) => {
@@ -91,6 +98,15 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
     const activeUploadPromisesRef = useRef<Map<string, Promise<UploadedFile>>>(new Map());
     const filesRef = useRef(files);
     const lastProgressTimesRef = useRef<Map<string, number>>(new Map());
+
+    // Bug 3 fix: component-scoped Map (not module-level) so it's cleaned up on unmount
+    // and can't hold stale references across HMR reloads or re-mounts.
+    const activeTusUploads = useRef<Map<string, InstanceType<typeof tus.Upload>>>(new Map()).current;
+
+    // Bug 8 fix: detect mobile once at mount so concurrency + chunk size are stable
+    const isMobile = useRef(detectMobile()).current;
+    const CONCURRENCY_LIMIT = isMobile ? 1 : 2;
+    const CHUNK_SIZE = isMobile ? 2 * 1024 * 1024 : 5 * 1024 * 1024;
 
     useEffect(() => {
       filesRef.current = files;
@@ -158,9 +174,12 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             if (binaryFile) {
               rehydratedItem.file = binaryFile;
               // Reset active/compressing states back to queued so they resume automatically
-              if (rehydratedItem.status === "uploading" || rehydratedItem.status === "compressing") {
+              if (rehydratedItem.status === "uploading" || rehydratedItem.status === "compressing" || rehydratedItem.status === "retrying") {
                 rehydratedItem.status = "queued";
                 rehydratedItem.progress = 0;
+                // Bug 7 fix: clear stale TUS fingerprints so the retry doesn't try
+                // to resume from an expired Supabase upload URL.
+                clearStaleTusFingerprints(item.id!);
               }
             } else {
               // Binary is missing
@@ -215,6 +234,10 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
     // ── Watchdog Timer & Visibility Auto-recovery ───────────────────────────
     useEffect(() => {
+      // Bug 9 fix: 20s threshold — iOS can suspend the tab for 20-30s without
+      // killing the upload; 8s was too aggressive and caused false aborts.
+      const WATCHDOG_THRESHOLD_MS = 20_000;
+
       const checkWatchdog = () => {
         const now = Date.now();
         const uploadingFiles = filesRef.current.filter(
@@ -223,12 +246,13 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
         uploadingFiles.forEach((f) => {
           const lastProgress = lastProgressTimesRef.current.get(f.id) || now;
-          if (now - lastProgress > 8000) {
-            console.warn(`[Watchdog] Active upload hung for ${f.name}. Inactive for ${now - lastProgress}ms. Aborting for inline retry.`);
-            
+          if (now - lastProgress > WATCHDOG_THRESHOLD_MS) {
+            console.warn(
+              `[Watchdog] Upload hung for "${f.name}". Inactive for ${now - lastProgress}ms. Aborting for retry.`
+            );
             const activeUpload = activeTusUploads.get(f.id);
             if (activeUpload) {
-              activeUpload.abort(true);
+              activeUpload.abort(false); // Bug 5 fix: abort(false) — keep fingerprint for genuine resume
               activeTusUploads.delete(f.id);
             }
           }
@@ -237,25 +261,28 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
       const handleVisibilityChange = () => {
         if (document.visibilityState === "visible") {
+          // Bug 9 fix: reset watchdog baseline for ALL active uploads when the tab
+          // becomes visible again. iOS may have suspended for >20s; without this
+          // reset the watchdog would immediately fire and abort a healthy upload.
           const now = Date.now();
           filesRef.current.forEach((f) => {
             if (f.status === "uploading" || f.status === "compressing" || f.status === "retrying") {
-              const lastProgress = lastProgressTimesRef.current.get(f.id) || now;
-              if (now - lastProgress > 8000) {
-                checkWatchdog();
-              }
               lastProgressTimesRef.current.set(f.id, now);
             }
           });
+          // Then run the watchdog check with the fresh baselines
+          checkWatchdog();
         }
       };
 
-      const intervalId = setInterval(checkWatchdog, 3000);
+      const intervalId = setInterval(checkWatchdog, 5000);
       document.addEventListener("visibilitychange", handleVisibilityChange);
       return () => {
         clearInterval(intervalId);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
       };
+    // activeTusUploads is a stable ref (.current Map), safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ── Beforeunload guard during active uploads ──────────────────────────────
@@ -613,14 +640,43 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
             const maxAttempts = 10;
             let success = false;
             let finalResult: UploadedFile | null = null;
+            // Track the previous TUS instance so we can abort it before creating a new one
+            let previousTusUpload: InstanceType<typeof tus.Upload> | null = null;
 
             while (attempt < maxAttempts && !success) {
-              // Check network connection first
+              // Bug 2 + Bug 5 fix: Abort the previous TUS instance before creating a new
+              // one. Without this, the old socket/XHR stays alive and competes for the
+              // mobile network slot. abort(false) keeps the fingerprint for genuine resume.
+              // Captured in a const so TypeScript's control-flow analysis doesn't narrow
+              // it to `never` inside the Promise callback.
+              const prevUpload = previousTusUpload as InstanceType<typeof tus.Upload> | null;
+              if (prevUpload) {
+                void prevUpload.abort(false);
+                previousTusUpload = null;
+              }
+
+              // Bug 1 + Bug 2 fix: force-expire the token on every retry so
+              // fetchTokenIfNeeded always fetches a fresh one after any error.
+              // Stale tokens (invalidated when the connection dropped or the
+              // network switched) are the main cause of immediate 401 → stuck 0%.
+              tokenFetchedAt = 0;
+
+              // Bug 7 fix: clear stale TUS fingerprints before each attempt so we
+              // never try to resume from an expired Supabase upload URL.
+              clearStaleTusFingerprints(fileItem.id);
+
+              // Check network connection — poll with slight jitter to let the
+              // interface stabilise after a 4G↔WiFi switch (Bug 2).
               while (!navigator.onLine) {
                 updateState("retrying", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
                   error: "Waiting for network..."
                 });
-                await new Promise((resolve) => setTimeout(resolve, 2000));
+                await new Promise((resolve) => setTimeout(resolve, 2000 + Math.random() * 500));
+              }
+              // Extra 300ms settling pause after regaining connectivity so the OS
+              // has time to assign the new socket before we open a TUS connection.
+              if (attempt > 0) {
+                await new Promise((resolve) => setTimeout(resolve, 300));
               }
 
               try {
@@ -660,10 +716,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
                 // Run the actual TUS upload in a Promise
                 const result = await new Promise<UploadedFile>((resolvePromise, rejectPromise) => {
-                  let isFirstProgress = true;
                   const upload = new tus.Upload(finalFile, {
                     endpoint,
-                    retryDelays: [], // managing retries manually in while loop
+                    retryDelays: [], // managing retries manually in the while loop
                     headers: {
                       "x-signature": token,
                       "x-upsert": "true",
@@ -673,14 +728,26 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                       objectName: storagePath,
                       contentType: finalFile.type || "application/octet-stream",
                     },
-                    chunkSize: 5 * 1024 * 1024,
-                    onBeforeRequest: (req) => {
+                    // Bug 8 fix: smaller chunks on mobile to reduce peak memory pressure
+                    // and avoid iOS killing the tab mid-upload.
+                    chunkSize: CHUNK_SIZE,
+                    // Bug 4 fix: include the unique fileItem.id in the fingerprint so two
+                    // files with identical names + sizes never share a resumable-upload slot.
+                    fingerprint: (_file, opts) =>
+                      Promise.resolve(
+                        `tus-${fileItem.id}-${opts?.endpoint ?? ""}-${finalFile.size}`
+                      ),
+                    onBeforeRequest: () => {
                       if (!navigator.onLine) {
                         logNetworkPause(fileItem.name);
                       }
                       lastProgressTimesRef.current.set(fileItem.id, Date.now());
                     },
                     onError: (error) => {
+                      // Bug 5 fix: abort the socket before removing from the map so the
+                      // underlying XHR is cleaned up and frees the mobile network slot.
+                      // abort(false) preserves the fingerprint for genuine future resumes.
+                      upload.abort(false).catch(() => {});
                       activeTusUploads.delete(fileItem.id);
                       rejectPromise(error);
                     },
@@ -706,40 +773,22 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                       const etaSecs =
                         speedBytesPerSec > 0 ? Math.ceil(remainingBytes / speedBytesPerSec) : null;
 
-                      let errorMsg: string | undefined = undefined;
-                      if (isFirstProgress) {
-                        isFirstProgress = false;
-                        if (pct > 0) {
-                          errorMsg = "Upload resumed successfully";
-                          setTimeout(() => {
-                            const cur = filesRef.current.find(f => f.id === fileItem.id);
-                            if (cur && cur.status === "uploading" && cur.error === "Upload resumed successfully") {
-                              updateState("uploading", cur.progress, { error: undefined });
-                            }
-                          }, 2000);
-                        }
-                      }
-
                       updateState("uploading", pct, {
                         uploadSpeed: speedBytesPerSec,
                         etaSeconds: etaSecs ?? undefined,
-                        error: errorMsg,
+                        error: undefined,
                       });
 
-                      // Proactive token refresh check during active progress:
+                      // Bug 10 fix: proactive token refresh threshold lowered from 200s to
+                      // 120s. Mutating headers on an in-flight upload risks 401 on already-
+                      // buffered chunks, so we instead abort and restart with the new token.
                       const tokenAge = Date.now() - tokenFetchedAt;
-                      if (tokenAge > 200 * 1000) {
-                        fetchTokenIfNeeded().then((refreshed) => {
-                          if (refreshed && !refreshed.alreadyExists) {
-                            if (!upload.options.headers) {
-                              upload.options.headers = {};
-                            }
-                            upload.options.headers["x-signature"] = token;
-                            console.log(`[TUS] Proactively refreshed token mid-upload for ${fileItem.name}`);
-                          }
-                        }).catch((err) => {
-                          console.warn(`[TUS] Proactive token refresh failed:`, err);
-                        });
+                      if (tokenAge > 120 * 1000) {
+                        console.log(`[TUS] Token nearing expiry mid-upload for "${fileItem.name}" — will restart with fresh token on next retry.`);
+                        // Abort current upload (the outer catch will refresh the token and restart)
+                        upload.abort(false).catch(() => {});
+                        activeTusUploads.delete(fileItem.id);
+                        rejectPromise(new Error("TOKEN_REFRESH_NEEDED"));
                       }
                     },
                     onSuccess: () => {
@@ -762,22 +811,18 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                       );
                       resolvePromise(resVal);
                     },
-                    onShouldRetry: (error, retryAttempt) => {
-                      return false; // let manual/inline retry logic catch and handle it
-                    },
+                    onShouldRetry: () => false, // all retry logic is in the while loop
                   });
 
+                  // Keep a reference so we can abort it cleanly at the top of the next
+                  // while-loop iteration (Bug 2 + Bug 5 fix).
+                  previousTusUpload = upload;
                   activeTusUploads.set(fileItem.id, upload);
 
-                  // Resume logic
-                  upload.findPreviousUploads().then((previousUploads) => {
-                    if (previousUploads.length) {
-                      upload.resumeFromPreviousUpload(previousUploads[0]);
-                    }
-                    upload.start();
-                  }).catch(() => {
-                    upload.start();
-                  });
+                  // Bug 6 fix: after clearStaleTusFingerprints we know there are no
+                  // stale entries — skip findPreviousUploads and start fresh every time.
+                  // This prevents resuming from an expired Supabase URL (Bug 1 core cause).
+                  upload.start();
                 });
 
                 success = true;
@@ -812,8 +857,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
                 const backoffDelay = Math.min(1000 * 2 ** attempt, 30000);
                 logRetryAttempt(fileItem.name, attempt, backoffDelay);
-                updateState("retrying", filesRef.current.find(f => f.id === fileItem.id)?.progress || 0, {
-                  error: `Reconnecting upload...`
+                const currentProgress = filesRef.current.find(f => f.id === fileItem.id)?.progress || 0;
+                updateState("retrying", currentProgress, {
+                  error: `Retrying… (attempt ${attempt}/${maxAttempts})`
                 });
 
                 await new Promise((resolve) => setTimeout(resolve, backoffDelay));
@@ -859,7 +905,8 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
         (f) => f.status === "uploading" || f.status === "compressing" || f.status === "retrying"
       );
       const activeCount = activeUploads.length;
-      const slotsAvailable = 2 - activeCount;
+      // Bug 8 fix: limit to 1 concurrent upload on mobile to avoid OOM kills
+      const slotsAvailable = CONCURRENCY_LIMIT - activeCount;
 
       if (slotsAvailable <= 0) return;
 
@@ -900,7 +947,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
           // Wait 50ms for state to settle slightly
           await new Promise((resolve) => setTimeout(resolve, 50));
 
-          // Helper to wait for all files to settle (either "uploaded" or "failed") with limit of 2 concurrent
+          // Helper to wait for all files to settle (either "uploaded" or "failed")
           const waitForAllSettled = async (): Promise<UploadedFile[]> => {
             while (true) {
               const activeCount = filesRef.current.filter(
@@ -911,7 +958,8 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
                 (f) => f.status === "queued" && !activeUploadPromisesRef.current.has(f.id)
               );
 
-              const slotsAvailable = 2 - activeCount;
+              // Bug 8 fix: respect mobile concurrency limit here too
+              const slotsAvailable = CONCURRENCY_LIMIT - activeCount;
               if (slotsAvailable > 0 && queued.length > 0) {
                 const filesToStart = queued.slice(0, slotsAvailable);
                 filesToStart.forEach((f) => {
@@ -968,6 +1016,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
 
       clearSession() {
         localStorage.removeItem("smartprint_upload_metadata");
+        // Bug 7 fix: also clear all TUS fingerprint keys so stale Supabase
+        // upload URLs don't pollute the next session.
+        clearAllTusFingerprints();
         indexedDbStore.clear();
         onChange([]);
       }
@@ -1140,8 +1191,9 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
               {files.length > 0 && !disabled && (
                 <button
                   onClick={() => {
-                    activeTusUploads.forEach((upload) => upload.abort(true));
+                    activeTusUploads.forEach((upload) => upload.abort(false));
                     activeTusUploads.clear();
+                    clearAllTusFingerprints();
                     activeUploadPromisesRef.current.clear();
                     onChange([]);
                   }}
