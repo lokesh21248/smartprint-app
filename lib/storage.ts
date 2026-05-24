@@ -66,6 +66,10 @@ export async function moveFileAcrossBuckets(
   path: string,
   mimeType: string
 ): Promise<void> {
+  if (fromBucket === toBucket) {
+    console.log(`[storage] Skip moving file ${path} — source and target bucket are the same (${fromBucket}).`);
+    return;
+  }
   const admin = createAdminClient();
 
   // 1. Download file from source bucket

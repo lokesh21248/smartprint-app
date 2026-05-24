@@ -43,7 +43,11 @@ type FlexDatabase = {
   };
 };
 
+let cachedClient: ReturnType<typeof createBrowserClient<FlexDatabase>> | null = null;
+
 export function createClient() {
+  if (cachedClient) return cachedClient as any;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -53,5 +57,6 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient<FlexDatabase>(url, anonKey);
+  cachedClient = createBrowserClient<FlexDatabase>(url, anonKey);
+  return cachedClient as any;
 }

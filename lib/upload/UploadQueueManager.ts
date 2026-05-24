@@ -36,6 +36,7 @@ import { indexedDbStore } from "@/lib/upload/indexedDb";
 import { clearStaleTusFingerprints, clearAllTusFingerprints } from "@/lib/upload/tusFingerprint";
 import { classifyUploadError, StructuredUploadError } from "@/lib/upload/errorClassifier";
 import { validateUploadFile } from "@/lib/upload/fileValidation";
+import { getDiagnosticsSnapshot, logUploadDiagnostics } from "@/lib/upload/uploadDiagnostics";
 import {
   logUploadStart,
   logUploadChunk,
@@ -731,8 +732,79 @@ export class UploadQueueManager {
         const uploadResult = await this._runTusUpload(id, presignResult.token, presignResult.storagePath, startedAt);
 
         if (uploadResult === "success") {
-          this._scheduleQueueDrain();
-          return;
+          // STEP 9: ADD UPLOAD VERIFICATION
+          try {
+            this._patch(id, {
+              error: "Verifying upload integrity...",
+            });
+            
+            const supabase = (await import("@/lib/supabase/client")).createClient();
+            const fullPath = presignResult.storagePath;
+            const folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
+            const filename = fullPath.substring(fullPath.lastIndexOf("/") + 1);
+            
+            const { data: fileList, error: listError } = await supabase.storage
+              .from("order-files")
+              .list(folderPath, { search: filename });
+
+            if (listError) {
+              throw new Error(`Integrity check failed: ${listError.message}`);
+            }
+
+            const exists = fileList?.some((f: any) => f.name === filename && f.metadata?.size > 0);
+            if (!exists) {
+              throw new Error("Verification failed: File missing or empty in storage bucket.");
+            }
+
+            console.log(`[QueueManager] Physical upload verified for "${entry.name}" at path: ${fullPath}`);
+            
+            // Log successful diagnostics (STEP 11)
+            const snapshot = getDiagnosticsSnapshot({
+              fileId: id,
+              fileName: entry.name,
+              fileSize: entry.size,
+              mimeType: entry.mimeType || "application/octet-stream",
+              retryCount: attempt,
+              durationMs: Date.now() - startedAt,
+              verificationResult: "success",
+            });
+            logUploadDiagnostics(snapshot, "SUCCESS");
+
+            this._scheduleQueueDrain();
+            return;
+          } catch (verifyErr) {
+            console.error(`[QueueManager] Upload verification failed for "${entry.name}":`, verifyErr);
+            attempt++;
+            
+            const snapshot = getDiagnosticsSnapshot({
+              fileId: id,
+              fileName: entry.name,
+              fileSize: entry.size,
+              mimeType: entry.mimeType || "application/octet-stream",
+              retryCount: attempt,
+              supabaseResponseStatus: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+              verificationResult: "failed",
+            });
+            logUploadDiagnostics(snapshot, "FAILURE");
+
+            if (attempt > MAX_RETRIES) {
+              this._patch(id, {
+                state: "failed",
+                error: `Upload verification failed: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}.`,
+              });
+              this._activeFileIds.delete(id);
+              this._runningProcesses.delete(id);
+              return;
+            }
+            
+            const delay = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
+            this._patch(id, {
+              state: "retrying",
+              error: `Verification failed — retrying… (Attempt ${attempt}/${MAX_RETRIES})`,
+            });
+            await this._sleep(delay, id);
+            continue;
+          }
         }
 
         if (uploadResult === "cancelled") {
@@ -848,18 +920,16 @@ export class UploadQueueManager {
           return null; // Upload was cancelled
         }
 
-        console.error("UPLOAD_INIT_FAILURE", {
+        const snapshot = getDiagnosticsSnapshot({
           fileId: id,
           fileName: entry.file.name,
           fileSize: entry.file.size,
-          status: this._toUploadedFile(entry).status,
-          online: typeof navigator !== "undefined" ? navigator.onLine : true,
-          connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
-          memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
-          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
-          timestamp: Date.now(),
-          error: err,
+          mimeType: entry.file.type || "application/octet-stream",
+          retryCount: i,
+          supabaseResponseStatus: err instanceof Error ? err.message : String(err),
+          verificationResult: "failed",
         });
+        logUploadDiagnostics(snapshot, "FAILURE");
 
         // Transient network error check
         const isNetworkError =
@@ -1625,32 +1695,20 @@ export class UploadQueueManager {
   }
 
   private _getSafeMimeType(file: File): string {
-    if (file.type) {
-      const typeLower = file.type.toLowerCase();
-      if (
-        typeLower === "image/jpeg" ||
-        typeLower === "image/png" ||
-        typeLower === "image/webp" ||
-        typeLower === "application/pdf"
-      ) {
-        return typeLower;
-      }
+    const nameLower = file.name.toLowerCase();
+    if (nameLower.endsWith(".pdf")) {
+      return "application/pdf";
     }
-
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    switch (ext) {
-      case "jpg":
-      case "jpeg":
-        return "image/jpeg";
-      case "png":
-        return "image/png";
-      case "webp":
-        return "image/webp";
-      case "pdf":
-        return "application/pdf";
-      default:
-        return file.type || "application/octet-stream";
+    if (nameLower.endsWith(".png")) {
+      return "image/png";
     }
+    if (nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg")) {
+      return "image/jpeg";
+    }
+    if (nameLower.endsWith(".webp")) {
+      return "image/webp";
+    }
+    return file.type || "application/octet-stream";
   }
 
   private async _validateAndHydrateFile(file: File): Promise<File> {

@@ -43,6 +43,12 @@ export type UploadErrorCode =
   | "IMAGE_PARSE_FAILED"
   | "NETWORK_TIMEOUT"
   | "ANDROID_FILE_HYDRATION_FAILED"
+  | "STORAGE_POLICY_ERROR"
+  | "MIME_REJECTED"
+  | "UPLOAD_ABORTED"
+  | "MOBILE_BROWSER_INTERRUPTION"
+  | "STORAGE_UPLOAD_FAILED"
+  | "UNKNOWN_UPLOAD_FAILURE"
   | "UNKNOWN";
 
 export class StructuredUploadError extends Error {
@@ -204,25 +210,40 @@ export function classifyUploadError(
   // ── Cancelled (AbortError) ────────────────────────────────────────────────
   if (error instanceof DOMException && error.name === "AbortError") {
     return {
-      code: "CANCELLED",
+      code: "UPLOAD_ABORTED",
       userMessage: "Upload was cancelled.",
       retryable: true,
     };
   }
 
-  // Check custom browser suspended message
   const rawMessage = error instanceof Error ? error.message : String(error ?? "Unknown error");
-  if (rawMessage === "BROWSER_SUSPENDED") {
+
+  // RLS Storage Policies Check (Fix 1)
+  if (
+    rawMessage.toLowerCase().includes("row-level security policy") ||
+    rawMessage.toLowerCase().includes("row_level_security") ||
+    rawMessage.toLowerCase().includes("rls") ||
+    rawMessage.toLowerCase().includes("violates row-level security policy")
+  ) {
     return {
-      code: "BROWSER_SUSPENDED",
-      userMessage: "Mobile browser suspended the upload. Resuming...",
+      code: "STORAGE_POLICY_ERROR",
+      userMessage: "Supabase storage permission denied (missing row-level security RLS policies). Please run bucket policies.",
+      retryable: false,
+    };
+  }
+
+  // Check custom browser suspended message
+  if (rawMessage === "BROWSER_SUSPENDED" || rawMessage.toLowerCase().includes("suspended")) {
+    return {
+      code: "MOBILE_BROWSER_INTERRUPTION",
+      userMessage: "Mobile browser suspended the background process. Resuming upload...",
       retryable: true,
     };
   }
 
   if (rawMessage === "UPLOAD_INTERRUPTED") {
     return {
-      code: "UPLOAD_INTERRUPTED",
+      code: "MOBILE_BROWSER_INTERRUPTION",
       userMessage: "Upload was interrupted. Resuming...",
       retryable: true,
     };
@@ -263,7 +284,14 @@ export function classifyUploadError(
     if (body.toLowerCase().includes("bucket not found")) {
       return {
         code: "BUCKET_NOT_FOUND",
-        userMessage: "Storage configuration error. Please contact support.",
+        userMessage: "Supabase storage bucket 'order-files' not found. Please create the bucket.",
+        retryable: false,
+      };
+    }
+    if (body.toLowerCase().includes("policy") || body.toLowerCase().includes("row-level security")) {
+      return {
+        code: "STORAGE_POLICY_ERROR",
+        userMessage: "Supabase storage permission denied (missing row-level security RLS policies). Please run bucket policies.",
         retryable: false,
       };
     }
@@ -278,10 +306,10 @@ export function classifyUploadError(
 
   // ── String / Error message matching ──────────────────────────────────────
 
-  if (matchesAny(rawMessage, TIMEOUT_PATTERNS)) {
+  if (matchesAny(rawMessage, TIMEOUT_PATTERNS) || rawMessage.toLowerCase().includes("timeout")) {
     return {
-      code: "TIMEOUT",
-      userMessage: "Upload timed out. Check your connection speed and tap Retry.",
+      code: "NETWORK_TIMEOUT",
+      userMessage: "Connection timed out. Reconnecting upload…",
       retryable: true,
     };
   }
@@ -297,15 +325,15 @@ export function classifyUploadError(
   if (matchesAny(rawMessage, SIZE_PATTERNS)) {
     return {
       code: "FILE_TOO_LARGE",
-      userMessage: "File exceeds the 25 MB size limit.",
+      userMessage: "File exceeds the allowed size limit.",
       retryable: false,
     };
   }
 
   if (matchesAny(rawMessage, MIME_PATTERNS)) {
     return {
-      code: "MIME_TYPE_REJECTED",
-      userMessage: "Unsupported file type. Only PDF, PNG, and JPG files are accepted.",
+      code: "MIME_REJECTED",
+      userMessage: "Unsupported file format. Only PDF, PNG, JPEG, JPG, and WebP are allowed.",
       retryable: false,
     };
   }
@@ -335,8 +363,8 @@ export function classifyUploadError(
 
   if (matchesAny(rawMessage, STORAGE_PATTERNS)) {
     return {
-      code: "SUPABASE_ERROR",
-      userMessage: "Storage service error. Please tap Retry — this is usually temporary.",
+      code: "STORAGE_UPLOAD_FAILED",
+      userMessage: "Supabase Storage upload failed. Reconnecting upload...",
       retryable: true,
     };
   }
@@ -344,14 +372,14 @@ export function classifyUploadError(
   if (context === "presign") {
     return {
       code: "PRESIGN_FAILED",
-      userMessage: "Network unstable. Reconnecting upload...",
+      userMessage: "Connection interrupted. Reconnecting upload…",
       retryable: true,
     };
   }
 
   // ── Fallback ───────────────────────────────────────────────────────────────
   return {
-    code: "UNKNOWN",
+    code: "UNKNOWN_UPLOAD_FAILURE",
     userMessage: rawMessage.length > 0 && rawMessage.length < 200
       ? rawMessage
       : "Upload failed. Please tap Retry.",
@@ -390,6 +418,12 @@ export function errorCodeLabel(code: UploadErrorCode): string {
     IMAGE_PARSE_FAILED: "Image Parse Failed",
     NETWORK_TIMEOUT: "Network Timeout",
     ANDROID_FILE_HYDRATION_FAILED: "Android File Hydration Failed",
+    STORAGE_POLICY_ERROR: "Supabase RLS Policy Missing",
+    MIME_REJECTED: "Unsupported MIME Type",
+    UPLOAD_ABORTED: "Upload Aborted",
+    MOBILE_BROWSER_INTERRUPTION: "Mobile Browser Suspended Upload",
+    STORAGE_UPLOAD_FAILED: "Supabase Storage Upload Failed",
+    UNKNOWN_UPLOAD_FAILURE: "Unknown Upload Failure",
     UNKNOWN: "Unknown",
   };
   return labels[code] ?? code;

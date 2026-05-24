@@ -8,6 +8,7 @@ import {
   UPLOAD_URL_TTL_SECONDS,
 } from "@/lib/upload-validation";
 
+export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 

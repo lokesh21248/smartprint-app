@@ -231,7 +231,7 @@ export function useRealtimeOrders(shopId: string | null) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (payload: any) => handleRealtimeEvent(payload)
       )
-      .subscribe((status, err) => {
+      .subscribe((status: string, err?: any) => {
         if (status === "SUBSCRIBED") {
           retryCountRef.current = 0; // reset backoff on success
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
