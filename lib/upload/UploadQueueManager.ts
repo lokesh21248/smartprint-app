@@ -54,8 +54,8 @@ import { toast } from "sonner";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Exponential backoff delays in ms. Length = max retries. */
-const RETRY_DELAYS_MS = [1_000, 3_000] as const;
-const MAX_RETRIES = 2;
+const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
+const MAX_RETRIES = 4;
 
 /** Presign fetch timeout — if it exceeds this, we treat it as a retryable error. */
 const PRESIGN_TIMEOUT_MS = 15_000;
@@ -242,34 +242,51 @@ export class UploadQueueManager {
 
     for (const rawFile of rawFiles) {
       const id = `file-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+      
+      let file = rawFile;
+      // Normalise empty or unusual mime types (Point 6: Fix Android Chrome screenshot uploads)
+      if (!file.type || file.type === "") {
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        let mimeType = "image/jpeg"; // Default to image/jpeg for screenshots/images
+        if (ext === "pdf") mimeType = "application/pdf";
+        else if (ext === "png") mimeType = "image/png";
+        else if (ext === "webp") mimeType = "image/webp";
+        else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+        
+        file = new File([file], file.name, {
+          type: mimeType,
+          lastModified: file.lastModified,
+        });
+      }
+
       const isPdf =
-        rawFile.type === "application/pdf" ||
-        rawFile.name.toLowerCase().endsWith(".pdf");
+        file.type === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
 
       const entry: FileEntry = {
         id,
-        file: rawFile,
-        name: rawFile.name,
-        size: rawFile.size,
+        file: file,
+        name: file.name,
+        size: file.size,
         pages: isPdf ? (this._isMobile ? 1 : null) : 1,
         pdfParseFailed: isPdf && this._isMobile,
         copies: 1,
         color: false,
         doubleSided: isPdf,
-        mimeType: rawFile.type || "application/octet-stream",
+        mimeType: file.type || "application/octet-stream",
         retryAttempt: 0,
         state: "preparing",
         progress: 0,
       };
 
-      console.log(`[QueueManager:Debug] Registering file: ${rawFile.name} (id: ${id}, size: ${rawFile.size} bytes). NO pre-upload parsing.`);
+      console.log(`[QueueManager:Debug] Registering file: ${file.name} (id: ${id}, size: ${file.size} bytes). NO pre-upload parsing.`);
 
       this._files.set(id, entry);
       this._emit({ type: "FILE_ADDED", file: this._toUploadedFile(entry) });
 
       // Persist binary to IndexedDB for session recovery
-      indexedDbStore.saveFile(id, rawFile).catch((err) =>
-        console.warn(`[QueueManager] IndexedDB save failed for ${rawFile.name}:`, err)
+      indexedDbStore.saveFile(id, file).catch((err) =>
+        console.warn(`[QueueManager] IndexedDB save failed for ${file.name}:`, err)
       );
     }
 
@@ -540,6 +557,12 @@ export class UploadQueueManager {
    */
   private async _processFile(id: string): Promise<void> {
     console.log(`[QueueManager:Debug] Starting _processFile for file ${id}`);
+    
+    // Yield to the event loop/requestAnimationFrame to prevent UI thread blocking on mobile
+    if (typeof window !== "undefined" && window.requestAnimationFrame) {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    }
+
     let attempt = 0;
     try {
       const entry = this._files.get(id);
@@ -569,12 +592,20 @@ export class UploadQueueManager {
         });
 
         if (!dbFile) {
-          toast.error(`Device revoked file access for "${entry.name}". Please select the file again.`);
+          toast.error(`Your mobile browser may have cleared the file "${entry.name}". Please reselect it.`);
           this.removeFile(id);
           return;
         }
         fileToUpload = dbFile;
         this._patch(id, { file: dbFile });
+      }
+
+      // Validate File object safety (Point 15: Validate File Before Upload)
+      if (!(fileToUpload instanceof File)) {
+        throw new Error("INVALID_FILE_OBJECT");
+      }
+      if (fileToUpload.size <= 0 || !fileToUpload.name) {
+        throw new Error("INVALID_FILE_METADATA");
       }
 
       // ── Step 1c: Check if already flagged corrupted in background ─────────
@@ -734,7 +765,7 @@ export class UploadQueueManager {
       logPresignResult(entry.name, false, classified.userMessage);
 
       // Add defensive protection: remove failed file immediately on URL creation failure, show toast, and require manual re-selection
-      toast.error(`Failed to generate upload URL for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
+      toast.error(`Upload initialization failed for "${entry.name}". Please retry.`);
       this.removeFile(id);
       return null;
     }
@@ -1267,8 +1298,8 @@ export class UploadQueueManager {
       requesting_url: "preparing",
       uploading: "uploading",
       processing: "processing",
-      retrying: "queued",
-      paused: "idle",
+      retrying: "retrying",
+      paused: "paused",
       completed: "success",
       failed: "failed",
       cancelled: "cancelled",

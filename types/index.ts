@@ -121,7 +121,9 @@ export type UploadStatus =
   | "processing"
   | "success"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "retrying"
+  | "paused";
 
 
 export interface UploadedFile {
