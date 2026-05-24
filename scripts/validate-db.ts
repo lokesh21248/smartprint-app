@@ -2,6 +2,23 @@
 // Usage: npx tsx scripts/validate-db.ts
 
 import { createClient } from "@supabase/supabase-js";
+import * as fs from "fs";
+import * as path from "path";
+
+// Load .env.local manually if it exists
+const envPath = path.join(__dirname, "..", ".env.local");
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, "utf-8");
+  envContent.split(/\r?\n/).forEach((line) => {
+    const trimmedLine = line.trim();
+    if (trimmedLine && !trimmedLine.startsWith("#")) {
+      const [key, ...rest] = trimmedLine.split("=");
+      if (key && rest.length > 0) {
+        process.env[key.trim()] = rest.join("=").trim();
+      }
+    }
+  });
+}
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

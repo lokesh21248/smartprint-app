@@ -83,7 +83,7 @@ export function useUploadQueue({
   const rehydratedRef = useRef(false);
 
   useEffect(() => {
-    if (disabled) return;
+    if (!shopId) return;
 
     const cacheKey = `${shopId}:${orderId}`;
     let manager = managerCache.get(cacheKey);
@@ -143,7 +143,7 @@ export function useUploadQueue({
     };
     // shopId + orderId are stable for the lifetime of the upload session
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shopId, orderId, disabled]);
+  }, [shopId, orderId]);
 
   // ─── Stable callbacks ─────────────────────────────────────────────────────
 

@@ -194,6 +194,8 @@ export class UploadQueueManager {
   // ── Files being actively processed (not yet resolved) ────────────────────────
   private _activeFileIds = new Set<string>();
   private _runningProcesses = new Set<string>();
+  private _activeResolvers = new Map<string, (result: "success" | "cancelled" | "error") => void>();
+  private _fileExecutionIds = new Map<string, number>();
 
   // ── Cleanup refs ─────────────────────────────────────────────────────────────
   private _destroyed = false;
@@ -615,6 +617,9 @@ export class UploadQueueManager {
     }
     this._runningProcesses.add(id);
 
+    const execId = (this._fileExecutionIds.get(id) ?? 0) + 1;
+    this._fileExecutionIds.set(id, execId);
+
     // Yield to the event loop/requestAnimationFrame to prevent UI thread blocking on mobile
     if (typeof window !== "undefined" && window.requestAnimationFrame) {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
@@ -850,13 +855,16 @@ export class UploadQueueManager {
         });
       }
     } finally {
-      console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
-      this._runningProcesses.delete(id);
-      this._activeFileIds.delete(id);
-      this._abortControllers.delete(id);
-      this._lastProgressAt.delete(id);
-      this._releaseWakeLockIfDone();
-      this._scheduleQueueDrain();
+      if (this._fileExecutionIds.get(id) === execId) {
+        console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
+        this._runningProcesses.delete(id);
+        this._activeFileIds.delete(id);
+        this._abortControllers.delete(id);
+        this._lastProgressAt.delete(id);
+        this._fileExecutionIds.delete(id);
+        this._releaseWakeLockIfDone();
+        this._scheduleQueueDrain();
+      }
     }
   }
 
@@ -1057,6 +1065,12 @@ export class UploadQueueManager {
     startedAt: number
   ): Promise<"success" | "cancelled" | "error"> {
     return new Promise((resolve) => {
+      const wrappedResolve = (res: "success" | "cancelled" | "error") => {
+        this._activeResolvers.delete(id);
+        resolve(res);
+      };
+      this._activeResolvers.set(id, wrappedResolve);
+
       let tusAttempt = 0;
       const maxTusAttempts = 3;
 
@@ -1066,7 +1080,7 @@ export class UploadQueueManager {
         let initTimeout: ReturnType<typeof setTimeout> | null = null;
         try {
           if (!entry?.file) {
-            resolve("cancelled");
+            wrappedResolve("cancelled");
             return;
           }
 
@@ -1074,7 +1088,7 @@ export class UploadQueueManager {
           if (!supabaseUrl) {
             toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
             this.removeFile(id);
-            resolve("cancelled");
+            wrappedResolve("cancelled");
             return;
           }
 
@@ -1163,7 +1177,7 @@ export class UploadQueueManager {
               this._runPostUploadProcessing(id);
 
               this._tusInstances.delete(id);
-              resolve("success");
+              wrappedResolve("success");
             },
             onError: (err) => {
               initialized = true;
@@ -1192,7 +1206,7 @@ export class UploadQueueManager {
                 logUploadFailure(entry?.name ?? "unknown", classified.code, classified.userMessage, 0);
                 toast.error(`Non-retryable upload error for "${entry?.name ?? "unknown"}": ${classified.userMessage}. Please select the file again.`);
                 this.removeFile(id);
-                resolve("cancelled"); // Non-retryable — don't loop
+                wrappedResolve("cancelled"); // Non-retryable — don't loop
                 return;
               }
 
@@ -1211,7 +1225,7 @@ export class UploadQueueManager {
                 }, delay);
               } else {
                 this._patch(id, { error: classified.userMessage });
-                resolve("error");
+                wrappedResolve("error");
               }
             },
             onShouldRetry: (err, retryAttempt, options) => {
@@ -1270,7 +1284,7 @@ export class UploadQueueManager {
                   startTusWithRetry();
                 }, delay);
               } else {
-                resolve("error");
+                wrappedResolve("error");
               }
             }
           }, 15000);
@@ -1305,7 +1319,7 @@ export class UploadQueueManager {
               startTusWithRetry();
             }, delay);
           } else {
-            resolve("error");
+            wrappedResolve("error");
           }
         }
       };
@@ -1334,9 +1348,9 @@ export class UploadQueueManager {
           console.warn(
             `[QueueManager:Watchdog] Stuck preparing/initializing state detected for "${entry.name}" after ${elapsed}ms. Retrying.`
           );
-          this._abortFileUpload(id);
+          this._abortFileUpload(id, "error");
           this._patch(id, {
-            state: "retrying",
+            state: "preparing",
             error: "Initialization timed out — retrying…",
           });
           
@@ -1363,7 +1377,7 @@ export class UploadQueueManager {
         console.warn(
           `[QueueManager:Watchdog] Upload stalled for "${entry.name}" — ${elapsed}ms since last progress. Aborting for retry.`
         );
-        this._abortFileUpload(id);
+        this._abortFileUpload(id, "error");
         this._patch(id, {
           state: "retrying",
           error: "Upload stalled — reconnecting…",
@@ -1480,7 +1494,7 @@ export class UploadQueueManager {
   // ─── Helpers ──────────────────────────────────────────────────────────────────
 
   /** Abort the TUS upload and presign fetch for a file. */
-  private _abortFileUpload(id: string): void {
+  private _abortFileUpload(id: string, reason: "cancelled" | "error" = "cancelled"): void {
     const tusInstance = this._tusInstances.get(id);
     if (tusInstance) {
       tusInstance.abort(false).catch(() => {});
@@ -1491,6 +1505,12 @@ export class UploadQueueManager {
     if (controller) {
       controller.abort();
       this._abortControllers.delete(id);
+    }
+
+    const resolver = this._activeResolvers.get(id);
+    if (resolver) {
+      resolver(reason);
+      this._activeResolvers.delete(id);
     }
   }
 
@@ -1509,21 +1529,28 @@ export class UploadQueueManager {
   }
 
   /**
-   * Sleep for ms, but return early if the file is removed.
+   * Sleep for ms, but return early if the file is removed, paused, or cancelled.
    * Uses a simple Promise + setTimeout (no AbortController needed here).
    */
   private _sleep(ms: number, id?: string): Promise<void> {
     return new Promise((resolve) => {
       const t = setTimeout(resolve, ms);
       if (id) {
-        // If the file is removed while sleeping, resolve immediately
+        // If the file is removed, paused, or cancelled while sleeping, resolve immediately
         const check = setInterval(() => {
-          if (!this._files.has(id)) {
+          const entry = this._files.get(id);
+          if (
+            !entry ||
+            entry.state === "paused" ||
+            entry.state === "completed" ||
+            entry.state === "failed" ||
+            entry.state === "cancelled"
+          ) {
             clearTimeout(t);
             clearInterval(check);
             resolve();
           }
-        }, 200);
+        }, 100);
         setTimeout(() => clearInterval(check), ms + 100);
       }
     });

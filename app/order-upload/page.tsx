@@ -73,7 +73,7 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex items-center justify-between gap-4 shadow-2xl relative overflow-hidden"
+      className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-col sm:flex-row sm:items-center text-center sm:text-left justify-between gap-4 shadow-2xl relative overflow-hidden"
     >
       <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
         <Printer className="w-40 h-40" />
@@ -93,7 +93,7 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
 
       <Button
         onClick={onCheckout}
-        className="px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm"
+        className="w-full sm:w-auto px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm"
       >
         Checkout <ChevronRight className="w-4 h-4" />
       </Button>
@@ -114,6 +114,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   customerPhone,
   canRetry,
   onPlaceOrder,
+  showProgress,
 }: {
   totalAmount: number;
   filesCount: number;
@@ -126,71 +127,84 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   customerPhone: string;
   canRetry: boolean;
   onPlaceOrder: () => void;
+  showProgress: boolean;
 }) {
   return (
-    <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex items-center justify-between gap-4 shadow-2xl shadow-slate-950/20 relative overflow-hidden">
+    <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-col gap-5 sm:gap-6 shadow-2xl shadow-slate-950/20 relative overflow-hidden">
       <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
         <Printer className="w-40 h-40" />
       </div>
 
-      <div className="z-10 flex flex-col justify-center min-w-0">
-        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-          Total Print Bill
-        </span>
-        <p className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 leading-none">
-          {formatCurrency(totalAmount)}
-        </p>
-        <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold mt-1.5 truncate">
-          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} print {totalPages === 1 ? "sheet" : "sheets"}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center text-center sm:text-left justify-between gap-4 z-10">
+        <div className="flex flex-col justify-center min-w-0">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+            Total Print Bill
+          </span>
+          <p className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 leading-none">
+            {formatCurrency(totalAmount)}
+          </p>
+          <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold mt-1.5 truncate">
+            {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} print {totalPages === 1 ? "sheet" : "sheets"}
+          </p>
+        </div>
+
+        <Button
+          id="place-order-btn"
+          onClick={onPlaceOrder}
+          disabled={
+            orderStatus === "saving" ||
+            isOffline ||
+            !customerName ||
+            customerName.trim().length < 3 ||
+            customerPhone.length < 10
+          }
+          className={`w-full sm:w-auto px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
+            canRetry
+              ? "bg-amber-500 hover:bg-amber-600 text-white"
+              : "bg-emerald-500 hover:bg-emerald-600 text-white"
+          }`}
+        >
+          {orderStatus === "success" ? (
+            <>
+              <Loader2 className="animate-spin w-4 h-4" />
+              Redirecting…
+            </>
+          ) : uploadPhase === "compressing" ? (
+            <>
+              <Loader2 className="animate-spin w-4 h-4" />
+              Compressing…
+            </>
+          ) : uploadPhase === "uploading" ? (
+            <>
+              <Loader2 className="animate-spin w-4 h-4" />
+              Uploading ({overallUploadPercent}%)…
+            </>
+          ) : orderStatus === "saving" ? (
+            <>
+              <Loader2 className="animate-spin w-4 h-4" />
+              Finalizing…
+            </>
+          ) : orderStatus === "failed" ? (
+            <>
+              <RefreshCw className="w-4 h-4" /> Retry
+            </>
+          ) : (
+            <>
+              Place Order <ChevronRight className="w-4 h-4" />
+            </>
+          )}
+        </Button>
       </div>
 
-      <Button
-        id="place-order-btn"
-        onClick={onPlaceOrder}
-        disabled={
-          orderStatus === "saving" ||
-          isOffline ||
-          !customerName ||
-          customerName.trim().length < 3 ||
-          customerPhone.length < 10
-        }
-        className={`px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
-          canRetry
-            ? "bg-amber-500 hover:bg-amber-600 text-white"
-            : "bg-emerald-500 hover:bg-emerald-600 text-white"
-        }`}
-      >
-        {orderStatus === "success" ? (
-          <>
-            <Loader2 className="animate-spin w-4 h-4" />
-            Redirecting…
-          </>
-        ) : uploadPhase === "compressing" ? (
-          <>
-            <Loader2 className="animate-spin w-4 h-4" />
-            Compressing…
-          </>
-        ) : uploadPhase === "uploading" ? (
-          <>
-            <Loader2 className="animate-spin w-4 h-4" />
-            Uploading ({overallUploadPercent}%)…
-          </>
-        ) : orderStatus === "saving" ? (
-          <>
-            <Loader2 className="animate-spin w-4 h-4" />
-            Finalizing…
-          </>
-        ) : orderStatus === "failed" ? (
-          <>
-            <RefreshCw className="w-4 h-4" /> Retry
-          </>
-        ) : (
-          <>
-            Place Order <ChevronRight className="w-4 h-4" />
-          </>
-        )}
-      </Button>
+      {showProgress && (
+        <div className="border-t border-slate-800/80 pt-5 mt-1 z-10">
+          <UploadProgressBar
+            phase={uploadPhase}
+            uploadPercent={overallUploadPercent}
+            fileCount={filesCount}
+          />
+        </div>
+      )}
     </div>
   );
 });
@@ -844,25 +858,7 @@ function OrderUploadPageInner() {
                 )}
               </AnimatePresence>
 
-              {/* Progress Bar (during submission) */}
-              <AnimatePresence>
-                {isSubmitting && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"
-                  >
-                    <UploadProgressBar
-                      phase={uploadPhase}
-                      uploadPercent={overallUploadPercent}
-                      fileCount={files.length}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Checkout Bar */}
+              {/* Checkout Bar with integrated Progress Bar */}
               <CheckoutBarCard
                 totalAmount={totalAmount}
                 filesCount={files.length}
@@ -875,6 +871,7 @@ function OrderUploadPageInner() {
                 customerPhone={customerPhone}
                 canRetry={canRetry}
                 onPlaceOrder={handlePlaceOrder}
+                showProgress={isSubmitting}
               />
 
               {/* Help Support */}
