@@ -958,8 +958,8 @@ export class UploadQueueManager {
       const maxTusAttempts = 3;
 
       const startTusWithRetry = () => {
+        const entry = this._files.get(id);
         try {
-          const entry = this._files.get(id);
           if (!entry?.file) {
             resolve("cancelled");
             return;
@@ -1063,16 +1063,16 @@ export class UploadQueueManager {
 
               // Log error according to initialization wrapper expectations (Point 8)
               console.error("UPLOAD_INIT_FAILED", {
-                fileName: entry.file!.name,
-                fileSize: entry.file!.size,
+                fileName: entry?.file?.name ?? "unknown",
+                fileSize: entry?.file?.size ?? 0,
                 online: typeof navigator !== "undefined" ? navigator.onLine : true,
                 userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
                 error: err,
               });
 
               if (!classified.retryable) {
-                logUploadFailure(entry.name, classified.code, classified.userMessage, 0);
-                toast.error(`Non-retryable upload error for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
+                logUploadFailure(entry?.name ?? "unknown", classified.code, classified.userMessage, 0);
+                toast.error(`Non-retryable upload error for "${entry?.name ?? "unknown"}": ${classified.userMessage}. Please select the file again.`);
                 this.removeFile(id);
                 resolve("cancelled"); // Non-retryable — don't loop
                 return;
@@ -1105,21 +1105,24 @@ export class UploadQueueManager {
           this._tusInstances.set(id, upload);
 
           // Check for previous uploads to resume (Point 5)
-          upload.findPreviousUploads((err, previousUploads) => {
-            if (err) {
+          upload.findPreviousUploads()
+            .then((previousUploads) => {
+              if (previousUploads && previousUploads.length > 0) {
+                console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
+                upload.resumeFromPreviousUpload(previousUploads[0]);
+              }
+              console.log(`[QueueManager:Debug] Calling upload.start() for "${entry?.name}"`);
+              upload.start();
+            })
+            .catch((err: unknown) => {
               console.warn("[QueueManager] findPreviousUploads failed:", err);
-            } else if (previousUploads && previousUploads.length > 0) {
-              console.log(`[QueueManager] Found previous upload for ${entry.name}, resuming...`);
-              upload.resumeFromPreviousUpload(previousUploads[0]);
-            }
-
-            console.log(`[QueueManager:Debug] Calling upload.start() for "${entry.name}"`);
-            upload.start();
-          });
+              console.log(`[QueueManager:Debug] Calling upload.start() for "${entry?.name}"`);
+              upload.start();
+            });
         } catch (err) {
           console.error("UPLOAD_INIT_FAILED", {
-            fileName: entry.file!.name,
-            fileSize: entry.file!.size,
+            fileName: entry?.file?.name ?? "unknown",
+            fileSize: entry?.file?.size ?? 0,
             online: typeof navigator !== "undefined" ? navigator.onLine : true,
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
             error: err,
