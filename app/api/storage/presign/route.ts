@@ -52,6 +52,14 @@ export async function POST(request: Request) {
       orderId?: string;
     };
 
+    console.log("[presign] Creating upload URL request:", {
+      shopId,
+      fileName,
+      size: fileSize,
+      type: mimeType,
+      orderId,
+    });
+
     // 3. Validate shopId
     if (!shopId || typeof shopId !== "string") {
       return NextResponse.json(
@@ -80,7 +88,7 @@ export async function POST(request: Request) {
           public: false,
           // image/webp added: client compressor converts large PNG/JPG → WebP before upload
           allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"],
-          fileSizeLimit: 25 * 1024 * 1024, // 25 MB
+          fileSizeLimit: 500 * 1024 * 1024, // Hardened 500 MB limit
         });
         if (updateError) {
           console.warn("[presign] Failed to update bucket configuration programmatically:", updateError.message);
@@ -144,9 +152,9 @@ export async function POST(request: Request) {
       .createSignedUploadUrl(storagePath, { upsert: true });
 
     if (signError || !signedData) {
-      console.error("[presign] Failed to create signed URL:", signError?.message);
+      console.error("[presign] Failed to create signed URL. error:", signError?.message, "errorDetails:", signError);
       return NextResponse.json(
-        { error: "Failed to create upload URL" },
+        { error: "Failed to create upload URL", details: signError?.message },
         { status: 500 }
       );
     }

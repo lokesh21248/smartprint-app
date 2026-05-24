@@ -514,6 +514,9 @@ export class UploadQueueManager {
    * ALWAYS removes from _activeFileIds in finally.
    */
   private async _processFile(id: string): Promise<void> {
+    const entry = this._files.get(id);
+    if (!entry || entry.state === "completed" || entry.state === "failed") return;
+
     const startedAt = Date.now();
     let attempt = 0;
 
@@ -586,17 +589,14 @@ export class UploadQueueManager {
         attempt++;
 
         if (attempt > MAX_RETRIES) {
-          const curEntry = this._files.get(id);
           logUploadFailure(
             entry.name,
             "MAX_RETRIES_EXCEEDED",
             "Upload failed after maximum retries.",
             attempt
           );
-          this._patch(id, {
-            state: "failed",
-            error: curEntry?.error ?? "Upload failed after multiple retries. Tap Retry.",
-          });
+          toast.error(`Upload failed for "${entry.name}" after ${MAX_RETRIES} attempts. Please select the file again.`);
+          this.removeFile(id);
           return;
         }
 
@@ -615,13 +615,11 @@ export class UploadQueueManager {
     } catch (err) {
       // Catch-all — should not normally fire since all paths are handled above
       const entry = this._files.get(id);
-      if (entry && entry.state !== "completed" && entry.state !== "failed") {
+      if (entry && entry.state !== "completed") {
         const classified = classifyUploadError(err, "general");
-        this._patch(id, {
-          state: "failed",
-          error: classified.userMessage,
-        });
         logUploadFailure(entry.name, classified.code, classified.userMessage, attempt);
+        toast.error(`Upload failed for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
+        this.removeFile(id);
       }
     } finally {
       // ── CRITICAL: ALWAYS release the active slot ──────────────────────────────
@@ -646,10 +644,8 @@ export class UploadQueueManager {
     if (!fileToUpload) {
       const dbFile = await indexedDbStore.getFile(id);
       if (!dbFile) {
-        this._patch(id, {
-          state: "failed",
-          error: "Device revoked file access. Please remove and re-add this file.",
-        });
+        toast.error(`Device revoked file access for "${entry.name}". Please select the file again.`);
+        this.removeFile(id);
         return false;
       }
       fileToUpload = dbFile;
@@ -808,10 +804,8 @@ export class UploadQueueManager {
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       if (!supabaseUrl) {
-        this._patch(id, {
-          state: "failed",
-          error: "Storage configuration error. Please contact support.",
-        });
+        toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
+        this.removeFile(id);
         resolve("cancelled");
         return;
       }
@@ -900,11 +894,9 @@ export class UploadQueueManager {
           const classified = classifyUploadError(err, "tus");
 
           if (!classified.retryable) {
-            this._patch(id, {
-              state: "failed",
-              error: classified.userMessage,
-            });
             logUploadFailure(entry.name, classified.code, classified.userMessage, 0);
+            toast.error(`Non-retryable upload error for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
+            this.removeFile(id);
             resolve("cancelled"); // Non-retryable — don't loop
             return;
           }
