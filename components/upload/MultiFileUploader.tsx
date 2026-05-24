@@ -33,7 +33,6 @@ import {
   WifiOff,
   X,
   Upload,
-  Zap,
   Clock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -89,7 +88,7 @@ const MAX_FILES = 50; // Hardened 50 files limit
 
 export const MultiFileUploader = memo(
   forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
-    ({ files, onChange, shopId, orderId, disabled }, ref) => {
+    ({ onChange, shopId, orderId, disabled }, ref) => {
     // ── Upload queue ──────────────────────────────────────────────────────────
     const {
       files: queueFiles,
@@ -101,7 +100,6 @@ export const MultiFileUploader = memo(
       retryAll,
       updateConfig,
       reorder,
-      uploadAll,
       clearSession,
       managerRef,
     } = useUploadQueue({ shopId, orderId, disabled });
@@ -383,18 +381,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  const formatSpeed = (bytesPerSec: number) => {
-    if (bytesPerSec <= 0) return "";
-    if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
-    if (bytesPerSec >= 1024) return `${Math.round(bytesPerSec / 1024)} KB/s`;
-    return `${bytesPerSec} B/s`;
-  };
 
-  const formatEta = (secs: number) => {
-    if (secs <= 0) return "";
-    if (secs < 60) return `~${secs}s`;
-    return `~${Math.ceil(secs / 60)}m`;
-  };
 
   // Determine border / shadow style based on status
   const cardStyle = (() => {

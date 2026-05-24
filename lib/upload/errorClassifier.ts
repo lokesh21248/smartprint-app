@@ -36,7 +36,23 @@ export type UploadErrorCode =
   | "BROWSER_SUSPENDED"
   | "CHUNK_FAILED"
   | "CONNECTION_LOST"
+  | "UPLOAD_INIT_FAILED"
+  | "UPLOAD_URL_FAILED"
+  | "FILE_VALIDATION_FAILED"
+  | "PDF_PARSE_FAILED"
+  | "IMAGE_PARSE_FAILED"
+  | "NETWORK_TIMEOUT"
+  | "ANDROID_FILE_HYDRATION_FAILED"
   | "UNKNOWN";
+
+export class StructuredUploadError extends Error {
+  code: UploadErrorCode;
+  constructor(code: UploadErrorCode, message: string) {
+    super(message);
+    this.name = "StructuredUploadError";
+    this.code = code;
+  }
+}
 
 export interface ClassifiedError {
   code: UploadErrorCode;
@@ -176,6 +192,15 @@ export function classifyUploadError(
   error: unknown,
   context: "presign" | "tus" | "compress" | "general" = "general"
 ): ClassifiedError {
+  // Handle custom StructuredUploadError
+  if (error instanceof StructuredUploadError) {
+    return {
+      code: error.code,
+      userMessage: error.message,
+      retryable: error.code !== "FILE_VALIDATION_FAILED" && error.code !== "ANDROID_FILE_HYDRATION_FAILED",
+    };
+  }
+
   // ── Cancelled (AbortError) ────────────────────────────────────────────────
   if (error instanceof DOMException && error.name === "AbortError") {
     return {
@@ -358,6 +383,13 @@ export function errorCodeLabel(code: UploadErrorCode): string {
     BROWSER_SUSPENDED: "Mobile Browser Suspended Upload",
     CHUNK_FAILED: "Chunk Upload Failed",
     CONNECTION_LOST: "Connection Lost",
+    UPLOAD_INIT_FAILED: "Upload Initialization Failed",
+    UPLOAD_URL_FAILED: "Signed URL Generation Failed",
+    FILE_VALIDATION_FAILED: "File Validation Failed",
+    PDF_PARSE_FAILED: "PDF Parse Failed",
+    IMAGE_PARSE_FAILED: "Image Parse Failed",
+    NETWORK_TIMEOUT: "Network Timeout",
+    ANDROID_FILE_HYDRATION_FAILED: "Android File Hydration Failed",
     UNKNOWN: "Unknown",
   };
   return labels[code] ?? code;

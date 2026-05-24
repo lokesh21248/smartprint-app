@@ -8,20 +8,18 @@ import {
   Store, 
   Zap, 
   ShieldCheck,
-  ChevronRight,
   MapPin,
   Smartphone,
   Sparkles,
   ArrowRight,
-  Shield,
-  FileDown
+  Shield
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 import { formatCurrency } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 interface ShopDisplay {
   id?: string;

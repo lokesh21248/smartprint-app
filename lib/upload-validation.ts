@@ -89,30 +89,32 @@ export function validateUploadRequest(params: {
   const { fileName, fileSize, mimeType } = params;
 
   // 1. Required fields
-  if (!fileName || !fileSize || !mimeType) {
+  if (!fileName || fileSize === undefined || fileSize === null) {
     return {
       valid: false,
-      error: "Missing required fields: fileName, fileSize, mimeType",
+      error: "Missing required fields: fileName, fileSize",
       statusCode: 400,
     };
   }
 
-  // Normalize reported MIME type based on file extension (Fix Android Chrome screenshot / generic binary uploads)
-  let mimeTypeNormalized = mimeType.toLowerCase();
+  // Normalize reported MIME type based on file extension (Fix Android Chrome screenshot / generic binary uploads / missing mimeType)
   const parts = fileName.split(".");
   const ext = parts.length >= 2 ? parts[parts.length - 1].toLowerCase() : "";
 
+  let mimeTypeNormalized = (mimeType || "").toLowerCase();
+
   if (
+    mimeTypeNormalized === "" ||
     mimeTypeNormalized === "application/octet-stream" ||
     mimeTypeNormalized === "binary/octet-stream" ||
     mimeTypeNormalized === "image/pjpeg" ||
-    mimeTypeNormalized === "image/jpg" ||
-    mimeTypeNormalized === ""
+    mimeTypeNormalized === "image/jpg"
   ) {
     if (ext === "pdf") mimeTypeNormalized = "application/pdf";
     else if (ext === "png") mimeTypeNormalized = "image/png";
     else if (ext === "webp") mimeTypeNormalized = "image/webp";
     else if (ext === "jpg" || ext === "jpeg") mimeTypeNormalized = "image/jpeg";
+    else mimeTypeNormalized = "application/octet-stream";
   }
 
   // 2. MIME type check

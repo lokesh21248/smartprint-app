@@ -2,7 +2,7 @@
 
 import "filepond/dist/filepond.min.css";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useRef, useCallback } from "react";
 import { FilePond, registerPlugin } from "react-filepond";
 import type { FilePond as FilePondInstance } from "react-filepond";
 import type { FilePondFile } from "filepond";
@@ -80,7 +80,7 @@ export function MultiFileDropzone({ onFilesSelected, disabled = false }: MultiFi
   }, []);
 
   const handleAddFile = useCallback(
-    (error: any, item: FilePondFile) => {
+    (error: unknown, item: FilePondFile) => {
       if (error) return;
       const nativeFile = item.file as unknown as File;
       if (nativeFile) {

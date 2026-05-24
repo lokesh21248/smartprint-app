@@ -8,6 +8,9 @@
  * @module lib/upload/fileValidation
  */
 
+import { StructuredUploadError } from "./errorClassifier";
+
+
 // ─── Constants (must match lib/upload-validation.ts) ─────────────────────────
 
 /** Hard cap: 25 MB — matches Supabase Storage limit and presign API. */
@@ -148,4 +151,91 @@ export function isPdf(file: File): boolean {
 /** Returns true if a file is an image. */
 export function isImage(file: File): boolean {
   return file.type.startsWith("image/");
+}
+
+/**
+ * Advanced binary validation for PDF and image upload files.
+ * Verifies readable blob, binary integrity (magic bytes for PDFs, image readability),
+ * supported extensions, and hydrated size.
+ */
+export async function validateUploadFile(file: File): Promise<void> {
+  if (!file) {
+    throw new StructuredUploadError("FILE_VALIDATION_FAILED", "No file provided.");
+  }
+
+  // 1. Check size
+  if (file.size <= 0) {
+    throw new StructuredUploadError("FILE_VALIDATION_FAILED", "Empty file detected (0 bytes).");
+  }
+
+  const MAX_SIZE = 500 * 1024 * 1024; // 500 MB
+  if (file.size > MAX_SIZE) {
+    throw new StructuredUploadError("FILE_VALIDATION_FAILED", `File too large. Maximum size is 500 MB.`);
+  }
+
+  // 2. Check extension
+  const parts = file.name.split(".");
+  const ext = parts.length >= 2 ? parts[parts.length - 1].toLowerCase() : "";
+  const allowedExts = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
+  if (!allowedExts.has(ext)) {
+    throw new StructuredUploadError("FILE_VALIDATION_FAILED", `File extension ".${ext}" is not supported. Upload a PDF, PNG, or JPG.`);
+  }
+
+  // 3. Verify readable blob
+  try {
+    const chunk = await file.slice(0, 1024).arrayBuffer();
+    if (chunk.byteLength === 0) {
+      throw new Error("Zero byte read");
+    }
+  } catch {
+    throw new StructuredUploadError("FILE_VALIDATION_FAILED", "File is unreadable. Please check permissions or re-select.");
+  }
+
+  // 4. Actual binary integrity
+  const isPdfFile = ext === "pdf";
+  if (isPdfFile) {
+    // Check %PDF magic bytes within the first 1024 bytes (to handle leading garbage)
+    try {
+      const headerBlob = file.slice(0, 1024);
+      const buffer = await headerBlob.arrayBuffer();
+      const arr = new Uint8Array(buffer);
+      const arrString = Array.from(arr).map(x => String.fromCharCode(x)).join("");
+      if (!arrString.includes("%PDF")) {
+        throw new Error("Invalid PDF header");
+      }
+    } catch {
+      throw new StructuredUploadError("PDF_PARSE_FAILED", "The file is not a valid PDF document.");
+    }
+  } else {
+    // Verify image readability
+    let isValidImage = true;
+    if (typeof window !== "undefined") {
+      try {
+        if (typeof window.createImageBitmap !== "undefined") {
+          const bitmap = await window.createImageBitmap(file);
+          bitmap.close();
+        } else {
+          // fallback
+          await new Promise<void>((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(url);
+              reject(new Error("Image decode failed"));
+            };
+            img.src = url;
+          });
+        }
+      } catch {
+        isValidImage = false;
+      }
+    }
+    if (!isValidImage) {
+      console.warn("[validateUploadFile] Image decode failed, but proceeding anyway to prevent false corruption rejection.", file.name);
+    }
+  }
 }

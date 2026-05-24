@@ -16,7 +16,7 @@ export async function getServerRole(): Promise<AppUserRole | null> {
   if (!userId) return null;
 
   // 1. Clerk Admin Check
-  const clerkRole = String((authObj.sessionClaims?.metadata as any)?.role || "").toLowerCase();
+  const clerkRole = String((authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role || "").toLowerCase();
   if (clerkRole === "admin") {
     return "admin";
   }

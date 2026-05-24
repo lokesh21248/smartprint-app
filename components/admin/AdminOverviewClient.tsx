@@ -12,7 +12,6 @@ import {
   ArrowUpRight,
   ArrowDownRight
 } from "lucide-react";
-import { Order } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 
 interface AdminOverviewClientProps {

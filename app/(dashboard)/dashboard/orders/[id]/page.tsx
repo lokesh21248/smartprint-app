@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { auth } from "@clerk/nextjs/server";
 import type { Order } from "@/types";

@@ -13,11 +13,9 @@ import {
   ChevronRight,
   Phone,
   ArrowLeft,
-  X,
   WifiOff,
   RefreshCw,
   AlertCircle,
-  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -209,7 +207,7 @@ function OrderUploadPageInner() {
   const [isLoadingShop, setIsLoadingShop] = useState(true);
   const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [uploaderResetKey, setUploaderResetKey] = useState(() => {
+  const [uploaderResetKey] = useState(() => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
       return crypto.randomUUID();
     }
@@ -374,11 +372,7 @@ function OrderUploadPageInner() {
       .reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
   }, [files]);
 
-  const totalCopies = useMemo(() => {
-    return files
-      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
-      .reduce((sum, f) => sum + f.copies, 0);
-  }, [files]);
+
 
   // Dynamic overall upload percentage based on files sizes & progress
   const overallUploadPercent = useMemo(() => {

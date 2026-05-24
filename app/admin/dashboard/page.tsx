@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminOverviewClient } from "@/components/admin/AdminOverviewClient";
-import type { Order } from "@/types";
 
 export const metadata: Metadata = { title: "Overview | Admin" };
 
