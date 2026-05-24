@@ -62,7 +62,8 @@ export interface UseUploadQueueReturn {
   managerRef: React.MutableRefObject<UploadQueueManager | null>;
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// Module-level cache to survive React StrictMode double mounts
+const managerCache = new Map<string, UploadQueueManager>();
 
 export function useUploadQueue({
   shopId,
@@ -84,8 +85,12 @@ export function useUploadQueue({
   useEffect(() => {
     if (disabled) return;
 
-    // Create manager
-    const manager = new UploadQueueManager({ shopId, orderId });
+    const cacheKey = `${shopId}:${orderId}`;
+    let manager = managerCache.get(cacheKey);
+    if (!manager) {
+      manager = new UploadQueueManager({ shopId, orderId });
+      managerCache.set(cacheKey, manager);
+    }
     managerRef.current = manager;
 
     // Subscribe to all queue events → update React state
@@ -119,15 +124,22 @@ export function useUploadQueue({
       }
     });
 
-    // Rehydration disabled to guarantee the uploader always starts with a clean, empty state on refresh or failed uploads
+    // Sync files from manager if reusing cached instance
+    setFiles(manager.getFiles());
+
     if (!rehydratedRef.current) {
       rehydratedRef.current = true;
     }
 
     return () => {
       unsub();
-      manager.destroy();
-      managerRef.current = null;
+      // Wait to see if another component mounts and subscribes before destroying
+      setTimeout(() => {
+        if (manager && manager.getListenerCount() === 0) {
+          manager.destroy();
+          managerCache.delete(cacheKey);
+        }
+      }, 1500);
     };
     // shopId + orderId are stable for the lifetime of the upload session
     // eslint-disable-next-line react-hooks/exhaustive-deps

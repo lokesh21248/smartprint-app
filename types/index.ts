@@ -117,10 +117,12 @@ export type UploadStatus =
   | "idle"
   | "queued"
   | "preparing"
+  | "initializing"
   | "uploading"
   | "processing"
   | "success"
   | "failed"
+  | "error"
   | "cancelled"
   | "retrying"
   | "paused";

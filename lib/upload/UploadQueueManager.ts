@@ -65,9 +65,29 @@ const WATCHDOG_STALL_MS = 20_000;
 /** How often the watchdog polls. */
 const WATCHDOG_INTERVAL_MS = 5_000;
 
-/** Chunk size: 1MB on mobile, 5MB on desktop. */
-function getChunkSize(isMobile: boolean) {
-  return isMobile ? 1 * 1024 * 1024 : 5 * 1024 * 1024;
+/** Chunk size optimization based on connection speed for weak mobile networks (Point 7) */
+function getChunkSize(isMobile: boolean): number {
+  if (!isMobile) return 5 * 1024 * 1024; // 5MB on desktop
+
+  if (typeof navigator !== "undefined") {
+    const nav = navigator as unknown as {
+      connection?: { effectiveType?: string };
+      mozConnection?: { effectiveType?: string };
+      webkitConnection?: { effectiveType?: string };
+    };
+    const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
+    if (conn && conn.effectiveType) {
+      const type = conn.effectiveType;
+      console.log(`[QueueManager] Detected mobile network type: ${type}`);
+      if (type === "2g") {
+        return 256 * 1024; // 256KB on 2G
+      }
+      if (type === "3g") {
+        return 512 * 1024; // 512KB on 3G
+      }
+    }
+  }
+  return 1 * 1024 * 1024; // Default 1MB for 4G/WiFi
 }
 
 /** Concurrent uploads: 1 on mobile (ultra-stable, maximum reliability), 2 on desktop */
@@ -178,6 +198,7 @@ export class UploadQueueManager {
 
   // ── Files being actively processed (not yet resolved) ────────────────────────
   private _activeFileIds = new Set<string>();
+  private _runningProcesses = new Set<string>();
 
   // ── Cleanup refs ─────────────────────────────────────────────────────────────
   private _destroyed = false;
@@ -250,8 +271,14 @@ export class UploadQueueManager {
       if (this._destroyed) return;
 
       try {
+        // Immediately clone file before any async operations to prevent Android Chrome reference corruption (Point 2)
+        const clonedFile = new File([rawFile], rawFile.name, {
+          type: rawFile.type,
+          lastModified: rawFile.lastModified,
+        });
+
         // 2. Add Mobile File Hydration and Rebuilding Validation
-        const hydrated = await this._validateAndHydrateFile(rawFile);
+        const hydrated = await this._validateAndHydrateFile(clonedFile);
         
         // 3. Safe File Validation
         await validateUploadFile(hydrated);
@@ -576,6 +603,13 @@ export class UploadQueueManager {
   private async _processFile(id: string): Promise<void> {
     console.log(`[QueueManager:Debug] Starting _processFile for file ${id}`);
     
+    // Strict Lock Check: Prevent duplicate initialization of active slots (Point 3)
+    if (this._runningProcesses.has(id)) {
+      console.warn(`[QueueManager] Blocked duplicate processFile execution for ${id}`);
+      return;
+    }
+    this._runningProcesses.add(id);
+
     // Yield to the event loop/requestAnimationFrame to prevent UI thread blocking on mobile
     if (typeof window !== "undefined" && window.requestAnimationFrame) {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
@@ -733,6 +767,7 @@ export class UploadQueueManager {
       }
     } finally {
       console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
+      this._runningProcesses.delete(id);
       this._activeFileIds.delete(id);
       this._abortControllers.delete(id);
       this._lastProgressAt.delete(id);
@@ -845,11 +880,12 @@ export class UploadQueueManager {
     const entry = this._files.get(id);
     if (!entry || !entry.file) throw new Error("FILE_ACCESS_REVOKED");
 
-    // Point 4: Mobile Fetch Defense with AbortController and Timeout (15s)
+    // Point 4: Mobile Fetch Defense with AbortController and Timeout (60s on mobile, 15s on desktop)
+    const timeoutVal = this._isMobile ? 60000 : 15000;
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();
-    }, 15000);
+    }, timeoutVal);
 
     // Chain signals
     signal.addEventListener("abort", () => {
@@ -937,15 +973,31 @@ export class UploadQueueManager {
             return;
           }
 
-          const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+          const uploadEndpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+          if (!uploadEndpoint) {
+            throw new Error("Upload endpoint missing");
+          }
+
+          if (!token) {
+            throw new Error("Upload token is missing");
+          }
+
+          if (!storagePath) {
+            throw new Error("Storage path is missing");
+          }
+
+          const safeMimeType = this._getSafeMimeType(entry.file);
+          if (!safeMimeType) {
+            throw new Error("Invalid file MIME type detected");
+          }
 
           // Set watchdog baseline baseline immediately to prevent any startup race condition
           this._lastProgressAt.set(id, Date.now());
 
           console.log(`[QueueManager:Debug] Instantiating tus.Upload for "${entry.name}", attempt ${tusAttempt + 1}`);
           const upload = new tus.Upload(entry.file, {
-            endpoint,
-            retryDelays: [1000, 3000, 5000], // Handle minor chunk dropouts internally
+            endpoint: uploadEndpoint,
+            retryDelays: [0, 1000, 3000, 5000, 10000], // automatic retry system delays (Point 6)
             chunkSize: this._chunkSize,
             headers: {
               "x-signature": token,
@@ -954,11 +1006,11 @@ export class UploadQueueManager {
             metadata: {
               bucketName: "order-files",
               objectName: storagePath,
-              contentType: this._getSafeMimeType(entry.file),
+              contentType: safeMimeType,
               filename: encodeURIComponent(entry.file.name),
-              filetype: this._getSafeMimeType(entry.file),
+              filetype: safeMimeType,
             },
-            storeFingerprintForResuming: false, // Bypasses local storage to prevent mobile lockups
+            storeFingerprintForResuming: true, // enable resuming support (Point 5)
             // Bug 4 fix: unique fingerprint per upload slot prevents collisions
             fingerprint: (_file, opts) =>
               Promise.resolve(
@@ -1009,14 +1061,13 @@ export class UploadQueueManager {
 
               const classified = classifyUploadError(err, "tus");
 
-              console.error("UPLOAD_TUS_ERROR", {
-                filename: entry.file!.name,
-                size: entry.file!.size,
-                type: entry.file!.type,
-                mobile: this._isMobile,
+              // Log error according to initialization wrapper expectations (Point 8)
+              console.error("UPLOAD_INIT_FAILED", {
+                fileName: entry.file!.name,
+                fileSize: entry.file!.size,
+                online: typeof navigator !== "undefined" ? navigator.onLine : true,
                 userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
                 error: err,
-                tusAttempt: tusAttempt + 1,
               });
 
               if (!classified.retryable) {
@@ -1027,11 +1078,16 @@ export class UploadQueueManager {
                 return;
               }
 
+              // Automatic Retry System (Point 6)
+              this._patch(id, {
+                state: "retrying",
+                error: "Network unstable. Reconnecting upload...",
+              });
+
               tusAttempt++;
               if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
                 const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
                 console.warn(`[QueueManager] TUS startup failed, retrying in ${delay}ms...`, err);
-                this._patch(id, { error: `Reconnecting... (attempt ${tusAttempt}/${maxTusAttempts})` });
                 setTimeout(() => {
                   startTusWithRetry();
                 }, delay);
@@ -1048,11 +1104,32 @@ export class UploadQueueManager {
 
           this._tusInstances.set(id, upload);
 
-          // Start fresh — fingerprints were cleared before this call
-          console.log(`[QueueManager:Debug] Calling upload.start() for "${entry.name}"`);
-          upload.start();
+          // Check for previous uploads to resume (Point 5)
+          upload.findPreviousUploads((err, previousUploads) => {
+            if (err) {
+              console.warn("[QueueManager] findPreviousUploads failed:", err);
+            } else if (previousUploads && previousUploads.length > 0) {
+              console.log(`[QueueManager] Found previous upload for ${entry.name}, resuming...`);
+              upload.resumeFromPreviousUpload(previousUploads[0]);
+            }
+
+            console.log(`[QueueManager:Debug] Calling upload.start() for "${entry.name}"`);
+            upload.start();
+          });
         } catch (err) {
-          console.error(`[QueueManager:Debug] Error during tus.Upload initialization for "${id}":`, err);
+          console.error("UPLOAD_INIT_FAILED", {
+            fileName: entry.file!.name,
+            fileSize: entry.file!.size,
+            online: typeof navigator !== "undefined" ? navigator.onLine : true,
+            userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+            error: err,
+          });
+          
+          this._patch(id, {
+            state: "retrying",
+            error: "Network unstable. Reconnecting upload...",
+          });
+
           tusAttempt++;
           if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
             const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
@@ -1077,14 +1154,15 @@ export class UploadQueueManager {
     const now = Date.now();
 
     for (const [id, entry] of this._files) {
-      // Stuck preparing / requesting_url safety timeout of 20 seconds
+      // Stuck preparing / requesting_url safety timeout (70s on mobile to match 60s fetch limit, 25s on desktop)
       if ((entry.state === "preparing" || entry.state === "requesting_url") && this._activeFileIds.has(id)) {
         const activeTime = this._lastProgressAt.get(id) ?? now;
         if (!this._lastProgressAt.has(id)) {
           this._lastProgressAt.set(id, now);
         }
         const elapsed = now - activeTime;
-        if (elapsed > 20_000) {
+        const stuckLimit = this._isMobile ? 70_000 : 25_000;
+        if (elapsed > stuckLimit) {
           console.warn(
             `[QueueManager:Watchdog] Stuck preparing state detected for "${entry.name}" after ${elapsed}ms. Releasing slots.`
           );
@@ -1394,13 +1472,13 @@ export class UploadQueueManager {
     const statusMap: Record<FileState, UploadStatus> = {
       idle: "idle",
       preparing: "queued",
-      requesting_url: "preparing",
+      requesting_url: "initializing",
       uploading: "uploading",
       processing: "processing",
       retrying: "retrying",
       paused: "paused",
       completed: "success",
-      failed: "failed",
+      failed: "error",
       cancelled: "cancelled",
     };
 
@@ -1496,5 +1574,9 @@ export class UploadQueueManager {
     }
 
     return rebuiltFile;
+  }
+
+  getListenerCount(): number {
+    return this._listeners.size;
   }
 }

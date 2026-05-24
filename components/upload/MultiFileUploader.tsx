@@ -175,9 +175,9 @@ export const MultiFileUploader = memo(
 
     // ── Summary counts ────────────────────────────────────────────────────────
     const successCount = queueFiles.filter((f) => f.status === "success").length;
-    const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "cancelled").length;
+    const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "error" || f.status === "cancelled").length;
     const uploadingCount = queueFiles.filter((f) => f.status === "uploading" || f.status === "processing").length;
-    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing").length;
+    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing" || f.status === "initializing").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
 
     return (
@@ -359,6 +359,8 @@ const ReorderItemRow = memo(function ReorderItemRow({
     fileItem.status === "uploading" ||
     fileItem.status === "queued" ||
     fileItem.status === "preparing" ||
+    fileItem.status === "initializing" ||
+    fileItem.status === "retrying" ||
     fileItem.status === "processing";
 
   // Local object URL for image thumbnail
@@ -509,7 +511,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
           </div>
 
           {/* Config Controls (queued / preparing / failed states) */}
-          {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "idle" || fileItem.status === "failed" || fileItem.status === "cancelled") && (
+          {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing" || fileItem.status === "idle" || fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
             <div className="mt-3 pt-3 border-t border-slate-100/70 flex flex-wrap items-center gap-3">
               {/* Copies */}
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
@@ -645,11 +647,19 @@ const ReorderItemRow = memo(function ReorderItemRow({
                       </span>
                     </>
                   )}
-                  {(fileItem.status === "queued" || fileItem.status === "preparing") && (
+                  {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing") && (
                     <>
                       <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
                       <span className="text-slate-700">
-                        {fileItem.error ? fileItem.error : (fileItem.status === "preparing" ? "Preparing upload…" : "Queued…")}
+                        {fileItem.error ? fileItem.error : (fileItem.status === "initializing" ? "Preparing secure upload session..." : "Queued…")}
+                      </span>
+                    </>
+                  )}
+                  {fileItem.status === "retrying" && (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin shrink-0" />
+                      <span className="text-amber-700">
+                        {fileItem.error ? fileItem.error : "Retrying upload automatically…"}
                       </span>
                     </>
                   )}
@@ -688,7 +698,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
           )}
 
           {/* Failure Panel — exact reason + retry */}
-          {(fileItem.status === "failed" || fileItem.status === "cancelled") && (
+          {(fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -706,8 +716,8 @@ const ReorderItemRow = memo(function ReorderItemRow({
                 disabled={disabled}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-[10px] font-black text-rose-800 uppercase tracking-wider transition active:scale-95 disabled:opacity-50"
               >
-                <RefreshCw className="w-3 h-3 shrink-0" />
-                Retry file
+                <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                Retry Upload
               </button>
             </motion.div>
           )}

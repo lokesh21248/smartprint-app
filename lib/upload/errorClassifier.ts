@@ -344,7 +344,7 @@ export function classifyUploadError(
   if (context === "presign") {
     return {
       code: "PRESIGN_FAILED",
-      userMessage: "Failed to start upload. Please tap Retry.",
+      userMessage: "Network unstable. Reconnecting upload...",
       retryable: true,
     };
   }

@@ -238,7 +238,7 @@ function OrderUploadPageInner() {
 
   const uploadPhase = useMemo<UploadPhase>(() => {
     if (orderStatus === "success") return "success";
-    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "preparing")) return "uploading";
+    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "preparing" || f.status === "initializing")) return "uploading";
     if (orderStatus === "saving") return "saving";
     return "idle";
   }, [orderStatus, files]);
@@ -269,7 +269,7 @@ function OrderUploadPageInner() {
     };
     const onOnline = () => {
       setIsOffline(false);
-      const failedFiles = files.filter((f) => f.status === "failed" || f.status === "cancelled");
+      const failedFiles = files.filter((f) => f.status === "failed" || f.status === "error" || f.status === "cancelled");
       if (failedFiles.length > 0) {
         toast.success(`Back online! Auto-retrying ${failedFiles.length} failed upload${failedFiles.length > 1 ? "s" : ""}…`);
       } else {
@@ -357,7 +357,7 @@ function OrderUploadPageInner() {
   const totalAmount = useMemo(() => {
     if (!shop || files.length === 0) return 0;
     return files
-      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
+      .filter((f) => f.status !== "failed" && f.status !== "error" && f.status !== "cancelled")
       .reduce((sum, f) => {
         const rate = f.color
           ? (shop.price_color_per_page || 0)
@@ -368,7 +368,7 @@ function OrderUploadPageInner() {
 
   const totalPages = useMemo(() => {
     return files
-      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
+      .filter((f) => f.status !== "failed" && f.status !== "error" && f.status !== "cancelled")
       .reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
   }, [files]);
 
