@@ -57,6 +57,18 @@ import { toast } from "sonner";
 const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
 const MAX_RETRIES = 4;
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = 15000
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("INIT_TIMEOUT")), timeoutMs)
+    ),
+  ]) as Promise<T>;
+}
+
 
 
 /** TUS watchdog — if no progress event fires for this long, restart the upload. */
@@ -68,26 +80,7 @@ const WATCHDOG_INTERVAL_MS = 5_000;
 /** Chunk size optimization based on connection speed for weak mobile networks (Point 7) */
 function getChunkSize(isMobile: boolean): number {
   if (!isMobile) return 5 * 1024 * 1024; // 5MB on desktop
-
-  if (typeof navigator !== "undefined") {
-    const nav = navigator as unknown as {
-      connection?: { effectiveType?: string };
-      mozConnection?: { effectiveType?: string };
-      webkitConnection?: { effectiveType?: string };
-    };
-    const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
-    if (conn && conn.effectiveType) {
-      const type = conn.effectiveType;
-      console.log(`[QueueManager] Detected mobile network type: ${type}`);
-      if (type === "2g") {
-        return 256 * 1024; // 256KB on 2G
-      }
-      if (type === "3g") {
-        return 512 * 1024; // 512KB on 3G
-      }
-    }
-  }
-  return 1 * 1024 * 1024; // Default 1MB for 4G/WiFi
+  return 512 * 1024; // Always 512KB on mobile for max stability and network resilience (Fix 9)
 }
 
 /** Concurrent uploads: 1 on mobile (ultra-stable, maximum reliability), 2 on desktop */
@@ -106,6 +99,7 @@ function detectMobile(): boolean {
 type FileState =
   | "idle"
   | "preparing"
+  | "queued"
   | "requesting_url"
   | "uploading"
   | "processing"
@@ -575,10 +569,19 @@ export class UploadQueueManager {
       if (slotsAvailable <= 0) return;
 
       const preparingFiles = Array.from(this._files.values()).filter(
-        (f) => f.state === "preparing" && !this._activeFileIds.has(f.id)
+        (f) => (f.state === "preparing" || f.state === "queued") && !this._activeFileIds.has(f.id)
       );
 
       const toStart = preparingFiles.slice(0, slotsAvailable);
+      const toQueue = preparingFiles.slice(slotsAvailable);
+
+      // Transition excess files to queued state in UI
+      for (const entry of toQueue) {
+        if (entry.state === "preparing") {
+          this._patch(entry.id, { state: "queued" });
+        }
+      }
+
       console.log(`[QueueManager:Debug] _drainQueue: Starting ${toStart.length} file(s).`);
 
       for (const entry of toStart) {
@@ -606,6 +609,7 @@ export class UploadQueueManager {
     // Strict Lock Check: Prevent duplicate initialization of active slots (Point 3)
     if (this._runningProcesses.has(id)) {
       console.warn(`[QueueManager] Blocked duplicate processFile execution for ${id}`);
+      this._activeFileIds.delete(id);
       return;
     }
     this._runningProcesses.add(id);
@@ -676,10 +680,16 @@ export class UploadQueueManager {
         if (this._destroyed) return;
         if (!this._files.has(id)) return; // File was removed mid-upload
 
+        // Clean up any existing upload instance before starting a new retry attempt
+        this._abortFileUpload(id);
+
         const currentEntry = this._files.get(id)!;
 
-        // Check if manually cancelled
-        if (currentEntry.state === "failed" || currentEntry.state === "completed" || currentEntry.state === "cancelled") return;
+        // Check if manually cancelled or paused (Fix 11)
+        if (currentEntry.state === "paused" || currentEntry.state === "failed" || currentEntry.state === "completed" || currentEntry.state === "cancelled") {
+          console.log(`[QueueManager:Debug] Exiting _processFile loop for "${currentEntry.name}" due to state: ${currentEntry.state}`);
+          return;
+        }
 
         // ── Wait for network ────────────────────────────────────────────────────
         await this._waitForNetwork(id);
@@ -957,8 +967,10 @@ export class UploadQueueManager {
       let tusAttempt = 0;
       const maxTusAttempts = 3;
 
-      const startTusWithRetry = () => {
+      const startTusWithRetry = async () => {
         const entry = this._files.get(id);
+        let initialized = false;
+        let initTimeout: ReturnType<typeof setTimeout> | null = null;
         try {
           if (!entry?.file) {
             resolve("cancelled");
@@ -1017,11 +1029,15 @@ export class UploadQueueManager {
                 `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
               ),
             onBeforeRequest: () => {
+              initialized = true;
+              if (initTimeout) clearTimeout(initTimeout);
               // Refresh watchdog timer on every request
               this._lastProgressAt.set(id, Date.now());
               if (!navigator.onLine) logNetworkPause(entry.name);
             },
             onProgress: (bytesSent: number, bytesTotal: number) => {
+              initialized = true;
+              if (initTimeout) clearTimeout(initTimeout);
               const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
               logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
 
@@ -1035,6 +1051,8 @@ export class UploadQueueManager {
               });
             },
             onSuccess: () => {
+              initialized = true;
+              if (initTimeout) clearTimeout(initTimeout);
               const durationMs = Date.now() - startedAt;
               logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
 
@@ -1055,6 +1073,8 @@ export class UploadQueueManager {
               resolve("success");
             },
             onError: (err) => {
+              initialized = true;
+              if (initTimeout) clearTimeout(initTimeout);
               // abort(false) = close socket but preserve fingerprint for genuine resume
               upload.abort(false).catch(() => {});
               this._tusInstances.delete(id);
@@ -1062,11 +1082,16 @@ export class UploadQueueManager {
               const classified = classifyUploadError(err, "tus");
 
               // Log error according to initialization wrapper expectations (Point 8)
-              console.error("UPLOAD_INIT_FAILED", {
+              console.error("UPLOAD_INIT_FAILURE", {
+                fileId: id,
                 fileName: entry?.file?.name ?? "unknown",
                 fileSize: entry?.file?.size ?? 0,
+                status: "initializing",
                 online: typeof navigator !== "undefined" ? navigator.onLine : true,
+                connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
+                memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
                 userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+                timestamp: Date.now(),
                 error: err,
               });
 
@@ -1105,26 +1130,73 @@ export class UploadQueueManager {
           this._tusInstances.set(id, upload);
 
           // Check for previous uploads to resume (Point 5)
-          upload.findPreviousUploads()
-            .then((previousUploads) => {
-              if (previousUploads && previousUploads.length > 0) {
-                console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
-                upload.resumeFromPreviousUpload(previousUploads[0]);
+          try {
+            const previousUploads = await withTimeout(upload.findPreviousUploads(), 15000);
+            if (previousUploads && previousUploads.length > 0) {
+              console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
+              upload.resumeFromPreviousUpload(previousUploads[0]);
+            }
+          } catch (err: unknown) {
+            if (err instanceof Error && err.message === "INIT_TIMEOUT") {
+               console.error(`[QueueManager] findPreviousUploads timed out for ${entry?.name}. Retrying...`);
+               throw err; // throw to outer catch to trigger the retry logic
+            }
+            console.warn("[QueueManager] findPreviousUploads failed:", err);
+          }
+
+          // Set 15-second startup timeout (Fix 1, 4)
+          initTimeout = setTimeout(() => {
+            if (!initialized) {
+              console.error(`[QueueManager] TUS upload startup timed out for ${entry.name}`);
+              upload.abort(true).catch(() => {});
+              this._tusInstances.delete(id);
+              
+              const err = new Error("INIT_TIMEOUT");
+              console.error("UPLOAD_INIT_FAILURE", {
+                fileId: id,
+                fileName: entry.name,
+                fileSize: entry.size,
+                status: "initializing",
+                online: typeof navigator !== "undefined" ? navigator.onLine : true,
+                connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
+                memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
+                userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+                timestamp: Date.now(),
+                error: err,
+              });
+
+              this._patch(id, {
+                state: "retrying",
+                error: "Network unstable. Reconnecting upload...",
+              });
+
+              tusAttempt++;
+              if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
+                const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
+                setTimeout(() => {
+                  startTusWithRetry();
+                }, delay);
+              } else {
+                resolve("error");
               }
-              console.log(`[QueueManager:Debug] Calling upload.start() for "${entry?.name}"`);
-              upload.start();
-            })
-            .catch((err: unknown) => {
-              console.warn("[QueueManager] findPreviousUploads failed:", err);
-              console.log(`[QueueManager:Debug] Calling upload.start() for "${entry?.name}"`);
-              upload.start();
-            });
+            }
+          }, 15000);
+
+          console.log(`[QueueManager:Debug] Calling upload.start() for "${entry?.name}"`);
+          upload.start();
         } catch (err) {
-          console.error("UPLOAD_INIT_FAILED", {
+          initialized = true;
+          if (initTimeout) clearTimeout(initTimeout);
+          console.error("UPLOAD_INIT_FAILURE", {
+            fileId: id,
             fileName: entry?.file?.name ?? "unknown",
             fileSize: entry?.file?.size ?? 0,
+            status: "initializing",
             online: typeof navigator !== "undefined" ? navigator.onLine : true,
+            connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
+            memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+            timestamp: Date.now(),
             error: err,
           });
           
@@ -1157,21 +1229,27 @@ export class UploadQueueManager {
     const now = Date.now();
 
     for (const [id, entry] of this._files) {
-      // Stuck preparing / requesting_url safety timeout (70s on mobile to match 60s fetch limit, 25s on desktop)
-      if ((entry.state === "preparing" || entry.state === "requesting_url") && this._activeFileIds.has(id)) {
+      // Stuck preparing / queued / requesting_url safety timeout (20s limit, Fix 10)
+      if ((entry.state === "preparing" || entry.state === "queued" || entry.state === "requesting_url") && this._activeFileIds.has(id)) {
         const activeTime = this._lastProgressAt.get(id) ?? now;
         if (!this._lastProgressAt.has(id)) {
           this._lastProgressAt.set(id, now);
         }
         const elapsed = now - activeTime;
-        const stuckLimit = this._isMobile ? 70_000 : 25_000;
+        const stuckLimit = 20_000;
         if (elapsed > stuckLimit) {
           console.warn(
-            `[QueueManager:Watchdog] Stuck preparing state detected for "${entry.name}" after ${elapsed}ms. Releasing slots.`
+            `[QueueManager:Watchdog] Stuck preparing/initializing state detected for "${entry.name}" after ${elapsed}ms. Retrying.`
           );
-          toast.error(`Preparing upload timed out for "${entry.name}". Please select the file again.`);
           this._abortFileUpload(id);
-          this.removeFile(id);
+          this._patch(id, {
+            state: "retrying",
+            error: "Initialization timed out — retrying…",
+          });
+          
+          this._activeFileIds.delete(id);
+          this._runningProcesses.delete(id);
+          this._scheduleQueueDrain();
           continue;
         }
       }
@@ -1474,7 +1552,8 @@ export class UploadQueueManager {
   private _toUploadedFile = (entry: FileEntry): UploadedFile => {
     const statusMap: Record<FileState, UploadStatus> = {
       idle: "idle",
-      preparing: "queued",
+      preparing: "preparing",
+      queued: "queued",
       requesting_url: "initializing",
       uploading: "uploading",
       processing: "processing",

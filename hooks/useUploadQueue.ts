@@ -147,10 +147,15 @@ export function useUploadQueue({
 
   // ─── Stable callbacks ─────────────────────────────────────────────────────
 
+  const initializedRef = useRef(new Set<string>());
+
   const addFiles = useCallback(
     (rawFiles: File[]) => {
       if (disabled) return;
-      managerRef.current?.addFiles(rawFiles);
+      const newFiles = rawFiles.filter(f => !initializedRef.current.has(f.name + f.size));
+      if (newFiles.length === 0) return;
+      newFiles.forEach(f => initializedRef.current.add(f.name + f.size));
+      managerRef.current?.addFiles(newFiles);
     },
     [disabled]
   );
@@ -158,9 +163,13 @@ export function useUploadQueue({
   const removeFile = useCallback(
     (id: string) => {
       if (disabled) return;
+      const fileToRemove = files.find(f => f.id === id);
+      if (fileToRemove) {
+        initializedRef.current.delete(fileToRemove.name + fileToRemove.size);
+      }
       managerRef.current?.removeFile(id);
     },
-    [disabled]
+    [disabled, files]
   );
 
   const cancelUpload = useCallback(
@@ -208,14 +217,17 @@ export function useUploadQueue({
   }, []);
 
   const clearSession = useCallback(() => {
+    initializedRef.current.clear();
     managerRef.current?.clearSession();
   }, []);
 
   const cancelAll = useCallback(() => {
+    initializedRef.current.clear();
     managerRef.current?.cancelAll();
   }, []);
 
   const clear = useCallback(() => {
+    initializedRef.current.clear();
     managerRef.current?.clear();
   }, []);
 
