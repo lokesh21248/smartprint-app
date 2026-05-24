@@ -760,7 +760,7 @@ export class UploadQueueManager {
 
         this._patch(id, {
           state: "retrying",
-          error: `Retrying… (attempt ${attempt}/${MAX_RETRIES})`,
+          error: `Connection interrupted. Reconnecting upload… (Attempt ${attempt}/${MAX_RETRIES})`,
         });
 
         await this._sleep(delay, id);
@@ -769,11 +769,13 @@ export class UploadQueueManager {
     } catch (err) {
       console.error(`[QueueManager] Exception in _processFile for file ${id}:`, err);
       const entry = this._files.get(id);
-      if (entry && entry.state !== "completed") {
+      if (entry && entry.state !== "completed" && entry.state !== "cancelled") {
         const classified = classifyUploadError(err, "general");
         logUploadFailure(entry.name, classified.code, classified.userMessage, attempt);
-        toast.error(`Upload failed for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
-        this.removeFile(id);
+        this._patch(id, {
+          state: "failed",
+          error: `Upload failed: ${classified.userMessage}.`,
+        });
       }
     } finally {
       console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
@@ -803,7 +805,7 @@ export class UploadQueueManager {
     const entry = this._files.get(id);
     if (!entry || !entry.file) return null;
 
-    const retries = 3;
+    const retries = 5;
     const timeoutMs = this._isMobile ? 60_000 : 15_000;
     let lastError: unknown = null;
 
@@ -846,20 +848,40 @@ export class UploadQueueManager {
           return null; // Upload was cancelled
         }
 
-        console.error("UPLOAD_INIT_ERROR", {
-          filename: entry.file.name,
-          size: entry.file.size,
-          type: entry.file.type,
-          lastModified: entry.file.lastModified,
-          mobile: this._isMobile,
+        console.error("UPLOAD_INIT_FAILURE", {
+          fileId: id,
+          fileName: entry.file.name,
+          fileSize: entry.file.size,
+          status: this._toUploadedFile(entry).status,
+          online: typeof navigator !== "undefined" ? navigator.onLine : true,
+          connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
+          memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
-          attempt: i + 1,
+          timestamp: Date.now(),
           error: err,
         });
 
+        // Transient network error check
+        const isNetworkError =
+          err instanceof TypeError ||
+          (err instanceof Error && (
+            err.message?.toLowerCase().includes("network") ||
+            err.message?.toLowerCase().includes("fetch") ||
+            err.message?.toLowerCase().includes("timeout") ||
+            err.message?.toLowerCase().includes("aborted")
+          ));
+
+        if (!isNetworkError && i === 0) {
+          // If it's a structural error (e.g. 400 Bad Request, unauthorized), fail immediately
+          break;
+        }
+
         if (i < retries - 1) {
           // Exponential backoff
-          const delay = 1000 * Math.pow(2, i) + Math.random() * 200;
+          const delay = 1000 * Math.pow(2, i + 1) + Math.random() * 300;
+          this._patch(id, {
+            error: `Connection interrupted. Reconnecting upload… (Attempt ${i + 1}/5)`,
+          });
           await new Promise((r) => setTimeout(r, delay));
         }
       } finally {
@@ -871,8 +893,12 @@ export class UploadQueueManager {
     const classified = classifyUploadError(lastError, "presign");
     logPresignResult(entry.name, false, classified.userMessage);
 
-    toast.error(`Upload initialization failed for "${entry.name}": ${classified.userMessage}. Please retry.`);
-    this.removeFile(id);
+    this._patch(id, {
+      state: "failed",
+      error: `Upload initialization failed: ${classified.userMessage}.`,
+    });
+    this._activeFileIds.delete(id);
+    this._runningProcesses.delete(id);
     return null;
   }
 
@@ -898,9 +924,8 @@ export class UploadQueueManager {
     }, timeoutVal);
 
     // Chain signals
-    signal.addEventListener("abort", () => {
-      controller.abort();
-    });
+    const onAbort = () => controller.abort();
+    signal.addEventListener("abort", onAbort);
 
     try {
       const res = await fetch("/api/storage/presign", {
@@ -915,8 +940,6 @@ export class UploadQueueManager {
         }),
         signal: controller.signal,
       });
-
-      clearTimeout(timeout);
 
       // Point 7: Validate response JSON (Vercel HTML check)
       const contentType = res.headers.get("content-type");
@@ -942,9 +965,9 @@ export class UploadQueueManager {
       if (!data.token) throw new Error("Presign response missing token");
 
       return { alreadyExists: false, token: data.token, storagePath: data.storagePath };
-    } catch (err) {
+    } finally {
       clearTimeout(timeout);
-      throw err;
+      signal.removeEventListener("abort", onAbort);
     }
   }
 
@@ -1106,7 +1129,7 @@ export class UploadQueueManager {
               // Automatic Retry System (Point 6)
               this._patch(id, {
                 state: "retrying",
-                error: "Network unstable. Reconnecting upload...",
+                error: "Connection interrupted. Reconnecting upload…",
               });
 
               tusAttempt++;
@@ -1167,7 +1190,7 @@ export class UploadQueueManager {
 
               this._patch(id, {
                 state: "retrying",
-                error: "Network unstable. Reconnecting upload...",
+                error: "Connection interrupted. Reconnecting upload…",
               });
 
               tusAttempt++;
@@ -1202,7 +1225,7 @@ export class UploadQueueManager {
           
           this._patch(id, {
             state: "retrying",
-            error: "Network unstable. Reconnecting upload...",
+            error: "Connection interrupted. Reconnecting upload…",
           });
 
           tusAttempt++;
