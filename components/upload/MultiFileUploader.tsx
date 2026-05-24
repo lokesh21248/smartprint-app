@@ -366,12 +366,14 @@ const ReorderItemRow = memo(function ReorderItemRow({
   // Local object URL for image thumbnail
   const [thumbUrl, setThumbUrl] = useState<string>("");
   useEffect(() => {
-    if (!isPdf && fileItem.file) {
+    if (!isPdf && fileItem.file && fileItem.status === "success") {
       const url = URL.createObjectURL(fileItem.file);
       setThumbUrl(url);
       return () => URL.revokeObjectURL(url);
+    } else {
+      setThumbUrl("");
     }
-  }, [fileItem.file, isPdf]);
+  }, [fileItem.file, isPdf, fileItem.status]);
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 B";

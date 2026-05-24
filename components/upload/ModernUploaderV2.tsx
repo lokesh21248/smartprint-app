@@ -94,6 +94,10 @@ export function ModernUploaderV2({
   // ── PDF page count parser ─────────────────────────────────────────────────
   const parsePdfPages = useCallback(async (file: File): Promise<{ count: number | null; failed: boolean }> => {
     try {
+      const isMobileDevice = typeof window !== "undefined" && (window.innerWidth <= 768 || navigator.maxTouchPoints > 1);
+      if (isMobileDevice) {
+        return { count: 1, failed: true };
+      }
       const arrayBuffer = await file.arrayBuffer();
       const { PDFDocument } = await import("pdf-lib");
       const pdfDoc = await PDFDocument.load(arrayBuffer);

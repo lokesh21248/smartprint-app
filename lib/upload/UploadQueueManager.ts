@@ -71,9 +71,9 @@ function getChunkSize(isMobile: boolean) {
   return isMobile ? 1 * 1024 * 1024 : 5 * 1024 * 1024;
 }
 
-/** Concurrent uploads: 1 for all devices (ultra-stable, maximum reliability) */
-function getConcurrencyLimit(_isMobile: boolean) {
-  return 1;
+/** Concurrent uploads: 1 on mobile (ultra-stable, maximum reliability), 2 on desktop */
+function getConcurrencyLimit(isMobile: boolean) {
+  return isMobile ? 1 : 2;
 }
 
 function detectMobile(): boolean {
@@ -238,6 +238,8 @@ export class UploadQueueManager {
   async addFiles(rawFiles: File[]): Promise<void> {
     if (this._destroyed) return;
 
+    console.log(`[QueueManager:Debug] addFiles called with ${rawFiles.length} file(s).`);
+
     for (const rawFile of rawFiles) {
       const id = `file-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
       const isPdf =
@@ -249,8 +251,8 @@ export class UploadQueueManager {
         file: rawFile,
         name: rawFile.name,
         size: rawFile.size,
-        pages: isPdf ? null : 1,
-        pdfParseFailed: false,
+        pages: isPdf ? (this._isMobile ? 1 : null) : 1,
+        pdfParseFailed: isPdf && this._isMobile,
         copies: 1,
         color: false,
         doubleSided: isPdf,
@@ -260,6 +262,8 @@ export class UploadQueueManager {
         progress: 0,
       };
 
+      console.log(`[QueueManager:Debug] Registering file: ${rawFile.name} (id: ${id}, size: ${rawFile.size} bytes). NO pre-upload parsing.`);
+
       this._files.set(id, entry);
       this._emit({ type: "FILE_ADDED", file: this._toUploadedFile(entry) });
 
@@ -267,18 +271,6 @@ export class UploadQueueManager {
       indexedDbStore.saveFile(id, rawFile).catch((err) =>
         console.warn(`[QueueManager] IndexedDB save failed for ${rawFile.name}:`, err)
       );
-
-      // Parse PDF pages in background (non-blocking)
-      if (isPdf) {
-        this._parsePdfPages(rawFile).then(({ count, failed }) => {
-          if (failed) {
-            toast.error(`"${rawFile.name}" appears to be corrupted or invalid and has been removed.`);
-            this.removeFile(id);
-          } else {
-            this._patch(id, { pages: count, pdfParseFailed: failed });
-          }
-        });
-      }
     }
 
     // Kick the queue — start any slots that are open
@@ -507,12 +499,17 @@ export class UploadQueueManager {
    */
   private async _drainQueue(): Promise<void> {
     if (this._draining || this._destroyed) return;
-    if (!this._online) return; // Wait for online event
+    if (!this._online) {
+      console.log("[QueueManager:Debug] Drain queued skipped: Offline.");
+      return; // Wait for online event
+    }
 
     this._draining = true;
     try {
       const activeCount = this._activeFileIds.size;
       const slotsAvailable = this._concurrencyLimit - activeCount;
+      console.log(`[QueueManager:Debug] _drainQueue: Active: ${activeCount}/${this._concurrencyLimit}. Available: ${slotsAvailable}.`);
+      
       if (slotsAvailable <= 0) return;
 
       const preparingFiles = Array.from(this._files.values()).filter(
@@ -520,6 +517,7 @@ export class UploadQueueManager {
       );
 
       const toStart = preparingFiles.slice(0, slotsAvailable);
+      console.log(`[QueueManager:Debug] _drainQueue: Starting ${toStart.length} file(s).`);
 
       for (const entry of toStart) {
         this._activeFileIds.add(entry.id);
@@ -541,22 +539,35 @@ export class UploadQueueManager {
    * ALWAYS removes from _activeFileIds in finally.
    */
   private async _processFile(id: string): Promise<void> {
-    const entry = this._files.get(id);
-    if (!entry || entry.state === "completed" || entry.state === "failed" || entry.state === "cancelled") {
-      this._activeFileIds.delete(id);
-      return;
-    }
-
-    const startedAt = Date.now();
+    console.log(`[QueueManager:Debug] Starting _processFile for file ${id}`);
     let attempt = 0;
-
     try {
+      const entry = this._files.get(id);
+      if (!entry || entry.state === "completed" || entry.state === "failed" || entry.state === "cancelled") {
+        console.log(`[QueueManager:Debug] _processFile: File ${id} already finished or removed. Releasing slot.`);
+        return;
+      }
+
+      console.log(`[QueueManager:Debug] Starting upload worker loop for "${entry.name}" (${id}).`);
+      this._lastProgressAt.set(id, Date.now()); // Set watchdog baseline immediately
+      const startedAt = Date.now();
+
       await this._acquireWakeLock();
 
       // ── Step 1: Ensure binary file is loaded ──────────────────────────────
       let fileToUpload = entry.file;
       if (!fileToUpload) {
-        const dbFile = await indexedDbStore.getFile(id);
+        console.log(`[QueueManager:Debug] File binary not in memory, attempting IndexedDB load for "${entry.name}"`);
+        const dbFile = await Promise.race([
+          indexedDbStore.getFile(id),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("INDEXEDDB_LOAD_TIMEOUT")), 5000)
+          )
+        ]).catch((err) => {
+          console.error(`[QueueManager:Debug] IndexedDB load failed or timed out for "${entry.name}":`, err);
+          return null;
+        });
+
         if (!dbFile) {
           toast.error(`Device revoked file access for "${entry.name}". Please select the file again.`);
           this.removeFile(id);
@@ -564,26 +575,6 @@ export class UploadQueueManager {
         }
         fileToUpload = dbFile;
         this._patch(id, { file: dbFile });
-      }
-
-      // ── Step 1b: Verify Supabase Storage bucket health (5s Timeout) ──────
-      try {
-        const { createClient } = await import("@/lib/supabase/client");
-        const supabase = createClient();
-        
-        await Promise.race([
-          (async () => {
-            const { error: healthError } = await supabase.storage
-              .from("temp-uploads")
-              .list("", { limit: 1 });
-            if (healthError) throw healthError;
-          })(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("STORAGE_HEALTH_TIMEOUT")), 5000)
-          ),
-        ]);
-      } catch (err) {
-        console.warn("[QueueManager] Supabase storage health check timed out or failed, proceeding with upload anyway:", err);
       }
 
       // ── Step 1c: Check if already flagged corrupted in background ─────────
@@ -617,7 +608,7 @@ export class UploadQueueManager {
         });
 
         const presignResult = await this._fetchPresignWithTimeout(id);
-        if (!presignResult) return; // Cancelled or destroyed
+        if (!presignResult) return; // Cancelled, destroyed or failed (failed calls removeFile internally)
 
         if (presignResult.alreadyExists) {
           // File already uploaded — mark complete
@@ -679,7 +670,7 @@ export class UploadQueueManager {
         if (!this._files.has(id)) return;
       }
     } catch (err) {
-      // Catch-all — should not normally fire since all paths are handled above
+      console.error(`[QueueManager] Exception in _processFile for file ${id}:`, err);
       const entry = this._files.get(id);
       if (entry && entry.state !== "completed") {
         const classified = classifyUploadError(err, "general");
@@ -688,13 +679,11 @@ export class UploadQueueManager {
         this.removeFile(id);
       }
     } finally {
-      // ── CRITICAL: ALWAYS release the active slot ──────────────────────────────
+      console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
       this._activeFileIds.delete(id);
       this._abortControllers.delete(id);
       this._lastProgressAt.delete(id);
       this._releaseWakeLockIfDone();
-
-      // Kick queue for next file
       this._scheduleQueueDrain();
     }
   }
@@ -838,109 +827,115 @@ export class UploadQueueManager {
     startedAt: number
   ): Promise<"success" | "cancelled" | "error"> {
     return new Promise((resolve) => {
-      const entry = this._files.get(id);
-      if (!entry?.file) {
-        resolve("cancelled");
-        return;
+      try {
+        const entry = this._files.get(id);
+        if (!entry?.file) {
+          resolve("cancelled");
+          return;
+        }
+
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        if (!supabaseUrl) {
+          toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
+          this.removeFile(id);
+          resolve("cancelled");
+          return;
+        }
+
+        const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+
+        // Set watchdog baseline baseline immediately to prevent any startup race condition
+        this._lastProgressAt.set(id, Date.now());
+
+        console.log(`[QueueManager:Debug] Instantiating tus.Upload for "${entry.name}"`);
+        const upload = new tus.Upload(entry.file, {
+          endpoint,
+          retryDelays: [], // We manage retries in the outer loop
+          chunkSize: this._chunkSize,
+          headers: {
+            "x-signature": token,
+            "x-upsert": "true",
+          },
+          metadata: {
+            bucketName: "order-files",
+            objectName: storagePath,
+            contentType: entry.file.type || "application/octet-stream",
+          },
+          storeFingerprintForResuming: false, // Bypasses local storage to prevent mobile lockups
+          // Bug 4 fix: unique fingerprint per upload slot prevents collisions
+          fingerprint: (_file, opts) =>
+            Promise.resolve(
+              `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
+            ),
+          onBeforeRequest: () => {
+            // Refresh watchdog timer on every request
+            this._lastProgressAt.set(id, Date.now());
+            if (!navigator.onLine) logNetworkPause(entry.name);
+          },
+          onProgress: (bytesSent: number, bytesTotal: number) => {
+            const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
+            logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
+
+            // Refresh watchdog
+            this._lastProgressAt.set(id, Date.now());
+
+            this._patch(id, {
+              state: "uploading",
+              progress: pct,
+              uploadSpeed: undefined,
+              description: undefined,
+            } as any);
+          },
+          onSuccess: () => {
+            const durationMs = Date.now() - startedAt;
+            logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
+
+            // Transition to processing for post-upload PDF page counting
+            this._patch(id, {
+              state: "processing",
+              progress: 100,
+              storagePath,
+              uploadSpeed: undefined,
+              etaSeconds: undefined,
+              error: undefined,
+            });
+
+            // Run post-upload processing asynchronously (non-blocking)
+            this._runPostUploadProcessing(id, storagePath, startedAt);
+
+            this._tusInstances.delete(id);
+            resolve("success");
+          },
+          onError: (err) => {
+            // abort(false) = close socket but preserve fingerprint for genuine resume
+            upload.abort(false).catch(() => {});
+            this._tusInstances.delete(id);
+
+            const classified = classifyUploadError(err, "tus");
+
+            if (!classified.retryable) {
+              logUploadFailure(entry.name, classified.code, classified.userMessage, 0);
+              toast.error(`Non-retryable upload error for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
+              this.removeFile(id);
+              resolve("cancelled"); // Non-retryable — don't loop
+              return;
+            }
+
+            this._patch(id, { error: classified.userMessage });
+            resolve("error");
+          },
+          onShouldRetry: () => false, // Let our outer loop handle retries
+        });
+
+        this._tusInstances.set(id, upload);
+
+        // Start fresh — fingerprints were cleared before this call
+        console.log(`[QueueManager:Debug] Calling upload.start() for "${entry.name}"`);
+        upload.start();
+      } catch (err) {
+        console.error(`[QueueManager:Debug] Error during tus.Upload initialization for "${id}":`, err);
+        resolve("error");
       }
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) {
-        toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
-        this.removeFile(id);
-        resolve("cancelled");
-        return;
-      }
-
-      const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
-
-      // Set watchdog baseline baseline immediately to prevent any startup race condition
-      this._lastProgressAt.set(id, Date.now());
-
-      const upload = new tus.Upload(entry.file, {
-        endpoint,
-        retryDelays: [], // We manage retries in the outer loop
-        chunkSize: this._chunkSize,
-        headers: {
-          "x-signature": token,
-          "x-upsert": "true",
-        },
-        metadata: {
-          bucketName: "order-files",
-          objectName: storagePath,
-          contentType: entry.file.type || "application/octet-stream",
-        },
-        // Bug 4 fix: unique fingerprint per upload slot prevents collisions
-        fingerprint: (_file, opts) =>
-          Promise.resolve(
-            `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
-          ),
-        onBeforeRequest: () => {
-          // Refresh watchdog timer on every request
-          this._lastProgressAt.set(id, Date.now());
-          if (!navigator.onLine) logNetworkPause(entry.name);
-        },
-        onProgress: (bytesSent: number, bytesTotal: number) => {
-          const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
-          logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
-
-          // Refresh watchdog
-          this._lastProgressAt.set(id, Date.now());
-
-          this._patch(id, {
-            state: "uploading",
-            progress: pct,
-            uploadSpeed: undefined,
-            etaSeconds: undefined,
-            error: undefined,
-          });
-        },
-        onSuccess: () => {
-          const durationMs = Date.now() - startedAt;
-          logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
-
-          // Transition to processing for post-upload PDF page counting
-          this._patch(id, {
-            state: "processing",
-            progress: 100,
-            storagePath,
-            uploadSpeed: undefined,
-            etaSeconds: undefined,
-            error: undefined,
-            // Don't null out file — IndexedDB cleanup happens on clearSession
-          });
-
-          // Run post-upload processing asynchronously (non-blocking)
-          this._runPostUploadProcessing(id, storagePath, startedAt);
-
-          this._tusInstances.delete(id);
-          resolve("success");
-        },
-        onError: (err) => {
-          // abort(false) = close socket but preserve fingerprint for genuine resume
-          upload.abort(false).catch(() => {});
-          this._tusInstances.delete(id);
-
-          const classified = classifyUploadError(err, "tus");
-
-          if (!classified.retryable) {
-            logUploadFailure(entry.name, classified.code, classified.userMessage, 0);
-            toast.error(`Non-retryable upload error for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
-            this.removeFile(id);
-            resolve("cancelled"); // Non-retryable — don't loop
-            return;
-          }
-
-          this._patch(id, { error: classified.userMessage });
-          resolve("error");
-        },
-        onShouldRetry: () => false, // Let our outer loop handle retries
-      });
-
-      this._tusInstances.set(id, upload);
-
-      // Start fresh — fingerprints were cleared before this call
-      upload.start();
     });
   }
 
@@ -952,6 +947,24 @@ export class UploadQueueManager {
     const now = Date.now();
 
     for (const [id, entry] of this._files) {
+      // Stuck preparing / requesting_url safety timeout of 20 seconds
+      if ((entry.state === "preparing" || entry.state === "requesting_url") && this._activeFileIds.has(id)) {
+        const activeTime = this._lastProgressAt.get(id) ?? now;
+        if (!this._lastProgressAt.has(id)) {
+          this._lastProgressAt.set(id, now);
+        }
+        const elapsed = now - activeTime;
+        if (elapsed > 20_000) {
+          console.warn(
+            `[QueueManager:Watchdog] Stuck preparing state detected for "${entry.name}" after ${elapsed}ms. Releasing slots.`
+          );
+          toast.error(`Preparing upload timed out for "${entry.name}". Please select the file again.`);
+          this._abortFileUpload(id);
+          this.removeFile(id);
+          continue;
+        }
+      }
+
       if (entry.state !== "uploading") continue;
 
       const lastProgress = this._lastProgressAt.get(id) ?? now;
@@ -1157,6 +1170,16 @@ export class UploadQueueManager {
         (fileToProcess && (fileToProcess.type === "application/pdf"));
 
       if (isPdf && entry.pages === null) {
+        if (entry.size > 100 * 1024 * 1024) {
+          console.warn(`[QueueManager] PDF file size ${entry.size} is too large (>100MB) for parsing. Defaulting to 1 page.`);
+          this._patch(id, {
+            state: "completed",
+            pages: 1,
+            pdfParseFailed: true,
+          });
+          return;
+        }
+
         if (!fileToProcess) {
           console.warn(`[QueueManager] PDF file not found in memory or IndexedDB for processing: ${entry.name}. Defaulting to 1 page.`);
           this._patch(id, {

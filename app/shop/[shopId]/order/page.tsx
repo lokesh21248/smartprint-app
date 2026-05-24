@@ -96,10 +96,14 @@ export default function OrderFlowPage() {
       }
 
       try {
-        const arrayBuffer = await file.arrayBuffer();
-        const { PDFDocument } = await import("pdf-lib");
-        const pdfDoc = await PDFDocument.load(arrayBuffer);
-        const pageCount = pdfDoc.getPageCount();
+        const isMobileDevice = typeof window !== "undefined" && (window.innerWidth <= 768 || navigator.maxTouchPoints > 1);
+        let pageCount = 1;
+        if (!isMobileDevice) {
+          const arrayBuffer = await file.arrayBuffer();
+          const { PDFDocument } = await import("pdf-lib");
+          const pdfDoc = await PDFDocument.load(arrayBuffer);
+          pageCount = pdfDoc.getPageCount();
+        }
         newFiles.push({ file, pages: pageCount });
       } catch {
         toast.error(`Error reading ${file.name}`);
