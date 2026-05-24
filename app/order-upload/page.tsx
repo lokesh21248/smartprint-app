@@ -71,6 +71,7 @@ function OrderUploadPageInner() {
   const [isLoadingShop, setIsLoadingShop] = useState(true);
   const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [uploaderKey, setUploaderKey] = useState(0);
   const [notes, setNotes] = useState("");
 
   // Pre-generate unique orderId for this session (for TUS folder structuring)
@@ -145,7 +146,19 @@ function OrderUploadPageInner() {
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
   useEffect(() => {
+    const clearUploadSession = () => {
+      try {
+        uploaderRef.current?.clearSession();
+      } catch (e) {
+        console.warn("Failed to clear upload session on unload/unmount:", e);
+      }
+    };
+
+    window.addEventListener("beforeunload", clearUploadSession);
+
     return () => {
+      window.removeEventListener("beforeunload", clearUploadSession);
+      clearUploadSession();
       abortControllerRef.current?.abort();
     };
   }, []);
@@ -405,6 +418,15 @@ function OrderUploadPageInner() {
       setErrorMessage(userMessage);
       setOrderStatus("failed");
       toast.error("Please review the errors below to complete your order.");
+
+      // Destroy upload instance, clear retry queue, revoke URLs, and reset key on failure
+      try {
+        uploaderRef.current?.clearSession();
+      } catch (e) {
+        console.warn("Failed to clear upload session on error:", e);
+      }
+      setFiles([]);
+      setUploaderKey((prev) => prev + 1);
     } finally {
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
@@ -504,6 +526,7 @@ function OrderUploadPageInner() {
             >
               <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
                 <MultiFileUploader
+                  key={uploaderKey}
                   ref={uploaderRef}
                   files={files}
                   onChange={setFiles}

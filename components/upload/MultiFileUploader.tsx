@@ -16,6 +16,7 @@ import {
   forwardRef,
   useEffect,
   useState,
+  memo,
 } from "react";
 import { Reorder, useDragControls, motion, AnimatePresence } from "framer-motion";
 import {
@@ -84,8 +85,9 @@ const MAX_FILES = 50; // Hardened 50 files limit
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
-  ({ files, onChange, shopId, orderId, disabled }, ref) => {
+export const MultiFileUploader = memo(
+  forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
+    ({ files, onChange, shopId, orderId, disabled }, ref) => {
     // ── Upload queue ──────────────────────────────────────────────────────────
     const {
       files: queueFiles,
@@ -327,6 +329,7 @@ export const MultiFileUploader = forwardRef<MultiFileUploaderRef, MultiFileUploa
       </div>
     );
   }
+)
 );
 
 MultiFileUploader.displayName = "MultiFileUploader";

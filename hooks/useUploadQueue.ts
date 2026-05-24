@@ -117,13 +117,9 @@ export function useUploadQueue({
       }
     });
 
-    // Rehydrate from localStorage once per mount
+    // Rehydration disabled to guarantee the uploader always starts with a clean, empty state on refresh or failed uploads
     if (!rehydratedRef.current) {
       rehydratedRef.current = true;
-      const saved = localStorage.getItem("smartprint_upload_metadata");
-      manager.rehydrate(saved).catch((err) =>
-        console.warn("[useUploadQueue] Rehydration error:", err)
-      );
     }
 
     return () => {

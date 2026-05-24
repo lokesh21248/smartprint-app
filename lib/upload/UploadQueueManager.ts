@@ -50,6 +50,7 @@ import {
   logNetworkResume,
 } from "@/lib/upload/uploadLogger";
 import type { UploadedFile, UploadStatus } from "@/types";
+import { toast } from "sonner";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -423,53 +424,8 @@ export class UploadQueueManager {
    * Called once on mount.
    */
   async rehydrate(savedMetadata: string | null): Promise<void> {
-    if (!savedMetadata) return;
-
-    try {
-      const parsed = JSON.parse(savedMetadata) as Partial<FileEntry>[];
-      for (const item of parsed) {
-        if (!item.id || !item.name) continue;
-
-        const binaryFile = await indexedDbStore.getFile(item.id);
-
-        const entry: FileEntry = {
-          id: item.id,
-          file: binaryFile ?? undefined,
-          name: item.name,
-          size: item.size ?? 0,
-          pages: item.pages ?? null,
-          pdfParseFailed: item.pdfParseFailed ?? false,
-          copies: item.copies ?? 1,
-          color: item.color ?? false,
-          doubleSided: item.doubleSided ?? false,
-          mimeType: item.mimeType ?? binaryFile?.type ?? "application/octet-stream",
-          retryAttempt: 0,
-          state:
-            item.state === "completed"
-              ? "completed"
-              : binaryFile
-              ? "preparing" // will be re-queued
-              : "failed",
-          progress: item.state === "completed" ? 100 : 0,
-          storagePath: item.storagePath,
-          error: binaryFile
-            ? undefined
-            : "Device revoked file access. Please remove and re-add this file.",
-        };
-
-        // Clear stale fingerprints for any file being re-queued
-        if (entry.state === "preparing") {
-          clearStaleTusFingerprints(item.id);
-        }
-
-        this._files.set(item.id, entry);
-        this._emit({ type: "FILE_ADDED", file: this._toUploadedFile(entry) });
-      }
-
-      this._scheduleQueueDrain();
-    } catch (err) {
-      console.warn("[QueueManager] Rehydration failed:", err);
-    }
+    // Disabled to guarantee the uploader always starts with a clean, empty state on refresh or failed uploads
+    return Promise.resolve();
   }
 
   /** Clear all state, abort all uploads, wipe IndexedDB + localStorage. */
@@ -774,16 +730,10 @@ export class UploadQueueManager {
       const classified = classifyUploadError(err, "presign");
       logPresignResult(entry.name, false, classified.userMessage);
 
-      // Surface the error so the retry loop can decide what to do
-      this._patch(id, { error: classified.userMessage });
-
-      if (!classified.retryable) {
-        this._patch(id, { state: "failed" });
-        logUploadFailure(entry.name, classified.code, classified.userMessage, 0);
-        return null; // Signal non-retryable failure
-      }
-
-      throw err; // Let retry loop handle it
+      // Add defensive protection: remove failed file immediately on URL creation failure, show toast, and require manual re-selection
+      toast.error(`Failed to generate upload URL for "${entry.name}": ${classified.userMessage}. Please select the file again.`);
+      this.removeFile(id);
+      return null;
     }
   }
 
@@ -1210,26 +1160,6 @@ export class UploadQueueManager {
   }
 
   private _persistMetadata(): void {
-    try {
-      const metadata = Array.from(this._files.values()).map((f) => ({
-        id: f.id,
-        name: f.name,
-        size: f.size,
-        pages: f.pages,
-        pdfParseFailed: f.pdfParseFailed,
-        progress: f.progress,
-        state: f.state,
-        storagePath: f.storagePath,
-        error: f.error,
-        copies: f.copies,
-        color: f.color,
-        doubleSided: f.doubleSided,
-        mimeType: f.mimeType,
-        retryAttempt: f.retryAttempt,
-      }));
-      localStorage.setItem("smartprint_upload_metadata", JSON.stringify(metadata));
-    } catch {
-      // localStorage quota exceeded — ignore
-    }
+    // Disabled to prevent automatic restoration / state hydration after failures and on refresh/navigation
   }
 }
