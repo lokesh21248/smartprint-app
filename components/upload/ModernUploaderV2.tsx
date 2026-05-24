@@ -176,7 +176,7 @@ export function ModernUploaderV2({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="space-y-1">
@@ -196,43 +196,64 @@ export function ModernUploaderV2({
         </span>
       </div>
 
-      {/* ── FilePond drop zone (only shown when no file selected) ─────────── */}
-      <AnimatePresence mode="wait">
-        {!selectedFile && (
-          <motion.div
-            key="dropzone"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2 }}
-          >
-            <FilePondDropzone
-              onFileSelected={handleFileSelected}
-              onResetRef={(resetFn) => { pondResetRef.current = resetFn; }}
-              disabled={disabled}
-            />
-          </motion.div>
-        )}
+      {/* ── Stable Container (Prevents Jumping/Collapsing) ────────────────── */}
+      <div className="w-full min-h-[420px] bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-4 transition-all duration-300 relative">
+        <AnimatePresence mode="wait">
+          {!selectedFile ? (
+            <motion.div
+              key="dropzone"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.25 }}
+              className="w-full flex flex-col items-center justify-center gap-4"
+            >
+              {/* FilePond Dropzone inside Stable Container */}
+              <div className="w-full">
+                <FilePondDropzone
+                  onFileSelected={handleFileSelected}
+                  onResetRef={(resetFn) => { pondResetRef.current = resetFn; }}
+                  disabled={disabled}
+                />
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="preview-state"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.25 }}
+              className="w-full flex flex-col items-center justify-center gap-4"
+            >
+              {/* Preview Card */}
+              <FilePreviewCard
+                file={selectedFile}
+                pageCount={pageCount}
+                status={isParsingPdf ? "presigning" : uploadStatus}
+                progress={0}
+                onRemove={handleRemove}
+              />
 
-        {/* ── File preview card (shown when file is selected) ──────────── */}
-        {selectedFile && (
-          <motion.div
-            key="preview"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2 }}
-          >
-            <FilePreviewCard
-              file={selectedFile}
-              pageCount={pageCount}
-              status={isParsingPdf ? "presigning" : uploadStatus}
-              progress={0}
-              onRemove={handleRemove}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {/* Divider */}
+              <div className="w-full border-t border-slate-200/60 my-1" />
+
+              {/* State feedback bar */}
+              {isParsingPdf ? (
+                <div className="flex items-center justify-center gap-2 text-slate-600 text-xs font-bold bg-slate-100 px-4 py-2.5 rounded-xl w-full">
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
+                  <span>Analyzing document pages...</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 text-emerald-800 text-xs font-bold bg-emerald-50 px-4 py-2.5 rounded-xl border border-emerald-100 w-full">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Verification Complete</span>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ── Quick action buttons ──────────────────────────────────────────── */}
       {!selectedFile && (

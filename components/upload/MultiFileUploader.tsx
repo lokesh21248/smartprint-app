@@ -415,313 +415,297 @@ const ReorderItemRow = memo(function ReorderItemRow({
       transition={{ duration: 0.2 }}
       className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${cardStyle}`}
     >
-      {/* Progress bar at very top of card */}
-      {(fileItem.status === "uploading" || fileItem.status === "processing") && (
-        <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
-          <motion.div
-            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"
-            initial={{ width: 0 }}
-            animate={{ width: `${fileItem.progress}%` }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-          />
-        </div>
-      )}
-      {fileItem.status === "success" && (
-        <div className="h-0.5 w-full bg-emerald-400" />
-      )}
-
-      <div className="p-4 flex gap-3 items-start">
-        {/* Drag Handle */}
-        <div
-          onPointerDown={(e) => !disabled && !isActivelyUploading && dragControls.start(e)}
-          className={`h-12 flex items-center justify-center text-slate-300 px-1 ${
-            disabled || isActivelyUploading
-              ? "cursor-not-allowed opacity-20"
-              : "cursor-grab hover:text-slate-400 active:cursor-grabbing"
-          }`}
-        >
-          <GripVertical className="w-4 h-4 shrink-0" />
-        </div>
-
-        {/* Thumbnail */}
-        <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
-          {fileItem.status === "success" && (
-            <motion.div
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10"
-            >
-              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-            </motion.div>
-          )}
-          {isPdf ? (
-            <div className="w-full h-full bg-rose-50 flex flex-col items-center justify-center text-rose-500">
-              <FileText className="w-6 h-6" />
-              <span className="text-[7px] font-black uppercase tracking-widest mt-0.5">PDF</span>
-            </div>
-          ) : thumbUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumbUrl} alt={fileItem.name} className="w-full h-full object-cover" />
-          ) : (
-            <ImageIcon className="w-5 h-5 text-slate-400" />
-          )}
-        </div>
-
-        {/* File Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-start gap-2">
-            <div className="min-w-0">
-              <h4
-                className="text-sm font-extrabold text-slate-800 truncate"
-                title={fileItem.name}
-              >
-                {fileItem.name}
-              </h4>
-              <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
-                {formatSize(fileItem.size)}
-                {fileItem.pages !== null ? ` · ${fileItem.pages} pgs` : " · counting pages…"}
-              </p>
-            </div>
-
-            {/* Action buttons (top-right) */}
-            <div className="flex items-center gap-1 shrink-0">
-              {/* Cancel during upload */}
-              {isActivelyUploading && !disabled && (
-                <button
-                  type="button"
-                  onClick={() => onCancel(fileItem.id)}
-                  className="w-7 h-7 rounded-lg hover:bg-slate-50 flex items-center justify-center text-slate-400 hover:text-amber-500 transition"
-                  title="Cancel upload"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-              {/* Delete (only when not uploading) */}
-              {!disabled && !isActivelyUploading && (
-                <button
-                  type="button"
-                  onClick={() => onRemove(fileItem.id)}
-                  className="w-7 h-7 rounded-lg hover:bg-slate-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition"
-                  title="Remove file"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+      <div className="p-4 flex flex-col gap-3">
+        {/* Main Details Row */}
+        <div className="flex items-center gap-3">
+          {/* Drag Handle */}
+          <div
+            onPointerDown={(e) => !disabled && !isActivelyUploading && dragControls.start(e)}
+            className={`flex items-center justify-center text-slate-300 px-1 ${
+              disabled || isActivelyUploading
+                ? "cursor-not-allowed opacity-20"
+                : "cursor-grab hover:text-slate-400 active:cursor-grabbing"
+            }`}
+          >
+            <GripVertical className="w-4 h-4 shrink-0" />
           </div>
 
-          {/* Config Controls (queued / preparing / failed states) */}
-          {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing" || fileItem.status === "idle" || fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
-            <div className="mt-3 pt-3 border-t border-slate-100/70 flex flex-wrap items-center gap-3">
-              {/* Copies */}
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onUpdateConfig(fileItem.id, { copies: Math.max(1, fileItem.copies - 1) })
-                  }
-                  disabled={disabled}
-                  className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
-                >
-                  <Minus className="w-3 h-3 text-slate-500" />
-                </button>
-                <span className="text-xs font-extrabold text-slate-700 min-w-4 text-center">
-                  {fileItem.copies}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onUpdateConfig(fileItem.id, { copies: Math.min(50, fileItem.copies + 1) })
-                  }
-                  disabled={disabled}
-                  className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
-                >
-                  <Plus className="w-3 h-3 text-slate-600" />
-                </button>
+          {/* Thumbnail */}
+          <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
+            {fileItem.status === "success" && (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10"
+              >
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </motion.div>
+            )}
+            {isPdf ? (
+              <div className="w-full h-full bg-rose-50 flex flex-col items-center justify-center text-rose-500">
+                <FileText className="w-6 h-6" />
+                <span className="text-[7px] font-black uppercase tracking-widest mt-0.5">PDF</span>
               </div>
+            ) : thumbUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumbUrl} alt={fileItem.name} className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon className="w-5 h-5 text-slate-400" />
+            )}
+          </div>
 
-              {/* Ink Mode */}
+          {/* File Info */}
+          <div className="flex-1 min-w-0">
+            <h4
+              className="text-sm font-extrabold text-slate-800 truncate"
+              title={fileItem.name}
+            >
+              {fileItem.name}
+            </h4>
+            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+              {formatSize(fileItem.size)}
+              {fileItem.pages !== null ? ` · ${fileItem.pages} pgs` : " · counting pages…"}
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Cancel during upload */}
+            {isActivelyUploading && !disabled && (
+              <button
+                type="button"
+                onClick={() => onCancel(fileItem.id)}
+                className="w-7 h-7 rounded-lg hover:bg-slate-50 flex items-center justify-center text-slate-400 hover:text-amber-500 transition"
+                title="Cancel upload"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {/* Delete (only when not uploading) */}
+            {!disabled && !isActivelyUploading && (
+              <button
+                type="button"
+                onClick={() => onRemove(fileItem.id)}
+                className="w-7 h-7 rounded-lg hover:bg-slate-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition"
+                title="Remove file"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Upload Progress State */}
+        {isActivelyUploading && (
+          <div className="space-y-1.5 pt-1 px-1">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="text-slate-500 flex items-center gap-1.5">
+                {fileItem.status === "uploading" && (
+                  <>
+                    <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="text-emerald-700">
+                      {fileItem.error ? fileItem.error : "Uploading…"}
+                    </span>
+                  </>
+                )}
+                {fileItem.status === "processing" && (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin shrink-0" />
+                    <span className="text-emerald-700 font-extrabold">
+                      {isPdf ? "Counting pages…" : "Processing file…"}
+                    </span>
+                  </>
+                )}
+                {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing") && (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
+                    <span className="text-slate-700">
+                      {fileItem.error ? fileItem.error : (fileItem.status === "initializing" ? "Preparing secure upload session..." : "Queued…")}
+                    </span>
+                  </>
+                )}
+                {fileItem.status === "retrying" && (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin shrink-0" />
+                    <span className="text-amber-700">
+                      {fileItem.error ? fileItem.error : "Retrying upload automatically…"}
+                    </span>
+                  </>
+                )}
+              </span>
+              {(fileItem.status === "uploading" || fileItem.status === "processing") && (
+                <span className="text-emerald-600 tabular-nums">
+                  {fileItem.progress}%
+                </span>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {(fileItem.status === "uploading" || fileItem.status === "processing") && (
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${fileItem.progress}%` }}
+                  transition={{ duration: 0.35, ease: "easeOut" }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Success State */}
+        {fileItem.status === "success" && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 px-1 mt-0.5"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            Upload complete — ready for print
+          </motion.div>
+        )}
+
+        {/* Config Controls */}
+        {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing" || fileItem.status === "idle" || fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
+          <div className="pt-2 border-t border-slate-100/70 flex flex-wrap items-center gap-3 px-1 mt-1">
+            {/* Copies */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateConfig(fileItem.id, { copies: Math.max(1, fileItem.copies - 1) })
+                }
+                disabled={disabled}
+                className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
+              >
+                <Minus className="w-3 h-3 text-slate-500" />
+              </button>
+              <span className="text-xs font-extrabold text-slate-700 min-w-4 text-center">
+                {fileItem.copies}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateConfig(fileItem.id, { copies: Math.min(50, fileItem.copies + 1) })
+                }
+                disabled={disabled}
+                className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
+              >
+                <Plus className="w-3 h-3 text-slate-600" />
+              </button>
+            </div>
+
+            {/* Ink Mode */}
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => onUpdateConfig(fileItem.id, { color: false })}
+                disabled={disabled}
+                className={`px-3 py-1 rounded-md text-[10px] font-extrabold transition ${
+                  !fileItem.color ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                }`}
+              >
+                B&amp;W
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdateConfig(fileItem.id, { color: true })}
+                disabled={disabled}
+                className={`px-3 py-1 rounded-md text-[10px] font-extrabold transition ${
+                  fileItem.color ? "bg-emerald-600 text-white shadow-sm" : "text-slate-500"
+                }`}
+              >
+                Color
+              </button>
+            </div>
+
+            {/* Duplex (PDFs only) */}
+            {isPdf && (
               <div className="flex bg-slate-100 rounded-lg p-0.5">
                 <button
                   type="button"
-                  onClick={() => onUpdateConfig(fileItem.id, { color: false })}
+                  onClick={() => onUpdateConfig(fileItem.id, { doubleSided: false })}
                   disabled={disabled}
-                  className={`px-3 py-1 rounded-md text-[10px] font-extrabold transition ${
-                    !fileItem.color ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition ${
+                    !fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
                   }`}
                 >
-                  B&amp;W
+                  1-Sided
                 </button>
                 <button
                   type="button"
-                  onClick={() => onUpdateConfig(fileItem.id, { color: true })}
+                  onClick={() => onUpdateConfig(fileItem.id, { doubleSided: true })}
                   disabled={disabled}
-                  className={`px-3 py-1 rounded-md text-[10px] font-extrabold transition ${
-                    fileItem.color ? "bg-emerald-600 text-white shadow-sm" : "text-slate-500"
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition ${
+                    fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
                   }`}
                 >
-                  Color
+                  2-Sided
                 </button>
               </div>
+            )}
 
-              {/* Duplex (PDFs only) */}
-              {isPdf && (
-                <div className="flex bg-slate-100 rounded-lg p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => onUpdateConfig(fileItem.id, { doubleSided: false })}
-                    disabled={disabled}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition ${
-                      !fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-                    }`}
-                  >
-                    1-Sided
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onUpdateConfig(fileItem.id, { doubleSided: true })}
-                    disabled={disabled}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition ${
-                      fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-                    }`}
-                  >
-                    2-Sided
-                  </button>
-                </div>
-              )}
-
-              {/* Manual page override (PDF parse failed) */}
-              {fileItem.pdfParseFailed && (
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl p-0.5 ml-auto">
-                  <span className="text-[9px] font-extrabold text-amber-700 uppercase tracking-wider pl-1.5">
-                    Pages:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdateConfig(fileItem.id, { pages: Math.max(1, (fileItem.pages || 1) - 1) })
-                    }
-                    disabled={disabled}
-                    className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition"
-                  >
-                    <Minus className="w-3 h-3 text-amber-600" />
-                  </button>
-                  <span className="text-xs font-black text-amber-900 min-w-4 text-center">
-                    {fileItem.pages || 1}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdateConfig(fileItem.id, {
-                        pages: Math.min(500, (fileItem.pages || 1) + 1),
-                      })
-                    }
-                    disabled={disabled}
-                    className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition"
-                  >
-                    <Plus className="w-3 h-3 text-amber-700" />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Upload Progress State */}
-          {isActivelyUploading && (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-500 flex items-center gap-1.5">
-                  {fileItem.status === "uploading" && (
-                    <>
-                      <Upload className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="text-emerald-700">
-                        {fileItem.error ? fileItem.error : "Uploading…"}
-                      </span>
-                    </>
-                  )}
-                  {fileItem.status === "processing" && (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin shrink-0" />
-                      <span className="text-emerald-700 font-extrabold">
-                        {isPdf ? "Counting pages…" : "Processing file…"}
-                      </span>
-                    </>
-                  )}
-                  {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing") && (
-                    <>
-                      <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
-                      <span className="text-slate-700">
-                        {fileItem.error ? fileItem.error : (fileItem.status === "initializing" ? "Preparing secure upload session..." : "Queued…")}
-                      </span>
-                    </>
-                  )}
-                  {fileItem.status === "retrying" && (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin shrink-0" />
-                      <span className="text-amber-700">
-                        {fileItem.error ? fileItem.error : "Retrying upload automatically…"}
-                      </span>
-                    </>
-                  )}
+            {/* Manual page override */}
+            {fileItem.pdfParseFailed && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl p-0.5 ml-auto">
+                <span className="text-[9px] font-extrabold text-amber-700 uppercase tracking-wider pl-1.5">
+                  Pages:
                 </span>
-                {(fileItem.status === "uploading" || fileItem.status === "processing") && (
-                  <span className="font-extrabold text-emerald-600 tabular-nums">
-                    {fileItem.progress}%
-                  </span>
-                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateConfig(fileItem.id, { pages: Math.max(1, (fileItem.pages || 1) - 1) })
+                  }
+                  disabled={disabled}
+                  className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition"
+                >
+                  <Minus className="w-3 h-3 text-amber-600" />
+                </button>
+                <span className="text-xs font-black text-amber-900 min-w-4 text-center">
+                  {fileItem.pages || 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateConfig(fileItem.id, {
+                      pages: Math.min(500, (fileItem.pages || 1) + 1),
+                    })
+                  }
+                  disabled={disabled}
+                  className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition"
+                >
+                  <Plus className="w-3 h-3 text-amber-700" />
+                </button>
               </div>
+            )}
+          </div>
+        )}
 
-              {/* Thick progress bar */}
-              {(fileItem.status === "uploading" || fileItem.status === "processing") && (
-                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${fileItem.progress}%` }}
-                    transition={{ duration: 0.35, ease: "easeOut" }}
-                  />
-                </div>
-              )}
+        {/* Failure Panel */}
+        {(fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5 space-y-2 mx-1 mt-1"
+          >
+            <div className="flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+              <p className="text-[10px] font-bold text-rose-700 leading-snug">
+                {fileItem.error ?? "Upload failed. Tap Retry to try again."}
+              </p>
             </div>
-          )}
-
-          {/* Success State */}
-          {fileItem.status === "success" && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-2.5 flex items-center gap-1.5 text-[10px] font-bold text-emerald-700"
+            <button
+              type="button"
+              onClick={() => onRetry(fileItem.id)}
+              disabled={disabled}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-[10px] font-black text-rose-800 uppercase tracking-wider transition active:scale-95 disabled:opacity-50"
             >
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              Upload complete — ready for print
-            </motion.div>
-          )}
-
-          {/* Failure Panel — exact reason + retry */}
-          {(fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-2.5 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5 space-y-2"
-            >
-              <div className="flex items-start gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
-                <p className="text-[10px] font-bold text-rose-700 leading-snug">
-                  {fileItem.error ?? "Upload failed. Tap Retry to try again."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRetry(fileItem.id)}
-                disabled={disabled}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-[10px] font-black text-rose-800 uppercase tracking-wider transition active:scale-95 disabled:opacity-50"
-              >
-                <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-                Retry Upload
-              </button>
-            </motion.div>
-          )}
-        </div>
+              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+              Retry Upload
+            </button>
+          </motion.div>
+        )}
       </div>
     </Reorder.Item>
   );

@@ -98,129 +98,63 @@ export function FilePreviewCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 400, damping: 32 }}
-      className="relative bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+      className="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col items-center justify-center gap-3 transition-all duration-300 relative"
     >
-      {/* Main content row */}
-      <div className="flex items-center gap-4 px-5 py-4">
-        {/* File type icon */}
-        <div
-          className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-            isPdf
-              ? "bg-rose-50 border border-rose-100 text-rose-500"
-              : "bg-violet-50 border border-violet-100 text-violet-500"
-          }`}
-        >
-          {isPdf ? (
-            <FileText className="w-5 h-5" />
-          ) : (
-            <ImageIcon className="w-5 h-5" />
+      {/* File type icon centered */}
+      <div
+        className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+          isPdf
+            ? "bg-rose-50 border border-rose-100 text-rose-500"
+            : "bg-violet-50 border border-violet-100 text-violet-500"
+        }`}
+      >
+        {isPdf ? (
+          <FileText className="w-7 h-7" />
+        ) : (
+          <ImageIcon className="w-7 h-7" />
+        )}
+      </div>
+
+      {/* File info centered */}
+      <div className="text-center w-full min-w-0">
+        <p className="font-extrabold text-slate-800 text-base truncate px-4 leading-snug">
+          {file.name}
+        </p>
+        <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            {formatBytes(file.size)}
+          </span>
+          {pageCount !== null && pageCount !== undefined && isPdf && (
+            <>
+              <span className="text-slate-300 font-bold">·</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                {pageCount} {pageCount === 1 ? "page" : "pages"}
+              </span>
+            </>
           )}
-        </div>
-
-        {/* File info */}
-        <div className="flex-1 min-w-0">
-          <p className="font-bold text-slate-800 text-sm truncate leading-tight">
-            {file.name}
-          </p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-              {formatBytes(file.size)}
-            </span>
-            {pageCount !== null && pageCount !== undefined && isPdf && (
-              <>
-                <span className="text-slate-200">·</span>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                  {pageCount} {pageCount === 1 ? "page" : "pages"}
-                </span>
-              </>
-            )}
-            {/* Status badge */}
-            <span className="text-slate-200">·</span>
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${cfg.labelClass}`}>
-              {status === "uploading"
-                ? `${displayProgress}%`
-                : cfg.label}
-            </span>
-          </div>
-        </div>
-
-        {/* Right: status icon + remove button */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <AnimatePresence mode="wait">
-            {status === "success" && (
-              <motion.div
-                key="success"
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                className="text-emerald-500"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-              </motion.div>
-            )}
-            {(status === "uploading" || status === "presigning") && (
-              <motion.div
-                key="spinner"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-emerald-500"
-              >
-                <Loader2 className="w-4 h-4 animate-spin" />
-              </motion.div>
-            )}
-            {status === "error" && (
-              <motion.div
-                key="error"
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                className="text-rose-500"
-              >
-                <AlertCircle className="w-4 h-4" />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {onRemove && status !== "uploading" && status !== "presigning" && (
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={onRemove}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              title="Remove file"
-              type="button"
-            >
-              <X className="w-3.5 h-3.5" />
-            </motion.button>
-          )}
+          {/* Status badge */}
+          <span className="text-slate-300 font-bold">·</span>
+          <span className={`text-[10px] font-black uppercase tracking-wider ${cfg.labelClass}`}>
+            {status === "uploading"
+              ? `${displayProgress ?? 0}%`
+              : cfg.label}
+          </span>
         </div>
       </div>
 
-      {/* Error message */}
-      <AnimatePresence>
-        {status === "error" && error && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <p className="px-5 pb-3 text-xs text-rose-600 font-medium">
-              {error}
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Upload Progress Section BELOW preview card details */}
+      {(status === "uploading" || status === "presigning" || status === "success") && (
+        <div className="mt-2 w-full max-w-[280px]">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1.5 px-0.5">
+            <span>
+              {status === "presigning" ? "Preparing connection..." : (status === "success" ? "Upload complete" : "Uploading...")}
+            </span>
+            <span className="tabular-nums">
+              {status === "presigning" ? "..." : `${displayProgress ?? 0}%`}
+            </span>
+          </div>
 
-      {/* Progress bar */}
-      <AnimatePresence>
-        {(status === "uploading" || status === "presigning" || status === "success") && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute bottom-0 left-0 right-0 h-[3px] bg-slate-100"
-          >
+          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative">
             {status === "presigning" ? (
               // Indeterminate shimmer for presign phase
               <motion.div
@@ -236,9 +170,38 @@ export function FilePreviewCard({
                 transition={{ ease: "easeOut", duration: 0.3 }}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Error message */}
+      <AnimatePresence>
+        {status === "error" && error && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="w-full text-center overflow-hidden"
+          >
+            <p className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-100 rounded-xl py-2 px-3 mt-2">
+              {error}
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Remove button at top right */}
+      {onRemove && status !== "uploading" && status !== "presigning" && (
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={onRemove}
+          className="absolute top-3 right-3 w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          title="Remove file"
+          type="button"
+        >
+          <X className="w-4 h-4" />
+        </motion.button>
+      )}
     </motion.div>
   );
 }

@@ -73,29 +73,29 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl relative overflow-hidden"
+      className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex items-center justify-between gap-4 shadow-2xl relative overflow-hidden"
     >
       <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
         <Printer className="w-40 h-40" />
       </div>
 
-      <div className="z-10">
-        <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
+      <div className="z-10 flex flex-col justify-center min-w-0">
+        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
           Estimated Cost
         </span>
-        <p className="text-3xl font-black text-emerald-400 mt-1">
+        <p className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 leading-none">
           {formatCurrency(totalAmount)}
         </p>
-        <p className="text-[10px] text-slate-300 font-bold mt-1">
-          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} total print sheets
+        <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold mt-1.5 truncate">
+          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} print {totalPages === 1 ? "sheet" : "sheets"}
         </p>
       </div>
 
       <Button
         onClick={onCheckout}
-        className="px-8 h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-2 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20"
+        className="px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm"
       >
-        Checkout Details <ChevronRight className="w-4 h-4" />
+        Checkout <ChevronRight className="w-4 h-4" />
       </Button>
     </motion.div>
   );
@@ -128,20 +128,20 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   onPlaceOrder: () => void;
 }) {
   return (
-    <div className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl shadow-slate-950/20 relative overflow-hidden">
+    <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex items-center justify-between gap-4 shadow-2xl shadow-slate-950/20 relative overflow-hidden">
       <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
         <Printer className="w-40 h-40" />
       </div>
 
-      <div className="z-10">
-        <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
+      <div className="z-10 flex flex-col justify-center min-w-0">
+        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
           Total Print Bill
         </span>
-        <p className="text-3xl font-black text-emerald-400 mt-1">
+        <p className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 leading-none">
           {formatCurrency(totalAmount)}
         </p>
-        <p className="text-[10px] text-slate-300 font-bold mt-1">
-          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} total pages
+        <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold mt-1.5 truncate">
+          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} print {totalPages === 1 ? "sheet" : "sheets"}
         </p>
       </div>
 
@@ -155,7 +155,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
           customerName.trim().length < 3 ||
           customerPhone.length < 10
         }
-        className={`px-8 py-4 h-14 rounded-xl font-bold flex items-center gap-2 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 ${
+        className={`px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
           canRetry
             ? "bg-amber-500 hover:bg-amber-600 text-white"
             : "bg-emerald-500 hover:bg-emerald-600 text-white"
@@ -179,11 +179,11 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
         ) : orderStatus === "saving" ? (
           <>
             <Loader2 className="animate-spin w-4 h-4" />
-            Finalizing order…
+            Finalizing…
           </>
         ) : orderStatus === "failed" ? (
           <>
-            <RefreshCw className="w-4 h-4" /> Retry Order
+            <RefreshCw className="w-4 h-4" /> Retry
           </>
         ) : (
           <>
@@ -668,7 +668,7 @@ function OrderUploadPageInner() {
               transition={{ duration: 0.4 }}
               className="space-y-6"
             >
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6 min-h-[420px] flex flex-col justify-start">
                 <MultiFileUploader
                   key={uploaderResetKey}
                   ref={uploaderRef}
