@@ -97,8 +97,26 @@ export function validateUploadRequest(params: {
     };
   }
 
+  // Normalize reported MIME type based on file extension (Fix Android Chrome screenshot / generic binary uploads)
+  let mimeTypeNormalized = mimeType.toLowerCase();
+  const parts = fileName.split(".");
+  const ext = parts.length >= 2 ? parts[parts.length - 1].toLowerCase() : "";
+
+  if (
+    mimeTypeNormalized === "application/octet-stream" ||
+    mimeTypeNormalized === "binary/octet-stream" ||
+    mimeTypeNormalized === "image/pjpeg" ||
+    mimeTypeNormalized === "image/jpg" ||
+    mimeTypeNormalized === ""
+  ) {
+    if (ext === "pdf") mimeTypeNormalized = "application/pdf";
+    else if (ext === "png") mimeTypeNormalized = "image/png";
+    else if (ext === "webp") mimeTypeNormalized = "image/webp";
+    else if (ext === "jpg" || ext === "jpeg") mimeTypeNormalized = "image/jpeg";
+  }
+
   // 2. MIME type check
-  if (!ALLOWED_MIME_TYPES.has(mimeType.toLowerCase())) {
+  if (!ALLOWED_MIME_TYPES.has(mimeTypeNormalized)) {
     return {
       valid: false,
       error: `File type "${mimeType}" is not allowed. Only PDF and image files (PNG, JPG) are accepted.`,
@@ -107,7 +125,6 @@ export function validateUploadRequest(params: {
   }
 
   // 3. Extract and validate extension
-  const parts = fileName.split(".");
   if (parts.length < 2) {
     return {
       valid: false,
@@ -116,7 +133,6 @@ export function validateUploadRequest(params: {
     };
   }
 
-  const ext = parts[parts.length - 1].toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     return {
       valid: false,

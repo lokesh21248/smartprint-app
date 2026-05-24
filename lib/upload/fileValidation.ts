@@ -57,8 +57,26 @@ export interface ClientValidationResult {
  * Mirrors the same logic as validateUploadRequest() on the server.
  */
 export function validateFileClient(file: File): ClientValidationResult {
+  // Normalize reported MIME type based on file extension
+  let mimeTypeNormalized = file.type.toLowerCase();
+  const parts = file.name.split(".");
+  const ext = parts.length >= 2 ? parts[parts.length - 1].toLowerCase() : "";
+
+  if (
+    mimeTypeNormalized === "application/octet-stream" ||
+    mimeTypeNormalized === "binary/octet-stream" ||
+    mimeTypeNormalized === "image/pjpeg" ||
+    mimeTypeNormalized === "image/jpg" ||
+    mimeTypeNormalized === ""
+  ) {
+    if (ext === "pdf") mimeTypeNormalized = "application/pdf";
+    else if (ext === "png") mimeTypeNormalized = "image/png";
+    else if (ext === "webp") mimeTypeNormalized = "image/webp";
+    else if (ext === "jpg" || ext === "jpeg") mimeTypeNormalized = "image/jpeg";
+  }
+
   // 1. MIME type check
-  if (!ALLOWED_MIME_TYPES.has(file.type.toLowerCase())) {
+  if (!ALLOWED_MIME_TYPES.has(mimeTypeNormalized)) {
     return {
       valid: false,
       error: `"${file.type}" is not supported. Please upload a PDF, PNG, or JPG.`,
@@ -66,7 +84,6 @@ export function validateFileClient(file: File): ClientValidationResult {
   }
 
   // 2. Extension check
-  const parts = file.name.split(".");
   if (parts.length < 2) {
     return {
       valid: false,
@@ -74,7 +91,6 @@ export function validateFileClient(file: File): ClientValidationResult {
     };
   }
 
-  const ext = parts[parts.length - 1].toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     return {
       valid: false,

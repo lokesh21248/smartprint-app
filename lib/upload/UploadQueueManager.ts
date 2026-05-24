@@ -244,9 +244,17 @@ export class UploadQueueManager {
       const id = `file-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
       
       let file = rawFile;
-      // Normalise empty or unusual mime types (Point 6: Fix Android Chrome screenshot uploads)
-      if (!file.type || file.type === "") {
-        const ext = file.name.split(".").pop()?.toLowerCase();
+      let rawType = (file.type || "").toLowerCase();
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+
+      // Normalise empty, generic, or unusual mime types (Fix Android Chrome screenshot and image selector uploads)
+      if (
+        rawType === "" ||
+        rawType === "application/octet-stream" ||
+        rawType === "binary/octet-stream" ||
+        rawType === "image/pjpeg" ||
+        rawType === "image/jpg"
+      ) {
         let mimeType = "image/jpeg"; // Default to image/jpeg for screenshots/images
         if (ext === "pdf") mimeType = "application/pdf";
         else if (ext === "png") mimeType = "image/png";
