@@ -113,14 +113,7 @@ export interface OrderFileRecord {
   file_status?: "active" | "expired";
 }
 
-export type UploadStatus =
-  | "pending"
-  | "uploading"
-  | "compressing"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "abandoned";
+export type UploadStatus = "pending" | "uploading" | "completed" | "failed";
 
 
 export interface UploadedFile {

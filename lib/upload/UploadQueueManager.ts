@@ -35,7 +35,6 @@ import * as tus from "tus-js-client";
 import { indexedDbStore } from "@/lib/upload/indexedDb";
 import { clearStaleTusFingerprints, clearAllTusFingerprints } from "@/lib/upload/tusFingerprint";
 import { classifyUploadError } from "@/lib/upload/errorClassifier";
-import { compressImageIfNeeded } from "@/lib/upload/compressImage";
 import {
   logUploadStart,
   logUploadChunk,
@@ -55,8 +54,8 @@ import { toast } from "sonner";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Exponential backoff delays in ms. Length = max retries. */
-const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000] as const;
-const MAX_RETRIES = RETRY_DELAYS_MS.length;
+const RETRY_DELAYS_MS = [1_000, 3_000] as const;
+const MAX_RETRIES = 2;
 
 /** Presign fetch timeout — if it exceeds this, we treat it as a retryable error. */
 const PRESIGN_TIMEOUT_MS = 15_000;
@@ -72,9 +71,9 @@ function getChunkSize(isMobile: boolean) {
   return isMobile ? 1 * 1024 * 1024 : 5 * 1024 * 1024;
 }
 
-/** Concurrent uploads: 1 on mobile, 3 on desktop. */
-function getConcurrencyLimit(isMobile: boolean) {
-  return isMobile ? 1 : 3;
+/** Concurrent uploads: 1 for all devices (ultra-stable, maximum reliability) */
+function getConcurrencyLimit(_isMobile: boolean) {
+  return 1;
 }
 
 function detectMobile(): boolean {
@@ -270,7 +269,12 @@ export class UploadQueueManager {
       // Parse PDF pages in background (non-blocking)
       if (isPdf) {
         this._parsePdfPages(rawFile).then(({ count, failed }) => {
-          this._patch(id, { pages: count, pdfParseFailed: failed });
+          if (failed) {
+            toast.error(`"${rawFile.name}" appears to be corrupted or invalid and has been removed.`);
+            this.removeFile(id);
+          } else {
+            this._patch(id, { pages: count, pdfParseFailed: failed });
+          }
         });
       }
     }
@@ -528,9 +532,17 @@ export class UploadQueueManager {
     try {
       await this._acquireWakeLock();
 
-      // ── Step 1: Compress image if needed ─────────────────────────────────────
-      const compressed = await this._maybeCompress(id);
-      if (!compressed) return; // File removed or access revoked
+      // ── Step 1: Ensure binary file is loaded ──────────────────────────────
+      let fileToUpload = entry.file;
+      if (!fileToUpload) {
+        const dbFile = await indexedDbStore.getFile(id);
+        if (!dbFile) {
+          toast.error(`Device revoked file access for "${entry.name}". Please select the file again.`);
+          this.removeFile(id);
+          return;
+        }
+        this._patch(id, { file: dbFile });
+      }
 
       // ── Step 2: Retry loop ────────────────────────────────────────────────────
       while (attempt <= MAX_RETRIES) {
@@ -638,55 +650,7 @@ export class UploadQueueManager {
     }
   }
 
-  // ─── Compression ─────────────────────────────────────────────────────────────
 
-  private async _maybeCompress(id: string): Promise<boolean> {
-    const entry = this._files.get(id);
-    if (!entry) return false;
-
-    // Ensure we have the binary
-    let fileToUpload = entry.file;
-    if (!fileToUpload) {
-      const dbFile = await indexedDbStore.getFile(id);
-      if (!dbFile) {
-        toast.error(`Device revoked file access for "${entry.name}". Please select the file again.`);
-        this.removeFile(id);
-        return false;
-      }
-      fileToUpload = dbFile;
-      this._patch(id, { file: dbFile });
-    }
-
-    if (!fileToUpload.type.startsWith("image/")) return true;
-
-    this._patch(id, { state: "preparing", error: "Optimizing image…" });
-
-    try {
-      const compResult = await compressImageIfNeeded(fileToUpload, 500 * 1024);
-      logCompressionResult(
-        entry.name,
-        compResult.originalSizeBytes,
-        compResult.finalSizeBytes,
-        compResult.compressed
-      );
-      if (compResult.compressed) {
-        await indexedDbStore.saveFile(id, compResult.file);
-        this._patch(id, {
-          file: compResult.file,
-          size: compResult.file.size,
-          mimeType: compResult.file.type,
-          error: undefined,
-        });
-      } else {
-        this._patch(id, { error: undefined });
-      }
-    } catch (err) {
-      console.warn("[QueueManager] Compression error — proceeding with original:", err);
-      this._patch(id, { error: undefined });
-    }
-
-    return true;
-  }
 
   // ─── Presign ──────────────────────────────────────────────────────────────────
 
@@ -876,24 +840,11 @@ export class UploadQueueManager {
           // Refresh watchdog
           this._lastProgressAt.set(id, Date.now());
 
-          // Calculate speed
-          const now = Date.now();
-          const elapsed = (now - lastTimestamp) / 1000;
-          if (elapsed > 0.5) {
-            speedBytesPerSec = Math.round((bytesSent - lastBytesSent) / elapsed);
-            lastBytesSent = bytesSent;
-            lastTimestamp = now;
-          }
-
-          // ETA
-          const remaining = bytesTotal - bytesSent;
-          const eta = speedBytesPerSec > 0 ? Math.ceil(remaining / speedBytesPerSec) : undefined;
-
           this._patch(id, {
             state: "uploading",
             progress: pct,
-            uploadSpeed: speedBytesPerSec,
-            etaSeconds: eta,
+            uploadSpeed: undefined,
+            etaSeconds: undefined,
             error: undefined,
           });
         },
@@ -954,9 +905,18 @@ export class UploadQueueManager {
       if (entry.state !== "uploading") continue;
 
       const lastProgress = this._lastProgressAt.get(id) ?? now;
-      if (now - lastProgress > WATCHDOG_STALL_MS) {
+      const elapsed = now - lastProgress;
+
+      if (elapsed > 60_000) {
         console.warn(
-          `[QueueManager:Watchdog] Upload stalled for "${entry.name}" — ${now - lastProgress}ms since last progress. Aborting for retry.`
+          `[QueueManager:Watchdog] Upload hard timed out for "${entry.name}" after 60s of no progress. Aborting.`
+        );
+        toast.error(`Upload stalled for "${entry.name}" (timeout 60s). Please select the file again.`);
+        this._abortFileUpload(id);
+        this.removeFile(id);
+      } else if (elapsed > WATCHDOG_STALL_MS) {
+        console.warn(
+          `[QueueManager:Watchdog] Upload stalled for "${entry.name}" — ${elapsed}ms since last progress. Aborting for retry.`
         );
         this._abortFileUpload(id);
         this._patch(id, {
@@ -1155,8 +1115,8 @@ export class UploadQueueManager {
   private _toUploadedFile = (entry: FileEntry): UploadedFile => {
     const statusMap: Record<FileState, UploadStatus> = {
       idle: "pending",
-      preparing: "compressing",
-      requesting_url: "processing",
+      preparing: "pending",
+      requesting_url: "pending",
       uploading: "uploading",
       retrying: "pending",
       paused: "pending",

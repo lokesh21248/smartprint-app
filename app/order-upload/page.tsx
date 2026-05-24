@@ -98,8 +98,7 @@ function OrderUploadPageInner() {
 
   const uploadPhase = useMemo<UploadPhase>(() => {
     if (orderStatus === "success") return "success";
-    if (files.some((f) => f.status === "compressing")) return "compressing";
-    if (files.some((f) => f.status === "uploading" || f.status === "processing" || f.status === "pending")) return "uploading";
+    if (files.some((f) => f.status === "uploading" || f.status === "pending")) return "uploading";
     if (orderStatus === "saving") return "saving";
     return "idle";
   }, [orderStatus, files]);

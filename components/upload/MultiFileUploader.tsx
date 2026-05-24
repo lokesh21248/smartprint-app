@@ -136,12 +136,16 @@ export const MultiFileUploader = memo(
           toast.error(`"${file.name}" is not supported. Only PDF, PNG, and JPG files are accepted.`);
           continue;
         }
+        if ((type.includes("heic") || ext === "heic") && file.size > 50 * 1024 * 1024) {
+          toast.error(`"${file.name}" (HEIC) exceeds the 50 MB size limit.`);
+          continue;
+        }
         if (file.size > MAX_SIZE_BYTES) {
           toast.error(`"${file.name}" exceeds the 500 MB size limit.`);
           continue;
         }
         if (file.size === 0) {
-          toast.error(`"${file.name}" is empty and cannot be uploaded.`);
+          toast.error(`"${file.name}" is empty (0 bytes) and cannot be uploaded.`);
           continue;
         }
         if (
@@ -172,12 +176,7 @@ export const MultiFileUploader = memo(
     // ── Summary counts ────────────────────────────────────────────────────────
     const successCount = queueFiles.filter((f) => f.status === "completed").length;
     const failedCount  = queueFiles.filter((f) => f.status === "failed").length;
-    const uploadingCount = queueFiles.filter(
-      (f) =>
-        f.status === "uploading" ||
-        f.status === "compressing" ||
-        f.status === "processing"
-    ).length;
+    const uploadingCount = queueFiles.filter((f) => f.status === "uploading").length;
     const queuedCount = queueFiles.filter((f) => f.status === "pending").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
 
@@ -336,7 +335,7 @@ MultiFileUploader.displayName = "MultiFileUploader";
 
 // ─── Sub-component: Individual File Row ──────────────────────────────────────
 
-function ReorderItemRow({
+const ReorderItemRow = memo(function ReorderItemRow({
   fileItem,
   disabled,
   onRemove,
@@ -358,8 +357,6 @@ function ReorderItemRow({
   const isPdf = fileItem.file?.type === "application/pdf" || fileItem.name.toLowerCase().endsWith(".pdf");
   const isActivelyUploading =
     fileItem.status === "uploading" ||
-    fileItem.status === "compressing" ||
-    fileItem.status === "processing" ||
     fileItem.status === "pending";
 
   // Local object URL for image thumbnail
@@ -402,10 +399,6 @@ function ReorderItemRow({
         return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
       case "uploading":
         return "border-emerald-200 shadow-sm";
-      case "compressing":
-        return "border-indigo-200 shadow-sm";
-      case "processing":
-        return "border-blue-200 shadow-sm bg-blue-50/5";
       case "pending":
         return "border-slate-100 shadow-sm bg-slate-50/5";
       default:
@@ -436,39 +429,6 @@ function ReorderItemRow({
           />
         </div>
       )}
-      {fileItem.status === "compressing" && (
-        <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 rounded-full animate-pulse"
-            style={{ width: "60%" }}
-          />
-        </div>
-      )}
-      {fileItem.status === "processing" && (
-        <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-blue-300 via-sky-300 to-blue-300 rounded-full animate-pulse"
-            style={{ width: "80%" }}
-          />
-        </div>
-      )}
-      {fileItem.status === "pending" && fileItem.error && (
-        <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-400 rounded-full animate-pulse"
-            style={{ width: "40%" }}
-          />
-        </div>
-      )}
-      {fileItem.status === "pending" && !fileItem.error && (
-        <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-slate-300 via-slate-200 to-slate-300 rounded-full animate-pulse"
-            style={{ width: "20%" }}
-          />
-        </div>
-      )}
-      {/* Success: full green bar */}
       {fileItem.status === "completed" && (
         <div className="h-0.5 w-full bg-emerald-400" />
       )}
@@ -674,22 +634,6 @@ function ReorderItemRow({
             <div className="mt-3 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-500 flex items-center gap-1.5">
-                  {fileItem.status === "compressing" && (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                      <span className="text-indigo-600">
-                        {fileItem.error ?? "Optimizing image…"}
-                      </span>
-                    </>
-                  )}
-                  {fileItem.status === "processing" && (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-                      <span className="text-blue-600">
-                        {fileItem.error ?? "Preparing upload…"}
-                      </span>
-                    </>
-                  )}
                   {fileItem.status === "uploading" && (
                     <>
                       <Upload className="w-3.5 h-3.5 text-emerald-500" />
@@ -713,24 +657,6 @@ function ReorderItemRow({
                   </span>
                 )}
               </div>
-
-              {/* Speed + ETA row */}
-              {fileItem.status === "uploading" &&
-                !fileItem.error &&
-                (fileItem.uploadSpeed ?? 0) > 0 && (
-                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 mt-1">
-                    <span className="flex items-center gap-1">
-                      <Zap className="w-3 h-3 text-emerald-400" />
-                      {formatSpeed(fileItem.uploadSpeed ?? 0)}
-                    </span>
-                    {(fileItem.etaSeconds ?? 0) > 0 && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-300" />
-                        {formatEta(fileItem.etaSeconds ?? 0)} left
-                      </span>
-                    )}
-                  </div>
-                )}
 
               {/* Thick progress bar */}
               {fileItem.status === "uploading" && (
@@ -786,4 +712,4 @@ function ReorderItemRow({
       </div>
     </Reorder.Item>
   );
-}
+});
