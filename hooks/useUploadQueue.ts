@@ -76,6 +76,14 @@ export function useUploadQueue({
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // ── Manager instance — one per mount, never recreated ─────────────────────
   const managerRef = useRef<UploadQueueManager | null>(null);
 
@@ -95,6 +103,7 @@ export function useUploadQueue({
 
     // Subscribe to all queue events → update React state
     const unsub = manager.subscribe((event: QueueEvent) => {
+      if (!mountedRef.current) return;
       switch (event.type) {
         case "FILE_ADDED":
           setFiles((prev) => {
@@ -125,7 +134,9 @@ export function useUploadQueue({
     });
 
     // Sync files from manager if reusing cached instance
-    setFiles(manager.getFiles());
+    if (mountedRef.current) {
+      setFiles(manager.getFiles());
+    }
 
     if (!rehydratedRef.current) {
       rehydratedRef.current = true;
@@ -200,7 +211,9 @@ export function useUploadQueue({
   const reorder = useCallback((newOrder: UploadedFile[]) => {
     managerRef.current?.reorder(newOrder.map((f) => f.id));
     // Immediately reflect in local state for smooth drag UX
-    setFiles(newOrder);
+    if (mountedRef.current) {
+      setFiles(newOrder);
+    }
   }, []);
 
   const uploadAll = useCallback(async () => {

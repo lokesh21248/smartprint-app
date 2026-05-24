@@ -1288,11 +1288,14 @@ export class UploadQueueManager {
           logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
           this._lastProgressAt.set(id, Date.now());
 
-          this._patch(id, {
-            state: "uploading",
-            progress: pct,
-            uploadSpeed: undefined,
-          });
+          const currentEntry = this._files.get(id);
+          if (currentEntry && (pct !== currentEntry.progress || pct === 100 || currentEntry.state !== "uploading")) {
+            this._patch(id, {
+              state: "uploading",
+              progress: pct,
+              uploadSpeed: undefined,
+            });
+          }
         },
         onChunkComplete: (chunkSize: number, bytesAccepted: number, bytesTotal: number) => {
           console.log("[UPLOAD_CHUNK_SENT]");

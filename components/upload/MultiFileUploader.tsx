@@ -88,7 +88,7 @@ const MAX_FILES = 50; // Hardened 50 files limit
 
 export const MultiFileUploader = memo(
   forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
-    ({ onChange, shopId, orderId, disabled }, ref) => {
+    ({ files, onChange, shopId, orderId, disabled }, ref) => {
     // ── Upload queue ──────────────────────────────────────────────────────────
     const {
       files: queueFiles,
@@ -106,7 +106,25 @@ export const MultiFileUploader = memo(
 
     // ── Keep parent state in sync ─────────────────────────────────────────────
     useEffect(() => {
-      onChange(queueFiles);
+      // Check if files actually changed to prevent redundant parent state updates and infinite render loops (Point 2 & 6)
+      const changed =
+        !files ||
+        files.length !== queueFiles.length ||
+        files.some((f, i) => {
+          const q = queueFiles[i];
+          return (
+            !q ||
+            f.id !== q.id ||
+            f.status !== q.status ||
+            f.progress !== q.progress ||
+            f.pages !== q.pages ||
+            f.error !== q.error
+          );
+        });
+
+      if (changed) {
+        onChange(queueFiles);
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [queueFiles]);
 
