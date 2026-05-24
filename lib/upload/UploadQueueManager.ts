@@ -55,8 +55,8 @@ import { toast } from "sonner";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Exponential backoff delays in ms. Length = max retries. */
-const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
-const MAX_RETRIES = 4;
+const RETRY_DELAYS_MS = [0, 1000, 3000, 5000, 10000, 20000] as const;
+const MAX_RETRIES = 5;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -81,7 +81,7 @@ const WATCHDOG_INTERVAL_MS = 5_000;
 /** Chunk size optimization based on connection speed for weak mobile networks (Point 7) */
 function getChunkSize(isMobile: boolean): number {
   if (!isMobile) return 5 * 1024 * 1024; // 5MB on desktop
-  return 512 * 1024; // Always 512KB on mobile for max stability and network resilience (Fix 9)
+  return 2 * 1024 * 1024; // Always 2MB on mobile for max stability and network resilience (Fix 9)
 }
 
 /** Concurrent uploads: 1 on mobile (ultra-stable, maximum reliability), 2 on desktop */
@@ -104,6 +104,7 @@ type FileState =
   | "requesting_url"
   | "uploading"
   | "processing"
+  | "verifying"
   | "retrying"
   | "paused"
   | "completed"
@@ -196,6 +197,7 @@ export class UploadQueueManager {
   private _runningProcesses = new Set<string>();
   private _activeResolvers = new Map<string, (result: "success" | "cancelled" | "error") => void>();
   private _fileExecutionIds = new Map<string, number>();
+  private _tusRetryTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
   // ── Cleanup refs ─────────────────────────────────────────────────────────────
   private _destroyed = false;
@@ -342,6 +344,11 @@ export class UploadQueueManager {
     if (!entry) return;
 
     logUploadCancelled(entry.name);
+
+    // Invalidate current execution immediately
+    const currentExecId = this._fileExecutionIds.get(id) ?? 0;
+    this._fileExecutionIds.set(id, currentExecId + 1);
+
     this._abortFileUpload(id);
     this._files.delete(id);
     this._activeFileIds.delete(id);
@@ -358,6 +365,11 @@ export class UploadQueueManager {
     if (!entry) return;
 
     logUploadCancelled(entry.name);
+
+    // Invalidate current execution immediately
+    const currentExecId = this._fileExecutionIds.get(id) ?? 0;
+    this._fileExecutionIds.set(id, currentExecId + 1);
+
     this._abortFileUpload(id);
     this._patch(id, {
       state: "cancelled",
@@ -372,6 +384,8 @@ export class UploadQueueManager {
   cancelAll(): void {
     console.log("[QueueManager] cancelAll() called.");
     for (const id of this._files.keys()) {
+      const currentExecId = this._fileExecutionIds.get(id) ?? 0;
+      this._fileExecutionIds.set(id, currentExecId + 1);
       this._abortFileUpload(id);
       this._patch(id, {
         state: "cancelled",
@@ -393,6 +407,10 @@ export class UploadQueueManager {
   retryFile(id: string): void {
     const entry = this._files.get(id);
     if (!entry || (entry.state !== "failed" && entry.state !== "cancelled")) return;
+
+    // Invalidate current execution immediately
+    const currentExecId = this._fileExecutionIds.get(id) ?? 0;
+    this._fileExecutionIds.set(id, currentExecId + 1);
 
     clearStaleTusFingerprints(id);
     this._patch(id, {
@@ -536,6 +554,11 @@ export class UploadQueueManager {
       this._watchdogInterval = null;
     }
 
+    for (const t of this._tusRetryTimeouts.values()) {
+      clearTimeout(t);
+    }
+    this._tusRetryTimeouts.clear();
+
     for (const id of this._files.keys()) {
       this._abortFileUpload(id);
     }
@@ -623,6 +646,9 @@ export class UploadQueueManager {
     // Yield to the event loop/requestAnimationFrame to prevent UI thread blocking on mobile
     if (typeof window !== "undefined" && window.requestAnimationFrame) {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+        return;
+      }
     }
 
     let attempt = 0;
@@ -633,11 +659,14 @@ export class UploadQueueManager {
         return;
       }
 
-      console.log(`[QueueManager:Debug] Starting upload worker loop for "${entry.name}" (${id}).`);
+      console.log(`[UPLOAD_START] id=${id} name=${entry.name} size=${entry.size}`);
       this._lastProgressAt.set(id, Date.now()); // Set watchdog baseline immediately
       const startedAt = Date.now();
 
       await this._acquireWakeLock();
+      if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+        return;
+      }
 
       // ── Step 1: Ensure binary file is loaded ──────────────────────────────
       let fileToUpload = entry.file;
@@ -653,6 +682,10 @@ export class UploadQueueManager {
           return null;
         });
 
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
+
         if (!dbFile) {
           toast.error(`Your mobile browser may have cleared the file "${entry.name}". Please reselect it.`);
           this.removeFile(id);
@@ -664,6 +697,9 @@ export class UploadQueueManager {
       // Re-hydrate and validate file object safely (Point 15: Validate File Before Upload)
       try {
         fileToUpload = await this._validateAndHydrateFile(fileToUpload);
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
         this._patch(id, { file: fileToUpload });
         await validateUploadFile(fileToUpload);
       } catch (err) {
@@ -683,8 +719,12 @@ export class UploadQueueManager {
 
       // ── Step 2: Retry loop ────────────────────────────────────────────────────
       while (attempt <= MAX_RETRIES) {
-        if (this._destroyed) return;
-        if (!this._files.has(id)) return; // File was removed mid-upload
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
+
+        const freshEntry = this._files.get(id)!;
+        attempt = freshEntry.retryAttempt;
 
         // Clean up any existing upload instance before starting a new retry attempt
         this._abortFileUpload(id);
@@ -699,7 +739,9 @@ export class UploadQueueManager {
 
         // ── Wait for network ────────────────────────────────────────────────────
         await this._waitForNetwork(id);
-        if (!this._files.has(id)) return;
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
 
         // ── Clear stale fingerprints + force fresh token on every attempt ───────
         clearStaleTusFingerprints(id);
@@ -707,10 +749,13 @@ export class UploadQueueManager {
         // ── Step 2a: Presign (with 15s timeout) ──────────────────────────────────
         this._patch(id, {
           state: "requesting_url",
-          error: attempt > 0 ? `Retrying… (attempt ${attempt}/${MAX_RETRIES})` : "Preparing upload…",
+          error: attempt > 0 ? "Reconnecting…" : "Preparing upload…",
         });
 
         const presignResult = await this._generateUploadUrlWithRetry(id);
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
         if (!presignResult) return; // Cancelled, destroyed or failed (failed calls removeFile internally)
 
         if (presignResult.alreadyExists) {
@@ -719,9 +764,10 @@ export class UploadQueueManager {
             state: "completed",
             progress: 100,
             storagePath: presignResult.storagePath,
-            error: undefined,
+            error: "Upload complete",
           });
           logUploadSuccess(entry.name, entry.size, presignResult.storagePath, Date.now() - startedAt);
+          console.log(`[UPLOAD_SUCCESS] id=${id}`);
           this._scheduleQueueDrain();
           return;
         }
@@ -735,12 +781,17 @@ export class UploadQueueManager {
         logUploadStart(entry.name, entry.size, attempt + 1);
 
         const uploadResult = await this._runTusUpload(id, presignResult.token, presignResult.storagePath, startedAt);
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
 
         if (uploadResult === "success") {
-          // STEP 9: ADD UPLOAD VERIFICATION
+          // PHASE 5: PHYSICAL VERIFICATION STEP
           try {
+            console.log(`[UPLOAD_VERIFY] id=${id}`);
             this._patch(id, {
-              error: "Verifying upload integrity...",
+              state: "verifying",
+              error: "Verifying upload…",
             });
             
             const supabase = (await import("@/lib/supabase/client")).createClient();
@@ -752,16 +803,27 @@ export class UploadQueueManager {
               .from("order-files")
               .list(folderPath, { search: filename });
 
+            if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+              return;
+            }
+
             if (listError) {
               throw new Error(`Integrity check failed: ${listError.message}`);
             }
 
-            const exists = fileList?.some((f: any) => f.name === filename && f.metadata?.size > 0);
-            if (!exists) {
-              throw new Error("Verification failed: File missing or empty in storage bucket.");
+            const uploadedFileItem = fileList?.find((f: any) => f.name === filename);
+            if (!uploadedFileItem) {
+              throw new Error("Verification failed: File missing in storage bucket.");
+            }
+            if (!uploadedFileItem.metadata?.size || uploadedFileItem.metadata.size === 0) {
+              throw new Error("Verification failed: File is empty (0 bytes) in storage bucket.");
+            }
+            if (uploadedFileItem.metadata.size !== entry.size) {
+              throw new Error(`Verification failed: Size mismatch. Expected ${entry.size} bytes, got ${uploadedFileItem.metadata.size} bytes.`);
             }
 
             console.log(`[QueueManager] Physical upload verified for "${entry.name}" at path: ${fullPath}`);
+            console.log(`[UPLOAD_SUCCESS] id=${id}`);
             
             // Log successful diagnostics (STEP 11)
             const snapshot = getDiagnosticsSnapshot({
@@ -775,11 +837,27 @@ export class UploadQueueManager {
             });
             logUploadDiagnostics(snapshot, "SUCCESS");
 
+            // Transition to processing for post-upload PDF page counting
+            this._patch(id, {
+              state: "processing",
+              progress: 100,
+              storagePath: fullPath,
+              uploadSpeed: undefined,
+              etaSeconds: undefined,
+              error: undefined,
+            });
+
+            // Run post-upload processing asynchronously (non-blocking)
+            this._runPostUploadProcessing(id);
+
             this._scheduleQueueDrain();
             return;
           } catch (verifyErr) {
             console.error(`[QueueManager] Upload verification failed for "${entry.name}":`, verifyErr);
-            attempt++;
+            
+            const freshEntryAfterVerify = this._files.get(id)!;
+            attempt = freshEntryAfterVerify.retryAttempt + 1;
+            this._patch(id, { retryAttempt: attempt });
             
             const snapshot = getDiagnosticsSnapshot({
               fileId: id,
@@ -793,9 +871,10 @@ export class UploadQueueManager {
             logUploadDiagnostics(snapshot, "FAILURE");
 
             if (attempt > MAX_RETRIES) {
+              console.log(`[UPLOAD_FAILED] id=${id} error=${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`);
               this._patch(id, {
                 state: "failed",
-                error: `Upload verification failed: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}.`,
+                error: "Retry failed — tap to retry",
               });
               this._activeFileIds.delete(id);
               this._runningProcesses.delete(id);
@@ -803,21 +882,28 @@ export class UploadQueueManager {
             }
             
             const delay = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
+            console.log(`[UPLOAD_RETRY] id=${id} attempt=${attempt}`);
             this._patch(id, {
               state: "retrying",
-              error: `Verification failed — retrying… (Attempt ${attempt}/${MAX_RETRIES})`,
+              error: "Reconnecting…",
             });
             await this._sleep(delay, id);
+            if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+              return;
+            }
             continue;
           }
         }
 
         if (uploadResult === "cancelled") {
+          console.log(`[UPLOAD_ABORTED] id=${id}`);
           return;
         }
 
         // uploadResult === "error" — fall through to retry
-        attempt++;
+        const freshEntryAfterUpload = this._files.get(id)!;
+        attempt = freshEntryAfterUpload.retryAttempt + 1;
+        this._patch(id, { retryAttempt: attempt });
 
         if (attempt > MAX_RETRIES) {
           logUploadFailure(
@@ -826,22 +912,30 @@ export class UploadQueueManager {
             "Upload failed after maximum retries.",
             attempt
           );
-          toast.error("Upload failed. Please select file again.");
-          this.removeFile(id);
+          console.log(`[UPLOAD_FAILED] id=${id} error=MAX_RETRIES_EXCEEDED`);
+          this._patch(id, {
+            state: "failed",
+            error: "Retry failed — tap to retry",
+          });
+          this._activeFileIds.delete(id);
+          this._runningProcesses.delete(id);
           return;
         }
 
         // ── Backoff ───────────────────────────────────────────────────────────────
         const delay = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
         logRetryAttempt(entry.name, attempt, delay);
+        console.log(`[UPLOAD_RETRY] id=${id} attempt=${attempt}`);
 
         this._patch(id, {
           state: "retrying",
-          error: `Connection interrupted. Reconnecting upload… (Attempt ${attempt}/${MAX_RETRIES})`,
+          error: "Reconnecting…",
         });
 
         await this._sleep(delay, id);
-        if (!this._files.has(id)) return;
+        if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+          return;
+        }
       }
     } catch (err) {
       console.error(`[QueueManager] Exception in _processFile for file ${id}:`, err);
@@ -849,9 +943,10 @@ export class UploadQueueManager {
       if (entry && entry.state !== "completed" && entry.state !== "cancelled") {
         const classified = classifyUploadError(err, "general");
         logUploadFailure(entry.name, classified.code, classified.userMessage, attempt);
+        console.log(`[UPLOAD_FAILED] id=${id} error=${classified.userMessage}`);
         this._patch(id, {
           state: "failed",
-          error: `Upload failed: ${classified.userMessage}.`,
+          error: "Retry failed — tap to retry",
         });
       }
     } finally {
@@ -1220,9 +1315,11 @@ export class UploadQueueManager {
               if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
                 const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
                 console.warn(`[QueueManager] TUS startup failed, retrying in ${delay}ms...`, err);
-                setTimeout(() => {
+                const t = setTimeout(() => {
+                  this._tusRetryTimeouts.delete(id);
                   startTusWithRetry();
                 }, delay);
+                this._tusRetryTimeouts.set(id, t);
               } else {
                 this._patch(id, { error: classified.userMessage });
                 wrappedResolve("error");
@@ -1241,6 +1338,7 @@ export class UploadQueueManager {
             const previousUploads = await withTimeout(upload.findPreviousUploads(), 15000);
             if (previousUploads && previousUploads.length > 0) {
               console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
+              console.log(`[UPLOAD_RESUME] id=${id} offset=${previousUploads[0].uploadUrl}`);
               upload.resumeFromPreviousUpload(previousUploads[0]);
             }
           } catch (err: unknown) {
@@ -1274,15 +1372,17 @@ export class UploadQueueManager {
 
               this._patch(id, {
                 state: "retrying",
-                error: "Connection interrupted. Reconnecting upload…",
+                error: "Reconnecting…",
               });
 
               tusAttempt++;
               if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
                 const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
-                setTimeout(() => {
+                const t = setTimeout(() => {
+                  this._tusRetryTimeouts.delete(id);
                   startTusWithRetry();
                 }, delay);
+                this._tusRetryTimeouts.set(id, t);
               } else {
                 wrappedResolve("error");
               }
@@ -1309,15 +1409,17 @@ export class UploadQueueManager {
           
           this._patch(id, {
             state: "retrying",
-            error: "Connection interrupted. Reconnecting upload…",
+            error: "Reconnecting…",
           });
 
           tusAttempt++;
           if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
             const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
-            setTimeout(() => {
+            const t = setTimeout(() => {
+              this._tusRetryTimeouts.delete(id);
               startTusWithRetry();
             }, delay);
+            this._tusRetryTimeouts.set(id, t);
           } else {
             wrappedResolve("error");
           }
@@ -1348,6 +1450,11 @@ export class UploadQueueManager {
           console.warn(
             `[QueueManager:Watchdog] Stuck preparing/initializing state detected for "${entry.name}" after ${elapsed}ms. Retrying.`
           );
+
+          // Invalidate current execution immediately
+          const currentExecId = this._fileExecutionIds.get(id) ?? 0;
+          this._fileExecutionIds.set(id, currentExecId + 1);
+
           this._abortFileUpload(id, "error");
           this._patch(id, {
             state: "preparing",
@@ -1499,6 +1606,12 @@ export class UploadQueueManager {
     if (tusInstance) {
       tusInstance.abort(false).catch(() => {});
       this._tusInstances.delete(id);
+    }
+
+    const retryTimeout = this._tusRetryTimeouts.get(id);
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      this._tusRetryTimeouts.delete(id);
     }
 
     const controller = this._abortControllers.get(id);
@@ -1674,13 +1787,14 @@ export class UploadQueueManager {
       idle: "idle",
       preparing: "preparing",
       queued: "queued",
-      requesting_url: "initializing",
+      requesting_url: "preparing",
       uploading: "uploading",
       processing: "processing",
+      verifying: "verifying",
       retrying: "retrying",
       paused: "paused",
-      completed: "success",
-      failed: "error",
+      completed: "completed",
+      failed: "failed",
       cancelled: "cancelled",
     };
 

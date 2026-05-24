@@ -174,10 +174,10 @@ export const MultiFileUploader = memo(
     };
 
     // ── Summary counts ────────────────────────────────────────────────────────
-    const successCount = queueFiles.filter((f) => f.status === "success").length;
-    const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "error" || f.status === "cancelled").length;
+    const successCount = queueFiles.filter((f) => f.status === "completed").length;
+    const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "cancelled").length;
     const uploadingCount = queueFiles.filter((f) => f.status === "uploading" || f.status === "processing").length;
-    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing" || f.status === "initializing").length;
+    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing" || f.status === "verifying").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
 
     return (
@@ -359,14 +359,14 @@ const ReorderItemRow = memo(function ReorderItemRow({
     fileItem.status === "uploading" ||
     fileItem.status === "queued" ||
     fileItem.status === "preparing" ||
-    fileItem.status === "initializing" ||
+    fileItem.status === "verifying" ||
     fileItem.status === "retrying" ||
     fileItem.status === "processing";
 
   // Local object URL for image thumbnail
   const [thumbUrl, setThumbUrl] = useState<string>("");
   useEffect(() => {
-    if (!isPdf && fileItem.file && fileItem.status === "success") {
+    if (!isPdf && fileItem.file && fileItem.status === "completed") {
       const url = URL.createObjectURL(fileItem.file);
       setThumbUrl(url);
       return () => URL.revokeObjectURL(url);
@@ -390,7 +390,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
     switch (fileItem.status) {
       case "failed":
         return "border-rose-200 shadow-rose-50 shadow-sm bg-rose-50/30";
-      case "success":
+      case "completed":
         return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
       case "uploading":
       case "processing":
@@ -413,7 +413,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20, height: 0 }}
       transition={{ duration: 0.2 }}
-      className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${cardStyle}`}
+      className={`bg-white rounded-2xl border transition-colors duration-200 overflow-hidden ${cardStyle}`}
     >
       <div className="p-4 flex flex-col gap-3">
         {/* Main Details Row */}
@@ -432,7 +432,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
 
           {/* Thumbnail */}
           <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
-            {fileItem.status === "success" && (
+            {fileItem.status === "completed" && (
               <motion.div
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
@@ -516,11 +516,11 @@ const ReorderItemRow = memo(function ReorderItemRow({
                     </span>
                   </>
                 )}
-                {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing") && (
+                {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "verifying") && (
                   <>
                     <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
                     <span className="text-slate-700">
-                      {fileItem.error ? fileItem.error : (fileItem.status === "initializing" ? "Preparing secure upload session..." : "Queued…")}
+                      {fileItem.error ? fileItem.error : (fileItem.status === "verifying" ? "Verifying upload…" : "Queued…")}
                     </span>
                   </>
                 )}
@@ -528,7 +528,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
                   <>
                     <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin shrink-0" />
                     <span className="text-amber-700">
-                      {fileItem.error ? fileItem.error : "Retrying upload automatically…"}
+                      {fileItem.error ? fileItem.error : "Reconnecting…"}
                     </span>
                   </>
                 )}
@@ -555,19 +555,18 @@ const ReorderItemRow = memo(function ReorderItemRow({
         )}
 
         {/* Success State */}
-        {fileItem.status === "success" && (
+        {fileItem.status === "completed" && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 px-1 mt-0.5"
           >
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            Upload complete — ready for print
+            Upload complete
           </motion.div>
         )}
 
-        {/* Config Controls */}
-        {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "initializing" || fileItem.status === "idle" || fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
+        {(fileItem.status === "idle" || fileItem.status === "completed" || fileItem.status === "paused" || fileItem.status === "failed" || fileItem.status === "cancelled") && (
           <div className="pt-2 border-t border-slate-100/70 flex flex-wrap items-center gap-3 px-1 mt-1">
             {/* Copies */}
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
@@ -683,7 +682,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
         )}
 
         {/* Failure Panel */}
-        {(fileItem.status === "failed" || fileItem.status === "error" || fileItem.status === "cancelled") && (
+        {(fileItem.status === "failed" || fileItem.status === "cancelled") && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}

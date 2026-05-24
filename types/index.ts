@@ -117,15 +117,14 @@ export type UploadStatus =
   | "idle"
   | "queued"
   | "preparing"
-  | "initializing"
   | "uploading"
-  | "processing"
-  | "success"
-  | "failed"
-  | "error"
-  | "cancelled"
+  | "paused"
   | "retrying"
-  | "paused";
+  | "processing"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 
 export interface UploadedFile {

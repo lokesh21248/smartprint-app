@@ -63,11 +63,13 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
   filesCount,
   totalPages,
   onCheckout,
+  disabled,
 }: {
   totalAmount: number;
   filesCount: number;
   totalPages: number;
   onCheckout: () => void;
+  disabled?: boolean;
 }) {
   return (
     <motion.div
@@ -93,7 +95,8 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
 
       <Button
         onClick={onCheckout}
-        className="w-full sm:w-auto px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm"
+        disabled={disabled}
+        className="w-full sm:w-auto px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm disabled:opacity-50 disabled:pointer-events-none"
       >
         Checkout <ChevronRight className="w-4 h-4" />
       </Button>
@@ -115,6 +118,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   canRetry,
   onPlaceOrder,
   showProgress,
+  allFilesCompleted,
 }: {
   totalAmount: number;
   filesCount: number;
@@ -128,6 +132,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   canRetry: boolean;
   onPlaceOrder: () => void;
   showProgress: boolean;
+  allFilesCompleted: boolean;
 }) {
   return (
     <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-col gap-5 sm:gap-6 shadow-2xl shadow-slate-950/20 relative overflow-hidden">
@@ -156,7 +161,8 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
             isOffline ||
             !customerName ||
             customerName.trim().length < 3 ||
-            customerPhone.length < 10
+            customerPhone.length < 10 ||
+            !allFilesCompleted
           }
           className={`w-full sm:w-auto px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
             canRetry
@@ -252,7 +258,7 @@ function OrderUploadPageInner() {
 
   const uploadPhase = useMemo<UploadPhase>(() => {
     if (orderStatus === "success") return "success";
-    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "preparing" || f.status === "initializing")) return "uploading";
+    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "preparing" || f.status === "verifying")) return "uploading";
     if (orderStatus === "saving") return "saving";
     return "idle";
   }, [orderStatus, files]);
@@ -283,7 +289,7 @@ function OrderUploadPageInner() {
     };
     const onOnline = () => {
       setIsOffline(false);
-      const failedFiles = files.filter((f) => f.status === "failed" || f.status === "error" || f.status === "cancelled");
+      const failedFiles = files.filter((f) => f.status === "failed" || f.status === "cancelled");
       if (failedFiles.length > 0) {
         toast.success(`Back online! Auto-retrying ${failedFiles.length} failed upload${failedFiles.length > 1 ? "s" : ""}…`);
       } else {
@@ -371,7 +377,7 @@ function OrderUploadPageInner() {
   const totalAmount = useMemo(() => {
     if (!shop || files.length === 0) return 0;
     return files
-      .filter((f) => f.status !== "failed" && f.status !== "error" && f.status !== "cancelled")
+      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
       .reduce((sum, f) => {
         const rate = f.color
           ? (shop.price_color_per_page || 0)
@@ -382,7 +388,7 @@ function OrderUploadPageInner() {
 
   const totalPages = useMemo(() => {
     return files
-      .filter((f) => f.status !== "failed" && f.status !== "error" && f.status !== "cancelled")
+      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
       .reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
   }, [files]);
 
@@ -394,10 +400,14 @@ function OrderUploadPageInner() {
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
     if (totalSize === 0) return 0;
     const uploadedBytes = files.reduce((sum, f) => {
-      const pct = (f.status === "success" || f.status === "processing") ? 100 : f.progress;
+      const pct = (f.status === "completed" || f.status === "processing" || f.status === "verifying") ? 100 : f.progress;
       return sum + f.size * (pct / 100);
     }, 0);
     return Math.round((uploadedBytes / totalSize) * 100);
+  }, [files]);
+
+  const allFilesCompleted = useMemo(() => {
+    return files.length > 0 && files.every((f) => f.status === "completed");
   }, [files]);
 
   // ── Core submit handler ────────────────────────────────────────────────────
@@ -461,7 +471,7 @@ function OrderUploadPageInner() {
 
     try {
       // ── Step 1: Double-check uploads are completed ──────────────────────
-      const needsUpload = files.some((f) => f.status !== "success");
+      const needsUpload = files.some((f) => f.status !== "completed");
       if (needsUpload) {
         tracker.markUploadStart();
         if (uploaderRef.current) {
@@ -474,7 +484,7 @@ function OrderUploadPageInner() {
             );
           }
         } else {
-          const failedCount = files.filter((f) => f.status !== "success").length;
+          const failedCount = files.filter((f) => f.status !== "completed").length;
           const noun = failedCount === 1 ? "file" : "files";
           throw new Error(
             `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
@@ -700,6 +710,7 @@ function OrderUploadPageInner() {
                   filesCount={files.length}
                   totalPages={totalPages}
                   onCheckout={handleCheckoutDetails}
+                  disabled={!allFilesCompleted || isSubmitting}
                 />
               )}
 
@@ -872,6 +883,7 @@ function OrderUploadPageInner() {
                 canRetry={canRetry}
                 onPlaceOrder={handlePlaceOrder}
                 showProgress={isSubmitting}
+                allFilesCompleted={allFilesCompleted}
               />
 
               {/* Help Support */}
