@@ -55,8 +55,9 @@ import { toast } from "sonner";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Exponential backoff delays in ms. Length = max retries. */
-const RETRY_DELAYS_MS = [0, 1000, 3000, 5000, 10000, 20000] as const;
-const MAX_RETRIES = 5;
+/** Exponential backoff delays in ms. Length = max retries. */
+const RETRY_DELAYS_MS = [0, 1000, 3000, 5000] as const;
+const MAX_RETRIES = 3;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -78,10 +79,13 @@ const WATCHDOG_STALL_MS = 20_000;
 /** How often the watchdog polls. */
 const WATCHDOG_INTERVAL_MS = 5_000;
 
-/** Chunk size optimization based on connection speed for weak mobile networks (Point 7) */
+/**
+ * Chunk size for Supabase Storage TUS resumable upload.
+ * IMPORTANT: Supabase Storage TUS implementation requires chunks to be exactly 6MB (6 * 1024 * 1024 bytes)
+ * to avoid S3 multipart size violations and server stalls. Other sizes like 1MB, 2MB, 5MB will fail or stall.
+ */
 function getChunkSize(isMobile: boolean): number {
-  if (!isMobile) return 5 * 1024 * 1024; // 5MB on desktop
-  return 2 * 1024 * 1024; // Always 2MB on mobile for max stability and network resilience (Fix 9)
+  return 6 * 1024 * 1024; // Enforced 6MB for Supabase TUS compatibility
 }
 
 /** Concurrent uploads: 1 on mobile (ultra-stable, maximum reliability), 2 on desktop */
@@ -830,6 +834,7 @@ export class UploadQueueManager {
             const verifyData = await verifyRes.json().catch(() => null);
 
             console.log("[SUPABASE_VERIFY_RESPONSE]", verifyData);
+            console.log("[VERIFY_STORAGE]", verifyData);
 
             if (!verifyRes.ok || !verifyData || !verifyData.verified) {
               const errMsg = verifyData?.error || `Server verification failed (Status ${verifyRes.status})`;
@@ -1205,15 +1210,32 @@ export class UploadQueueManager {
         return;
       }
 
+      // Prevent duplicate upload instances (Point 5)
+      if (this._tusInstances.has(id)) {
+        console.warn(`[QueueManager] Blocked duplicate TUS upload instance for file ${id}`);
+        wrappedResolve("cancelled");
+        return;
+      }
+
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) {
-        toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey) {
+        toast.error(`Storage configuration error (keys missing) for "${entry.name}". Please contact support.`);
         this.removeFile(id);
         wrappedResolve("cancelled");
         return;
       }
 
-      const uploadEndpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+      // Force EXACT direct storage domain endpoint format (Point 1)
+      let projectRef = "";
+      if (supabaseUrl.includes(".supabase.co")) {
+        projectRef = supabaseUrl.replace("https://", "").replace("http://", "").split(".")[0];
+      }
+      
+      const uploadEndpoint = projectRef
+        ? `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`
+        : `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+
       const safeMimeType = this._getSafeMimeType(entry.file);
 
       // Set watchdog baseline baseline immediately to prevent any startup race condition
@@ -1222,13 +1244,17 @@ export class UploadQueueManager {
       let initialized = false;
       let initTimeout: ReturnType<typeof setTimeout> | null = null;
 
-      const upload = new tus.Upload(entry.file, {
+      const options: any = {
         endpoint: uploadEndpoint,
-        retryDelays: [0, 1000, 3000], // automatic retry system delays for packet drop
-        chunkSize: this._chunkSize,
+        retryDelays: [0, 1000, 3000, 5000], // Point 8
+        chunkSize: 6 * 1024 * 1024, // Enforced 6MB chunk size (Point 2)
+        chunkTimeout: 120000,
+        parallelUploads: 1, // Point 10
+        removeFingerprintOnSuccess: true, // Point 10
+        storeFingerprintForResuming: true, // Point 10
         headers: {
-          "x-signature": token,
-          "x-upsert": "true",
+          authorization: `Bearer ${supabaseAnonKey}`, // Point 4
+          "x-upsert": "false" // Point 4
         },
         metadata: {
           bucketName: "order-files",
@@ -1237,15 +1263,18 @@ export class UploadQueueManager {
           filename: encodeURIComponent(entry.file.name),
           filetype: safeMimeType,
         },
-        storeFingerprintForResuming: true, // enable resuming support
-        fingerprint: (_file, opts) =>
+        fingerprint: (_file: any, opts: any) =>
           Promise.resolve(
             `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
           ),
-        onBeforeRequest: () => {
+        onBeforeRequest: (req: any) => {
           initialized = true;
           if (initTimeout) clearTimeout(initTimeout);
           this._lastProgressAt.set(id, Date.now());
+          
+          console.log("[UPLOAD_ENDPOINT]", req.getURL());
+          console.log("[UPLOAD_HEADERS]", options.headers);
+          
           if (!navigator.onLine) logNetworkPause(entry.name);
         },
         onProgress: (bytesSent: number, bytesTotal: number) => {
@@ -1253,13 +1282,8 @@ export class UploadQueueManager {
           if (initTimeout) clearTimeout(initTimeout);
           const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
           
-          console.log("[UPLOAD_PROGRESS]", {
-            fileId: id,
-            fileName: entry.name,
-            progress: pct,
-            bytesSent,
-            bytesTotal,
-          });
+          console.log("[UPLOAD_PROGRESS]", bytesSent);
+          console.log("[UPLOAD_OFFSET]", bytesSent);
 
           logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
           this._lastProgressAt.set(id, Date.now());
@@ -1270,12 +1294,25 @@ export class UploadQueueManager {
             uploadSpeed: undefined,
           });
         },
+        onChunkComplete: (chunkSize: number, bytesAccepted: number, bytesTotal: number) => {
+          console.log("[UPLOAD_CHUNK_SENT]");
+        },
+        onAfterResponse: (req: any, res: any) => {
+          if (req.getMethod() === "PATCH") {
+            console.log("[UPLOAD_PATCH]"); // Point 11
+            console.log("[UPLOAD_PATCH_RESPONSE]", {
+              status: res.getStatus(),
+              body: res.getBody(),
+            });
+          }
+        },
         onSuccess: () => {
           initialized = true;
           if (initTimeout) clearTimeout(initTimeout);
           const durationMs = Date.now() - startedAt;
           logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
 
+          console.log("[UPLOAD_SUCCESS]");
           console.log("[UPLOAD_COMPLETE]", {
             fileId: id,
             fileName: entry.name,
@@ -1287,11 +1324,14 @@ export class UploadQueueManager {
           this._tusInstances.delete(id);
           wrappedResolve("success");
         },
-        onError: (err) => {
+        onError: (err: any) => {
           initialized = true;
           if (initTimeout) clearTimeout(initTimeout);
           upload.abort(false).catch(() => {});
           this._tusInstances.delete(id);
+
+          console.error("[UPLOAD_ERROR]", err);
+          console.error("[SUPABASE_ERROR]", err);
 
           const classified = classifyUploadError(err, "tus");
 
@@ -1318,15 +1358,19 @@ export class UploadQueueManager {
 
           wrappedResolve("error");
         },
-        onShouldRetry: (err, retryAttempt, options) => {
+        onShouldRetry: (err: any, retryAttempt: number, options: any) => {
           return retryAttempt < options.retryDelays!.length;
         },
-      });
+      };
 
+      console.log("[UPLOAD_INIT]", options);
+
+      const upload = new tus.Upload(entry.file, options);
       this._tusInstances.set(id, upload);
 
       const startUpload = async () => {
         try {
+          // Point 7: Resume flow lookup
           const previousUploads = await withTimeout(upload.findPreviousUploads(), 15000);
           
           // Check execution ID and file state AFTER the async findPreviousUploads call!
@@ -1375,6 +1419,7 @@ export class UploadQueueManager {
             }
           }, 15000);
 
+          console.log("[UPLOAD_START]"); // Point 6 & 11 (Called ONLY ONCE)
           upload.start();
         } catch (err) {
           console.error(`[QueueManager] Exception during TUS startup for "${entry.name}":`, err);
