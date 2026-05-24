@@ -178,7 +178,7 @@ export const MultiFileUploader = memo(
     // ── Summary counts ────────────────────────────────────────────────────────
     const successCount = queueFiles.filter((f) => f.status === "success").length;
     const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "cancelled").length;
-    const uploadingCount = queueFiles.filter((f) => f.status === "uploading").length;
+    const uploadingCount = queueFiles.filter((f) => f.status === "uploading" || f.status === "processing").length;
     const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
 
@@ -360,7 +360,8 @@ const ReorderItemRow = memo(function ReorderItemRow({
   const isActivelyUploading =
     fileItem.status === "uploading" ||
     fileItem.status === "queued" ||
-    fileItem.status === "preparing";
+    fileItem.status === "preparing" ||
+    fileItem.status === "processing";
 
   // Local object URL for image thumbnail
   const [thumbUrl, setThumbUrl] = useState<string>("");
@@ -401,6 +402,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
       case "success":
         return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
       case "uploading":
+      case "processing":
         return "border-emerald-200 shadow-sm";
       case "queued":
       case "preparing":
@@ -423,7 +425,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
       className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${cardStyle}`}
     >
       {/* Progress bar at very top of card */}
-      {fileItem.status === "uploading" && (
+      {(fileItem.status === "uploading" || fileItem.status === "processing") && (
         <div className="h-0.5 w-full bg-slate-100 overflow-hidden">
           <motion.div
             className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"
@@ -646,6 +648,14 @@ const ReorderItemRow = memo(function ReorderItemRow({
                       </span>
                     </>
                   )}
+                  {fileItem.status === "processing" && (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin shrink-0" />
+                      <span className="text-emerald-700 font-extrabold">
+                        {isPdf ? "Counting pages…" : "Processing file…"}
+                      </span>
+                    </>
+                  )}
                   {(fileItem.status === "queued" || fileItem.status === "preparing") && (
                     <>
                       <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
@@ -655,7 +665,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
                     </>
                   )}
                 </span>
-                {fileItem.status === "uploading" && (
+                {(fileItem.status === "uploading" || fileItem.status === "processing") && (
                   <span className="font-extrabold text-emerald-600 tabular-nums">
                     {fileItem.progress}%
                   </span>
@@ -663,7 +673,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
               </div>
 
               {/* Thick progress bar */}
-              {fileItem.status === "uploading" && (
+              {(fileItem.status === "uploading" || fileItem.status === "processing") && (
                 <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"

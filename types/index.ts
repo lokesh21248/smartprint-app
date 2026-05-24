@@ -118,6 +118,7 @@ export type UploadStatus =
   | "queued"
   | "preparing"
   | "uploading"
+  | "processing"
   | "success"
   | "failed"
   | "cancelled";

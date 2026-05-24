@@ -385,7 +385,10 @@ function OrderUploadPageInner() {
     if (files.length === 0) return 0;
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
     if (totalSize === 0) return 0;
-    const uploadedBytes = files.reduce((sum, f) => sum + f.size * (f.progress / 100), 0);
+    const uploadedBytes = files.reduce((sum, f) => {
+      const pct = (f.status === "success" || f.status === "processing") ? 100 : f.progress;
+      return sum + f.size * (pct / 100);
+    }, 0);
     return Math.round((uploadedBytes / totalSize) * 100);
   }, [files]);
 

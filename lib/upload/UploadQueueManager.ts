@@ -89,6 +89,7 @@ type FileState =
   | "preparing"
   | "requesting_url"
   | "uploading"
+  | "processing"
   | "retrying"
   | "paused"
   | "completed"
@@ -541,10 +542,8 @@ export class UploadQueueManager {
    */
   private async _processFile(id: string): Promise<void> {
     const entry = this._files.get(id);
-    if (!entry || entry.state === "completed" || entry.state === "failed" || entry.state === "cancelled") return;
-
-    // Point 6: Strict Mutex Lock
-    if (this._activeFileIds.has(id) && entry.state !== "retrying") {
+    if (!entry || entry.state === "completed" || entry.state === "failed" || entry.state === "cancelled") {
+      this._activeFileIds.delete(id);
       return;
     }
 
@@ -567,45 +566,31 @@ export class UploadQueueManager {
         this._patch(id, { file: dbFile });
       }
 
-      // ── Step 1b: Verify Supabase Storage bucket health ──────────────────
+      // ── Step 1b: Verify Supabase Storage bucket health (5s Timeout) ──────
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        const { error: healthError } = await supabase.storage
-          .from("temp-uploads")
-          .list("", { limit: 1 });
-
-        if (healthError) {
-          throw new Error(healthError.message);
-        }
+        
+        await Promise.race([
+          (async () => {
+            const { error: healthError } = await supabase.storage
+              .from("temp-uploads")
+              .list("", { limit: 1 });
+            if (healthError) throw healthError;
+          })(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("STORAGE_HEALTH_TIMEOUT")), 5000)
+          ),
+        ]);
       } catch (err) {
-        console.error("[QueueManager] Supabase storage health validation failed:", err);
-        toast.error("Upload failed. Storage bucket is currently unavailable.");
-        this.removeFile(id);
-        return;
+        console.warn("[QueueManager] Supabase storage health check timed out or failed, proceeding with upload anyway:", err);
       }
 
-      // ── Step 1c: Verify Corrupted PDF ────────────────────────────────────
-      const isPdf =
-        entry.mimeType === "application/pdf" ||
-        entry.name.toLowerCase().endsWith(".pdf");
-
-      if (isPdf) {
-        if (entry.pdfParseFailed) {
-          toast.error(`"${entry.name}" appears to be corrupted or invalid.`);
-          this.removeFile(id);
-          return;
-        }
-        if (entry.pages === null) {
-          const parseResult = await this._parsePdfPages(fileToUpload);
-          if (parseResult.failed) {
-            toast.error(`"${entry.name}" appears to be corrupted or invalid.`);
-            this.removeFile(id);
-            return;
-          } else {
-            this._patch(id, { pages: parseResult.count, pdfParseFailed: false });
-          }
-        }
+      // ── Step 1c: Check if already flagged corrupted in background ─────────
+      if (entry.pdfParseFailed) {
+        toast.error(`"${entry.name}" appears to be corrupted or invalid.`);
+        this.removeFile(id);
+        return;
       }
 
       // ── Step 2: Retry loop ────────────────────────────────────────────────────
@@ -869,10 +854,8 @@ export class UploadQueueManager {
 
       const endpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
 
-      // Speed tracking
-      let lastBytesSent = 0;
-      let lastTimestamp = Date.now();
-      let speedBytesPerSec = 0;
+      // Set watchdog baseline baseline immediately to prevent any startup race condition
+      this._lastProgressAt.set(id, Date.now());
 
       const upload = new tus.Upload(entry.file, {
         endpoint,
@@ -916,9 +899,9 @@ export class UploadQueueManager {
           const durationMs = Date.now() - startedAt;
           logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
 
-          // Release blob reference to free mobile memory
+          // Transition to processing for post-upload PDF page counting
           this._patch(id, {
-            state: "completed",
+            state: "processing",
             progress: 100,
             storagePath,
             uploadSpeed: undefined,
@@ -926,6 +909,9 @@ export class UploadQueueManager {
             error: undefined,
             // Don't null out file — IndexedDB cleanup happens on clearSession
           });
+
+          // Run post-upload processing asynchronously (non-blocking)
+          this._runPostUploadProcessing(id, storagePath, startedAt);
 
           this._tusInstances.delete(id);
           resolve("success");
@@ -1148,6 +1134,84 @@ export class UploadQueueManager {
     });
   }
 
+  private async _runPostUploadProcessing(
+    id: string,
+    storagePath: string,
+    startedAt: number
+  ): Promise<void> {
+    const entry = this._files.get(id);
+    if (!entry) return;
+
+    try {
+      let fileToProcess = entry.file;
+      if (!fileToProcess) {
+        const dbFile = await indexedDbStore.getFile(id);
+        if (dbFile) {
+          fileToProcess = dbFile;
+          this._patch(id, { file: dbFile });
+        }
+      }
+
+      const isPdf =
+        entry.name.toLowerCase().endsWith(".pdf") ||
+        (fileToProcess && (fileToProcess.type === "application/pdf"));
+
+      if (isPdf && entry.pages === null) {
+        if (!fileToProcess) {
+          console.warn(`[QueueManager] PDF file not found in memory or IndexedDB for processing: ${entry.name}. Defaulting to 1 page.`);
+          this._patch(id, {
+            state: "completed",
+            pages: 1,
+          });
+          return;
+        }
+
+        const pagesPromise = this._parsePdfPages(fileToProcess);
+        const timeoutPromise = new Promise<{ count: number; failed: boolean; timeout: boolean }>((resolve) =>
+          setTimeout(() => resolve({ count: 1, failed: false, timeout: true }), 5000)
+        );
+
+        const result = await Promise.race([
+          pagesPromise.then(res => ({ ...res, timeout: false })),
+          timeoutPromise,
+        ]);
+
+        if (result.timeout) {
+          console.warn(`[QueueManager] PDF parsing timed out (5s limit) for "${entry.name}". Defaulting to 1 page.`);
+          this._patch(id, {
+            state: "completed",
+            pages: 1,
+            error: undefined,
+          });
+        } else if (result.failed) {
+          console.error(`[QueueManager] PDF parsing failed (corrupt file) for "${entry.name}".`);
+          toast.error(`"${entry.name}" appears to be corrupted or invalid.`);
+          this._patch(id, {
+            state: "failed",
+            error: "File is corrupted or invalid.",
+          });
+        } else {
+          console.log(`[QueueManager] PDF parsing successful for "${entry.name}": ${result.count} pages.`);
+          this._patch(id, {
+            state: "completed",
+            pages: result.count,
+            error: undefined,
+          });
+        }
+      } else {
+        this._patch(id, {
+          state: "completed",
+        });
+      }
+    } catch (err) {
+      console.error(`[QueueManager] Error during post-upload processing for "${entry.name}":`, err);
+      this._patch(id, {
+        state: "completed",
+        pages: entry.pages ?? 1,
+      });
+    }
+  }
+
   private async _parsePdfPages(file: File): Promise<{ count: number; failed: boolean }> {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -1179,6 +1243,7 @@ export class UploadQueueManager {
       preparing: "queued",
       requesting_url: "preparing",
       uploading: "uploading",
+      processing: "processing",
       retrying: "queued",
       paused: "idle",
       completed: "success",
