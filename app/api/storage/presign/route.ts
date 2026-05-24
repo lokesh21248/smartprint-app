@@ -81,8 +81,26 @@ export async function POST(request: Request) {
       );
     }
 
+    const userAgent = request.headers.get("user-agent") ?? "unknown";
+    console.log("[UPLOAD_START]", {
+      fileName: validation.sanitizedName,
+      fileSize,
+      mimeType,
+      userAgent,
+    });
+
     // 5. Confirm shop exists and is active (prevent orphan uploads)
     const supabase = createAdminClient();
+
+    // Verify Supabase Storage bucket is accessible and online
+    const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(UPLOAD_BUCKET);
+    if (bucketError || !bucketData) {
+      console.error("[UPLOAD_FAIL] Supabase storage bucket unavailable:", bucketError?.message || "Not found");
+      return NextResponse.json(
+        { success: false, error: "Storage service is currently unavailable. Please contact support." },
+        { status: 503 }
+      );
+    }
 
     // Programmatically ensure the bucket allows PDF and image MIME types.
     // Done once per warm container instance via service role.
@@ -191,7 +209,7 @@ export async function POST(request: Request) {
       expiresIn: UPLOAD_URL_TTL_SECONDS,
     });
   } catch (error) {
-    console.error("[PRESIGN_FATAL]", error);
+    console.error("[UPLOAD_FAIL] Presign route fatal error:", error);
     return NextResponse.json(
       {
         success: false,
