@@ -120,7 +120,6 @@ export type UploadStatus =
   | "uploading"
   | "paused"
   | "retrying"
-  | "processing"
   | "verifying"
   | "completed"
   | "failed"

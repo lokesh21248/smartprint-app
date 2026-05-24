@@ -103,7 +103,6 @@ type FileState =
   | "queued"
   | "requesting_url"
   | "uploading"
-  | "processing"
   | "verifying"
   | "retrying"
   | "paused"
@@ -463,10 +462,10 @@ export class UploadQueueManager {
       const check = () => {
         const all = Array.from(this._files.values());
         const settled = all.every(
-          (f) => f.state === "completed" || f.state === "failed"
+          (f) => f.state === "completed" || f.state === "failed" || f.state === "cancelled"
         );
         if (settled) {
-          const failedCount = all.filter((f) => f.state === "failed").length;
+          const failedCount = all.filter((f) => f.state === "failed" || f.state === "cancelled").length;
           resolve({
             success: failedCount === 0,
             files: all.map(this._toUploadedFile),
@@ -485,7 +484,7 @@ export class UploadQueueManager {
       const timeout = setTimeout(() => {
         unsub();
         const all = Array.from(this._files.values());
-        const failedCount = all.filter((f) => f.state === "failed").length;
+        const failedCount = all.filter((f) => f.state === "failed" || f.state === "cancelled").length;
         resolve({
           success: false,
           files: all.map(this._toUploadedFile),
@@ -498,13 +497,13 @@ export class UploadQueueManager {
         check();
         const all = Array.from(this._files.values());
         const settled = all.every(
-          (f) => f.state === "completed" || f.state === "failed"
+          (f) => f.state === "completed" || f.state === "failed" || f.state === "cancelled"
         );
         if (settled) {
           unsub();
           wrappedUnsub();
           clearTimeout(timeout);
-          const failedCount = all.filter((f) => f.state === "failed").length;
+          const failedCount = all.filter((f) => f.state === "failed" || f.state === "cancelled").length;
           resolve({
             success: failedCount === 0,
             files: all.map(this._toUploadedFile),
@@ -659,7 +658,14 @@ export class UploadQueueManager {
         return;
       }
 
-      console.log(`[UPLOAD_START] id=${id} name=${entry.name} size=${entry.size}`);
+      console.log("[UPLOAD_START]", {
+        fileId: id,
+        fileName: entry.name,
+        fileSize: entry.size,
+        bucket: "order-files",
+        retryAttempt: attempt,
+        online: this._online,
+      });
       this._lastProgressAt.set(id, Date.now()); // Set watchdog baseline immediately
       const startedAt = Date.now();
 
@@ -694,7 +700,7 @@ export class UploadQueueManager {
         fileToUpload = dbFile;
       }
 
-      // Re-hydrate and validate file object safely (Point 15: Validate File Before Upload)
+      // Re-hydrate and validate file object safely
       try {
         fileToUpload = await this._validateAndHydrateFile(fileToUpload);
         if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
@@ -731,7 +737,7 @@ export class UploadQueueManager {
 
         const currentEntry = this._files.get(id)!;
 
-        // Check if manually cancelled or paused (Fix 11)
+        // Check if manually cancelled or paused
         if (currentEntry.state === "paused" || currentEntry.state === "failed" || currentEntry.state === "completed" || currentEntry.state === "cancelled") {
           console.log(`[QueueManager:Debug] Exiting _processFile loop for "${currentEntry.name}" due to state: ${currentEntry.state}`);
           return;
@@ -756,7 +762,15 @@ export class UploadQueueManager {
         if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
           return;
         }
-        if (!presignResult) return; // Cancelled, destroyed or failed (failed calls removeFile internally)
+
+        console.log("[UPLOAD_RESPONSE]", {
+          fileId: id,
+          fileName: entry.name,
+          presignSuccess: !!presignResult,
+          storagePath: presignResult?.storagePath,
+        });
+
+        if (!presignResult) return; // Cancelled, destroyed or failed
 
         if (presignResult.alreadyExists) {
           // File already uploaded — mark complete
@@ -788,44 +802,51 @@ export class UploadQueueManager {
         if (uploadResult === "success") {
           // PHASE 5: PHYSICAL VERIFICATION STEP
           try {
-            console.log(`[UPLOAD_VERIFY] id=${id}`);
+            console.log("[SUPABASE_VERIFY]", {
+              fileId: id,
+              fileName: entry.name,
+              fileSize: entry.size,
+              storagePath: presignResult.storagePath,
+            });
+
             this._patch(id, {
               state: "verifying",
               error: "Verifying upload…",
             });
             
-            const supabase = (await import("@/lib/supabase/client")).createClient();
-            const fullPath = presignResult.storagePath;
-            const folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
-            const filename = fullPath.substring(fullPath.lastIndexOf("/") + 1);
-            
-            const { data: fileList, error: listError } = await supabase.storage
-              .from("order-files")
-              .list(folderPath, { search: filename });
+            const verifyRes = await fetch("/api/storage/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                storagePath: presignResult.storagePath,
+                expectedSize: entry.size,
+              }),
+            });
 
             if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
               return;
             }
 
-            if (listError) {
-              throw new Error(`Integrity check failed: ${listError.message}`);
+            const verifyData = await verifyRes.json().catch(() => null);
+
+            console.log("[SUPABASE_VERIFY_RESPONSE]", verifyData);
+
+            if (!verifyRes.ok || !verifyData || !verifyData.verified) {
+              const errMsg = verifyData?.error || `Server verification failed (Status ${verifyRes.status})`;
+              throw new Error(errMsg);
             }
 
-            const uploadedFileItem = fileList?.find((f: any) => f.name === filename);
-            if (!uploadedFileItem) {
-              throw new Error("Verification failed: File missing in storage bucket.");
-            }
-            if (!uploadedFileItem.metadata?.size || uploadedFileItem.metadata.size === 0) {
-              throw new Error("Verification failed: File is empty (0 bytes) in storage bucket.");
-            }
-            if (uploadedFileItem.metadata.size !== entry.size) {
-              throw new Error(`Verification failed: Size mismatch. Expected ${entry.size} bytes, got ${uploadedFileItem.metadata.size} bytes.`);
-            }
+            console.log("[UPLOAD_COMPLETE]", {
+              fileId: id,
+              fileName: entry.name,
+              storagePath: presignResult.storagePath,
+              size: entry.size,
+            });
 
-            console.log(`[QueueManager] Physical upload verified for "${entry.name}" at path: ${fullPath}`);
+            console.log(`[QueueManager] Physical upload verified for "${entry.name}" at path: ${presignResult.storagePath}`);
             console.log(`[UPLOAD_SUCCESS] id=${id}`);
             
-            // Log successful diagnostics (STEP 11)
+            // Log successful diagnostics
             const snapshot = getDiagnosticsSnapshot({
               fileId: id,
               fileName: entry.name,
@@ -837,22 +858,25 @@ export class UploadQueueManager {
             });
             logUploadDiagnostics(snapshot, "SUCCESS");
 
-            // Transition to processing for post-upload PDF page counting
+            // Mark progress as 100% and store storagePath
             this._patch(id, {
-              state: "processing",
               progress: 100,
-              storagePath: fullPath,
+              storagePath: presignResult.storagePath,
               uploadSpeed: undefined,
               etaSeconds: undefined,
               error: undefined,
             });
 
-            // Run post-upload processing asynchronously (non-blocking)
-            this._runPostUploadProcessing(id);
+            // Run post-upload processing (PDF page counting) before transitioning to completed
+            await this._runPostUploadProcessing(id);
 
             this._scheduleQueueDrain();
             return;
           } catch (verifyErr) {
+            if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+              return;
+            }
+            console.error("[SUPABASE_UPLOAD_ERROR]", verifyErr);
             console.error(`[QueueManager] Upload verification failed for "${entry.name}":`, verifyErr);
             
             const freshEntryAfterVerify = this._files.get(id)!;
@@ -882,6 +906,12 @@ export class UploadQueueManager {
             }
             
             const delay = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
+            console.log("[UPLOAD_RETRY]", {
+              fileId: id,
+              fileName: entry.name,
+              retryAttempt: attempt,
+              delayMs: delay,
+            });
             console.log(`[UPLOAD_RETRY] id=${id} attempt=${attempt}`);
             this._patch(id, {
               state: "retrying",
@@ -950,9 +980,9 @@ export class UploadQueueManager {
         });
       }
     } finally {
+      this._runningProcesses.delete(id); // ALWAYS release the duplicate process lock unconditionally
       if (this._fileExecutionIds.get(id) === execId) {
         console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
-        this._runningProcesses.delete(id);
         this._activeFileIds.delete(id);
         this._abortControllers.delete(id);
         this._lastProgressAt.delete(id);
@@ -1160,196 +1190,167 @@ export class UploadQueueManager {
     startedAt: number
   ): Promise<"success" | "cancelled" | "error"> {
     return new Promise((resolve) => {
+      const execId = this._fileExecutionIds.get(id);
+
       const wrappedResolve = (res: "success" | "cancelled" | "error") => {
+        if (initTimeout) clearTimeout(initTimeout);
         this._activeResolvers.delete(id);
         resolve(res);
       };
       this._activeResolvers.set(id, wrappedResolve);
 
-      let tusAttempt = 0;
-      const maxTusAttempts = 3;
+      const entry = this._files.get(id);
+      if (!entry?.file) {
+        wrappedResolve("cancelled");
+        return;
+      }
 
-      const startTusWithRetry = async () => {
-        const entry = this._files.get(id);
-        let initialized = false;
-        let initTimeout: ReturnType<typeof setTimeout> | null = null;
-        try {
-          if (!entry?.file) {
-            wrappedResolve("cancelled");
-            return;
-          }
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (!supabaseUrl) {
+        toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
+        this.removeFile(id);
+        wrappedResolve("cancelled");
+        return;
+      }
 
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-          if (!supabaseUrl) {
-            toast.error(`Storage configuration error for "${entry.name}". Please contact support.`);
-            this.removeFile(id);
-            wrappedResolve("cancelled");
-            return;
-          }
+      const uploadEndpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+      const safeMimeType = this._getSafeMimeType(entry.file);
 
-          const uploadEndpoint = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/upload/resumable`;
-          if (!uploadEndpoint) {
-            throw new Error("Upload endpoint missing");
-          }
+      // Set watchdog baseline baseline immediately to prevent any startup race condition
+      this._lastProgressAt.set(id, Date.now());
 
-          if (!token) {
-            throw new Error("Upload token is missing");
-          }
+      let initialized = false;
+      let initTimeout: ReturnType<typeof setTimeout> | null = null;
 
-          if (!storagePath) {
-            throw new Error("Storage path is missing");
-          }
-
-          const safeMimeType = this._getSafeMimeType(entry.file);
-          if (!safeMimeType) {
-            throw new Error("Invalid file MIME type detected");
-          }
-
-          // Set watchdog baseline baseline immediately to prevent any startup race condition
+      const upload = new tus.Upload(entry.file, {
+        endpoint: uploadEndpoint,
+        retryDelays: [0, 1000, 3000], // automatic retry system delays for packet drop
+        chunkSize: this._chunkSize,
+        headers: {
+          "x-signature": token,
+          "x-upsert": "true",
+        },
+        metadata: {
+          bucketName: "order-files",
+          objectName: storagePath,
+          contentType: safeMimeType,
+          filename: encodeURIComponent(entry.file.name),
+          filetype: safeMimeType,
+        },
+        storeFingerprintForResuming: true, // enable resuming support
+        fingerprint: (_file, opts) =>
+          Promise.resolve(
+            `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
+          ),
+        onBeforeRequest: () => {
+          initialized = true;
+          if (initTimeout) clearTimeout(initTimeout);
           this._lastProgressAt.set(id, Date.now());
-
-          console.log(`[QueueManager:Debug] Instantiating tus.Upload for "${entry.name}", attempt ${tusAttempt + 1}`);
-          const upload = new tus.Upload(entry.file, {
-            endpoint: uploadEndpoint,
-            retryDelays: [0, 1000, 3000, 5000, 10000], // automatic retry system delays (Point 6)
-            chunkSize: this._chunkSize,
-            headers: {
-              "x-signature": token,
-              "x-upsert": "true",
-            },
-            metadata: {
-              bucketName: "order-files",
-              objectName: storagePath,
-              contentType: safeMimeType,
-              filename: encodeURIComponent(entry.file.name),
-              filetype: safeMimeType,
-            },
-            storeFingerprintForResuming: true, // enable resuming support (Point 5)
-            // Bug 4 fix: unique fingerprint per upload slot prevents collisions
-            fingerprint: (_file, opts) =>
-              Promise.resolve(
-                `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
-              ),
-            onBeforeRequest: () => {
-              initialized = true;
-              if (initTimeout) clearTimeout(initTimeout);
-              // Refresh watchdog timer on every request
-              this._lastProgressAt.set(id, Date.now());
-              if (!navigator.onLine) logNetworkPause(entry.name);
-            },
-            onProgress: (bytesSent: number, bytesTotal: number) => {
-              initialized = true;
-              if (initTimeout) clearTimeout(initTimeout);
-              const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
-              logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
-
-              // Refresh watchdog
-              this._lastProgressAt.set(id, Date.now());
-
-              this._patch(id, {
-                state: "uploading",
-                progress: pct,
-                uploadSpeed: undefined,
-              });
-            },
-            onSuccess: () => {
-              initialized = true;
-              if (initTimeout) clearTimeout(initTimeout);
-              const durationMs = Date.now() - startedAt;
-              logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
-
-              // Transition to processing for post-upload PDF page counting
-              this._patch(id, {
-                state: "processing",
-                progress: 100,
-                storagePath,
-                uploadSpeed: undefined,
-                etaSeconds: undefined,
-                error: undefined,
-              });
-
-              // Run post-upload processing asynchronously (non-blocking)
-              this._runPostUploadProcessing(id);
-
-              this._tusInstances.delete(id);
-              wrappedResolve("success");
-            },
-            onError: (err) => {
-              initialized = true;
-              if (initTimeout) clearTimeout(initTimeout);
-              // abort(false) = close socket but preserve fingerprint for genuine resume
-              upload.abort(false).catch(() => {});
-              this._tusInstances.delete(id);
-
-              const classified = classifyUploadError(err, "tus");
-
-              // Log error according to initialization wrapper expectations (Point 8)
-              console.error("UPLOAD_INIT_FAILURE", {
-                fileId: id,
-                fileName: entry?.file?.name ?? "unknown",
-                fileSize: entry?.file?.size ?? 0,
-                status: "initializing",
-                online: typeof navigator !== "undefined" ? navigator.onLine : true,
-                connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
-                memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
-                userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
-                timestamp: Date.now(),
-                error: err,
-              });
-
-              if (!classified.retryable) {
-                logUploadFailure(entry?.name ?? "unknown", classified.code, classified.userMessage, 0);
-                toast.error(`Non-retryable upload error for "${entry?.name ?? "unknown"}": ${classified.userMessage}. Please select the file again.`);
-                this.removeFile(id);
-                wrappedResolve("cancelled"); // Non-retryable — don't loop
-                return;
-              }
-
-              // Automatic Retry System (Point 6)
-              this._patch(id, {
-                state: "retrying",
-                error: "Connection interrupted. Reconnecting upload…",
-              });
-
-              tusAttempt++;
-              if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
-                const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
-                console.warn(`[QueueManager] TUS startup failed, retrying in ${delay}ms...`, err);
-                const t = setTimeout(() => {
-                  this._tusRetryTimeouts.delete(id);
-                  startTusWithRetry();
-                }, delay);
-                this._tusRetryTimeouts.set(id, t);
-              } else {
-                this._patch(id, { error: classified.userMessage });
-                wrappedResolve("error");
-              }
-            },
-            onShouldRetry: (err, retryAttempt, options) => {
-              // Let tus-js-client retry internal chunk errors according to retryDelays
-              return retryAttempt < options.retryDelays!.length;
-            },
+          if (!navigator.onLine) logNetworkPause(entry.name);
+        },
+        onProgress: (bytesSent: number, bytesTotal: number) => {
+          initialized = true;
+          if (initTimeout) clearTimeout(initTimeout);
+          const pct = bytesTotal > 0 ? Math.round((bytesSent / bytesTotal) * 100) : 0;
+          
+          console.log("[UPLOAD_PROGRESS]", {
+            fileId: id,
+            fileName: entry.name,
+            progress: pct,
+            bytesSent,
+            bytesTotal,
           });
 
-          this._tusInstances.set(id, upload);
+          logUploadChunk(entry.name, pct, bytesSent, bytesTotal);
+          this._lastProgressAt.set(id, Date.now());
 
-          // Check for previous uploads to resume (Point 5)
-          try {
-            const previousUploads = await withTimeout(upload.findPreviousUploads(), 15000);
-            if (previousUploads && previousUploads.length > 0) {
-              console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
-              console.log(`[UPLOAD_RESUME] id=${id} offset=${previousUploads[0].uploadUrl}`);
-              upload.resumeFromPreviousUpload(previousUploads[0]);
-            }
-          } catch (err: unknown) {
-            if (err instanceof Error && err.message === "INIT_TIMEOUT") {
-               console.error(`[QueueManager] findPreviousUploads timed out for ${entry?.name}. Retrying...`);
-               throw err; // throw to outer catch to trigger the retry logic
-            }
-            console.warn("[QueueManager] findPreviousUploads failed:", err);
+          this._patch(id, {
+            state: "uploading",
+            progress: pct,
+            uploadSpeed: undefined,
+          });
+        },
+        onSuccess: () => {
+          initialized = true;
+          if (initTimeout) clearTimeout(initTimeout);
+          const durationMs = Date.now() - startedAt;
+          logUploadSuccess(entry.name, entry.file!.size, storagePath, durationMs);
+
+          console.log("[UPLOAD_COMPLETE]", {
+            fileId: id,
+            fileName: entry.name,
+            storagePath,
+            size: entry.file!.size,
+            durationMs,
+          });
+
+          this._tusInstances.delete(id);
+          wrappedResolve("success");
+        },
+        onError: (err) => {
+          initialized = true;
+          if (initTimeout) clearTimeout(initTimeout);
+          upload.abort(false).catch(() => {});
+          this._tusInstances.delete(id);
+
+          const classified = classifyUploadError(err, "tus");
+
+          console.error("[SUPABASE_UPLOAD_ERROR]", {
+            fileId: id,
+            fileName: entry?.file?.name ?? "unknown",
+            fileSize: entry?.file?.size ?? 0,
+            status: "initializing",
+            online: typeof navigator !== "undefined" ? navigator.onLine : true,
+            connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
+            memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
+            userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+            timestamp: Date.now(),
+            error: err,
+          });
+
+          if (!classified.retryable) {
+            logUploadFailure(entry?.name ?? "unknown", classified.code, classified.userMessage, 0);
+            toast.error(`Non-retryable upload error for "${entry?.name ?? "unknown"}": ${classified.userMessage}. Please select the file again.`);
+            this.removeFile(id);
+            wrappedResolve("cancelled"); // Non-retryable — don't loop
+            return;
           }
 
-          // Set 15-second startup timeout (Fix 1, 4)
+          wrappedResolve("error");
+        },
+        onShouldRetry: (err, retryAttempt, options) => {
+          return retryAttempt < options.retryDelays!.length;
+        },
+      });
+
+      this._tusInstances.set(id, upload);
+
+      const startUpload = async () => {
+        try {
+          const previousUploads = await withTimeout(upload.findPreviousUploads(), 15000);
+          
+          // Check execution ID and file state AFTER the async findPreviousUploads call!
+          if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
+            upload.abort(true).catch(() => {});
+            this._tusInstances.delete(id);
+            wrappedResolve("cancelled");
+            return;
+          }
+
+          const freshEntry = this._files.get(id)!;
+          if (freshEntry.state === "paused" || freshEntry.state === "cancelled" || freshEntry.state === "failed") {
+            upload.abort(true).catch(() => {});
+            this._tusInstances.delete(id);
+            wrappedResolve("cancelled");
+            return;
+          }
+
+          if (previousUploads && previousUploads.length > 0) {
+            console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
+            upload.resumeFromPreviousUpload(previousUploads[0]);
+          }
+
+          // 15-second startup timeout
           initTimeout = setTimeout(() => {
             if (!initialized) {
               console.error(`[QueueManager] TUS upload startup timed out for ${entry.name}`);
@@ -1357,7 +1358,7 @@ export class UploadQueueManager {
               this._tusInstances.delete(id);
               
               const err = new Error("INIT_TIMEOUT");
-              console.error("UPLOAD_INIT_FAILURE", {
+              console.error("[SUPABASE_UPLOAD_ERROR]", {
                 fileId: id,
                 fileName: entry.name,
                 fileSize: entry.size,
@@ -1370,63 +1371,20 @@ export class UploadQueueManager {
                 error: err,
               });
 
-              this._patch(id, {
-                state: "retrying",
-                error: "Reconnecting…",
-              });
-
-              tusAttempt++;
-              if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
-                const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
-                const t = setTimeout(() => {
-                  this._tusRetryTimeouts.delete(id);
-                  startTusWithRetry();
-                }, delay);
-                this._tusRetryTimeouts.set(id, t);
-              } else {
-                wrappedResolve("error");
-              }
+              wrappedResolve("error");
             }
           }, 15000);
 
-          console.log(`[QueueManager:Debug] Calling upload.start() for "${entry?.name}"`);
           upload.start();
         } catch (err) {
-          initialized = true;
-          if (initTimeout) clearTimeout(initTimeout);
-          console.error("UPLOAD_INIT_FAILURE", {
-            fileId: id,
-            fileName: entry?.file?.name ?? "unknown",
-            fileSize: entry?.file?.size ?? 0,
-            status: "initializing",
-            online: typeof navigator !== "undefined" ? navigator.onLine : true,
-            connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
-            memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
-            userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
-            timestamp: Date.now(),
-            error: err,
-          });
-          
-          this._patch(id, {
-            state: "retrying",
-            error: "Reconnecting…",
-          });
-
-          tusAttempt++;
-          if (tusAttempt < maxTusAttempts && this._files.has(id) && !this._destroyed) {
-            const delay = 1000 * Math.pow(2, tusAttempt) + Math.random() * 200;
-            const t = setTimeout(() => {
-              this._tusRetryTimeouts.delete(id);
-              startTusWithRetry();
-            }, delay);
-            this._tusRetryTimeouts.set(id, t);
-          } else {
-            wrappedResolve("error");
-          }
+          console.error(`[QueueManager] Exception during TUS startup for "${entry.name}":`, err);
+          upload.abort(true).catch(() => {});
+          this._tusInstances.delete(id);
+          wrappedResolve("error");
         }
       };
 
-      startTusWithRetry();
+      startUpload();
     });
   }
 
@@ -1604,7 +1562,7 @@ export class UploadQueueManager {
   private _abortFileUpload(id: string, reason: "cancelled" | "error" = "cancelled"): void {
     const tusInstance = this._tusInstances.get(id);
     if (tusInstance) {
-      tusInstance.abort(false).catch(() => {});
+      tusInstance.abort(reason === "cancelled").catch(() => {});
       this._tusInstances.delete(id);
     }
 
@@ -1789,7 +1747,6 @@ export class UploadQueueManager {
       queued: "queued",
       requesting_url: "preparing",
       uploading: "uploading",
-      processing: "processing",
       verifying: "verifying",
       retrying: "retrying",
       paused: "paused",

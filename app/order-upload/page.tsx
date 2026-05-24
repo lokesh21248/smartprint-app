@@ -400,7 +400,7 @@ function OrderUploadPageInner() {
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
     if (totalSize === 0) return 0;
     const uploadedBytes = files.reduce((sum, f) => {
-      const pct = (f.status === "completed" || f.status === "processing" || f.status === "verifying") ? 100 : f.progress;
+      const pct = (f.status === "completed" || f.status === "verifying") ? 100 : f.progress;
       return sum + f.size * (pct / 100);
     }, 0);
     return Math.round((uploadedBytes / totalSize) * 100);
@@ -692,7 +692,7 @@ function OrderUploadPageInner() {
               transition={{ duration: 0.4 }}
               className="space-y-6"
             >
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6 min-h-[420px] flex flex-col justify-start">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6 min-h-[300px] h-auto flex flex-col justify-start">
                 <MultiFileUploader
                   key={uploaderResetKey}
                   ref={uploaderRef}

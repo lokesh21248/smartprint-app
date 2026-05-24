@@ -176,8 +176,8 @@ export const MultiFileUploader = memo(
     // ── Summary counts ────────────────────────────────────────────────────────
     const successCount = queueFiles.filter((f) => f.status === "completed").length;
     const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "cancelled").length;
-    const uploadingCount = queueFiles.filter((f) => f.status === "uploading" || f.status === "processing").length;
-    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing" || f.status === "verifying").length;
+    const uploadingCount = queueFiles.filter((f) => f.status === "uploading" || f.status === "verifying" || f.status === "retrying").length;
+    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
 
     return (
@@ -360,8 +360,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
     fileItem.status === "queued" ||
     fileItem.status === "preparing" ||
     fileItem.status === "verifying" ||
-    fileItem.status === "retrying" ||
-    fileItem.status === "processing";
+    fileItem.status === "retrying";
 
   // Local object URL for image thumbnail
   const [thumbUrl, setThumbUrl] = useState<string>("");
@@ -393,7 +392,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
       case "completed":
         return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
       case "uploading":
-      case "processing":
+      case "verifying":
         return "border-emerald-200 shadow-sm";
       case "queued":
       case "preparing":
@@ -508,19 +507,19 @@ const ReorderItemRow = memo(function ReorderItemRow({
                     </span>
                   </>
                 )}
-                {fileItem.status === "processing" && (
+                {fileItem.status === "verifying" && (
                   <>
                     <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin shrink-0" />
-                    <span className="text-emerald-700 font-extrabold">
-                      {isPdf ? "Counting pages…" : "Processing file…"}
+                    <span className="text-emerald-700 font-extrabold animate-pulse">
+                      {isPdf && fileItem.pages === null ? "Counting pages…" : "Verifying upload…"}
                     </span>
                   </>
                 )}
-                {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "verifying") && (
+                {(fileItem.status === "queued" || fileItem.status === "preparing") && (
                   <>
                     <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
                     <span className="text-slate-700">
-                      {fileItem.error ? fileItem.error : (fileItem.status === "verifying" ? "Verifying upload…" : "Queued…")}
+                      {fileItem.error ? fileItem.error : "Queued…"}
                     </span>
                   </>
                 )}
@@ -533,7 +532,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
                   </>
                 )}
               </span>
-              {(fileItem.status === "uploading" || fileItem.status === "processing") && (
+              {(fileItem.status === "uploading" || fileItem.status === "verifying") && (
                 <span className="text-emerald-600 tabular-nums">
                   {fileItem.progress}%
                 </span>
@@ -541,7 +540,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
             </div>
 
             {/* Progress bar */}
-            {(fileItem.status === "uploading" || fileItem.status === "processing") && (
+            {(fileItem.status === "uploading" || fileItem.status === "verifying") && (
               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                 <motion.div
                   className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
