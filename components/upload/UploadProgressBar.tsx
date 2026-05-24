@@ -11,6 +11,7 @@
  *   success     (100%)   → "Order placed!" + checkmark pulse
  */
 
+import { memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, Loader2, Upload, Database } from "lucide-react";
 
@@ -36,7 +37,7 @@ function getOverallPercent(phase: UploadPhase, uploadPercent: number): number {
   }
 }
 
-export function UploadProgressBar({
+export const UploadProgressBar = memo(function UploadProgressBar({
   phase,
   uploadPercent,
   fileCount = 1,
@@ -178,4 +179,4 @@ export function UploadProgressBar({
       )}
     </AnimatePresence>
   );
-}
+});

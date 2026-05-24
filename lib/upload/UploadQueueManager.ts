@@ -92,7 +92,8 @@ type FileState =
   | "retrying"
   | "paused"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 interface FileEntry {
   id: string;
@@ -299,7 +300,7 @@ export class UploadQueueManager {
     this._releaseWakeLockIfDone();
   }
 
-  /** Cancel an in-progress upload without removing the file. Sets to failed. */
+  /** Cancel an in-progress upload without removing the file. Sets to cancelled. */
   cancelUpload(id: string): void {
     const entry = this._files.get(id);
     if (!entry) return;
@@ -307,7 +308,7 @@ export class UploadQueueManager {
     logUploadCancelled(entry.name);
     this._abortFileUpload(id);
     this._patch(id, {
-      state: "failed",
+      state: "cancelled",
       progress: 0,
       error: "Upload cancelled.",
     });
@@ -315,10 +316,31 @@ export class UploadQueueManager {
     this._releaseWakeLockIfDone();
   }
 
+  /** Cancel all active uploads cleanly. */
+  cancelAll(): void {
+    console.log("[QueueManager] cancelAll() called.");
+    for (const id of this._files.keys()) {
+      this._abortFileUpload(id);
+      this._patch(id, {
+        state: "cancelled",
+        progress: 0,
+        error: "Upload cancelled.",
+      });
+    }
+    this._activeFileIds.clear();
+    this._releaseWakeLockIfDone();
+  }
+
+  /** Clear all state and data. */
+  clear(): void {
+    console.log("[QueueManager] clear() called.");
+    this.clearSession();
+  }
+
   /** Reset a failed file to queued state and re-trigger the drain. */
   retryFile(id: string): void {
     const entry = this._files.get(id);
-    if (!entry || entry.state !== "failed") return;
+    if (!entry || (entry.state !== "failed" && entry.state !== "cancelled")) return;
 
     clearStaleTusFingerprints(id);
     this._patch(id, {
@@ -333,7 +355,7 @@ export class UploadQueueManager {
   /** Retry all failed files. */
   retryAll(): void {
     for (const [id, entry] of this._files) {
-      if (entry.state === "failed") this.retryFile(id);
+      if (entry.state === "failed" || entry.state === "cancelled") this.retryFile(id);
     }
   }
 
@@ -519,7 +541,7 @@ export class UploadQueueManager {
    */
   private async _processFile(id: string): Promise<void> {
     const entry = this._files.get(id);
-    if (!entry || entry.state === "completed" || entry.state === "failed") return;
+    if (!entry || entry.state === "completed" || entry.state === "failed" || entry.state === "cancelled") return;
 
     // Point 6: Strict Mutex Lock
     if (this._activeFileIds.has(id) && entry.state !== "retrying") {
@@ -541,7 +563,49 @@ export class UploadQueueManager {
           this.removeFile(id);
           return;
         }
+        fileToUpload = dbFile;
         this._patch(id, { file: dbFile });
+      }
+
+      // ── Step 1b: Verify Supabase Storage bucket health ──────────────────
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { error: healthError } = await supabase.storage
+          .from("temp-uploads")
+          .list("", { limit: 1 });
+
+        if (healthError) {
+          throw new Error(healthError.message);
+        }
+      } catch (err) {
+        console.error("[QueueManager] Supabase storage health validation failed:", err);
+        toast.error("Upload failed. Storage bucket is currently unavailable.");
+        this.removeFile(id);
+        return;
+      }
+
+      // ── Step 1c: Verify Corrupted PDF ────────────────────────────────────
+      const isPdf =
+        entry.mimeType === "application/pdf" ||
+        entry.name.toLowerCase().endsWith(".pdf");
+
+      if (isPdf) {
+        if (entry.pdfParseFailed) {
+          toast.error(`"${entry.name}" appears to be corrupted or invalid.`);
+          this.removeFile(id);
+          return;
+        }
+        if (entry.pages === null) {
+          const parseResult = await this._parsePdfPages(fileToUpload);
+          if (parseResult.failed) {
+            toast.error(`"${entry.name}" appears to be corrupted or invalid.`);
+            this.removeFile(id);
+            return;
+          } else {
+            this._patch(id, { pages: parseResult.count, pdfParseFailed: false });
+          }
+        }
       }
 
       // ── Step 2: Retry loop ────────────────────────────────────────────────────
@@ -549,10 +613,10 @@ export class UploadQueueManager {
         if (this._destroyed) return;
         if (!this._files.has(id)) return; // File was removed mid-upload
 
-        const entry = this._files.get(id)!;
+        const currentEntry = this._files.get(id)!;
 
         // Check if manually cancelled
-        if (entry.state === "failed" || entry.state === "completed") return;
+        if (currentEntry.state === "failed" || currentEntry.state === "completed" || currentEntry.state === "cancelled") return;
 
         // ── Wait for network ────────────────────────────────────────────────────
         await this._waitForNetwork(id);
@@ -612,7 +676,7 @@ export class UploadQueueManager {
             "Upload failed after maximum retries.",
             attempt
           );
-          toast.error(`Upload failed for "${entry.name}" after ${MAX_RETRIES} attempts. Please select the file again.`);
+          toast.error("Upload failed. Please select file again.");
           this.removeFile(id);
           return;
         }
@@ -930,6 +994,41 @@ export class UploadQueueManager {
 
   // ─── Network events ───────────────────────────────────────────────────────────
 
+  /** Pause all active/queued uploads. */
+  pauseAll(): void {
+    console.log("[QueueManager] pauseAll() called.");
+    for (const [id, entry] of this._files) {
+      if (
+        entry.state === "uploading" ||
+        entry.state === "requesting_url" ||
+        entry.state === "preparing" ||
+        entry.state === "retrying"
+      ) {
+        this._abortFileUpload(id);
+        this._patch(id, {
+          state: "paused",
+          error: "Uploads paused.",
+        });
+        this._activeFileIds.delete(id);
+      }
+    }
+    this._releaseWakeLockIfDone();
+  }
+
+  /** Resume all paused uploads. */
+  resumeAll(): void {
+    console.log("[QueueManager] resumeAll() called.");
+    for (const [id, entry] of this._files) {
+      if (entry.state === "paused") {
+        this._patch(id, {
+          state: "preparing",
+          error: undefined,
+        });
+      }
+    }
+    this._scheduleQueueDrain();
+  }
+
   private _handleOnline(): void {
     this._online = true;
     logNetworkResume("*");
@@ -941,14 +1040,7 @@ export class UploadQueueManager {
       this._lastProgressAt.set(id, now);
     }
 
-    // Re-queue paused files
-    for (const [id, entry] of this._files) {
-      if (entry.state === "paused") {
-        this._patch(id, { state: "preparing", error: undefined });
-      }
-    }
-
-    this._scheduleQueueDrain();
+    this.resumeAll();
   }
 
   private _handleOffline(): void {
@@ -956,34 +1048,13 @@ export class UploadQueueManager {
     logNetworkPause("*");
     this._emit({ type: "ONLINE_CHANGED", online: false });
 
-    // Abort active TUS uploads — they'll be re-queued when online
-    for (const [id, entry] of this._files) {
-      if (entry.state === "uploading" || entry.state === "requesting_url") {
-        this._abortFileUpload(id);
-        this._patch(id, {
-          state: "paused",
-          error: "Waiting for network…",
-        });
-        this._activeFileIds.delete(id);
-      }
-    }
+    this.pauseAll();
   }
 
   private _handleVisibilityChange(): void {
-    if (document.hidden) {
-      // Point 9: Foreground visibility defense — pause uploads immediately when app hidden
+    if (document.visibilityState === "hidden") {
       console.log("[QueueManager] App hidden (tab suspended) — pausing all active uploads.");
-      for (const [id, entry] of this._files) {
-        if (entry.state === "uploading" || entry.state === "requesting_url") {
-          this._abortFileUpload(id);
-          this._patch(id, {
-            state: "paused",
-            error: "Uploads suspended in background…",
-          });
-          this._activeFileIds.delete(id);
-        }
-      }
-      this._releaseWakeLockIfDone();
+      this.pauseAll();
     } else if (document.visibilityState === "visible" && this._online) {
       console.log("[QueueManager] App visible — resuming all suspended uploads.");
       // Reset watchdog baselines — tab may have been hidden for >20s
@@ -991,17 +1062,7 @@ export class UploadQueueManager {
       for (const id of this._activeFileIds) {
         this._lastProgressAt.set(id, now);
       }
-
-      // Re-queue any paused/starved files
-      for (const [id, entry] of this._files) {
-        if (entry.state === "paused" || entry.state === "retrying") {
-          if (!this._activeFileIds.has(id)) {
-            this._patch(id, { state: "preparing", error: undefined });
-          }
-        }
-      }
-
-      this._scheduleQueueDrain();
+      this.resumeAll();
     }
   }
 
@@ -1114,14 +1175,15 @@ export class UploadQueueManager {
   /** Map internal FileEntry to the public UploadedFile shape. */
   private _toUploadedFile = (entry: FileEntry): UploadedFile => {
     const statusMap: Record<FileState, UploadStatus> = {
-      idle: "pending",
-      preparing: "pending",
-      requesting_url: "pending",
+      idle: "idle",
+      preparing: "queued",
+      requesting_url: "preparing",
       uploading: "uploading",
-      retrying: "pending",
-      paused: "pending",
-      completed: "completed",
+      retrying: "queued",
+      paused: "idle",
+      completed: "success",
       failed: "failed",
+      cancelled: "cancelled",
     };
 
     return {
@@ -1134,12 +1196,14 @@ export class UploadQueueManager {
       progress: entry.progress,
       status: statusMap[entry.state],
       storagePath: entry.storagePath,
+      uploadedUrl: entry.storagePath,
       error: entry.error,
       copies: entry.copies,
       color: entry.color,
       doubleSided: entry.doubleSided,
       mimeType: entry.mimeType,
       retryAttempt: entry.retryAttempt,
+      retryCount: entry.retryAttempt,
       uploadSpeed: entry.uploadSpeed,
       etaSeconds: entry.etaSeconds,
     };

@@ -57,6 +57,8 @@ export interface UseUploadQueueReturn {
     failedCount: number;
   }>;
   clearSession: () => void;
+  cancelAll: () => void;
+  clear: () => void;
   managerRef: React.MutableRefObject<UploadQueueManager | null>;
 }
 
@@ -197,6 +199,14 @@ export function useUploadQueue({
     managerRef.current?.clearSession();
   }, []);
 
+  const cancelAll = useCallback(() => {
+    managerRef.current?.cancelAll();
+  }, []);
+
+  const clear = useCallback(() => {
+    managerRef.current?.clear();
+  }, []);
+
   return {
     files,
     isOnline,
@@ -209,6 +219,8 @@ export function useUploadQueue({
     reorder,
     uploadAll,
     clearSession,
+    cancelAll,
+    clear,
     managerRef,
   };
 }
@@ -248,6 +260,12 @@ export function createUploadQueueHandle(
     },
     clearSession() {
       managerRef.current?.clearSession();
+    },
+    cancelAll() {
+      managerRef.current?.cancelAll();
+    },
+    clear() {
+      managerRef.current?.clear();
     },
   };
 }

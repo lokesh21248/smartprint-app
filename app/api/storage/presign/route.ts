@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     // 4. Validate file — MIME type, extension, double-extension, path traversal, size
     const validation = validateUploadRequest({ fileName, fileSize, mimeType });
     if (!validation.valid) {
-      console.error("[PRESIGN_ERROR] File validation failed:", validation.error);
+      console.error("[UPLOAD_FAIL]", new Error(validation.error || "File validation failed"));
       return NextResponse.json(
         { success: false, error: validation.error },
         { status: validation.statusCode ?? 400 }
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
 
     const userAgent = request.headers.get("user-agent") ?? "unknown";
     console.log("[UPLOAD_START]", {
-      fileName: validation.sanitizedName,
+      fileName: validation.sanitizedName || fileName,
       fileSize,
       mimeType,
       userAgent,
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
     // Verify Supabase Storage bucket is accessible and online
     const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(UPLOAD_BUCKET);
     if (bucketError || !bucketData) {
-      console.error("[UPLOAD_FAIL] Supabase storage bucket unavailable:", bucketError?.message || "Not found");
+      console.error("[UPLOAD_FAIL]", bucketError || new Error("Supabase storage bucket unavailable"));
       return NextResponse.json(
         { success: false, error: "Storage service is currently unavailable. Please contact support." },
         { status: 503 }
@@ -176,7 +176,7 @@ export async function POST(request: Request) {
       .createSignedUploadUrl(storagePath, { upsert: true });
 
     if (signError || !signedData) {
-      console.error("[PRESIGN_ERROR] Failed to create signed URL. error:", signError?.message, "errorDetails:", signError);
+      console.error("[UPLOAD_FAIL]", signError || new Error("Failed to create signed URL"));
       return NextResponse.json(
         { success: false, error: "Failed to create upload URL", details: signError?.message },
         { status: 500 }
@@ -209,7 +209,7 @@ export async function POST(request: Request) {
       expiresIn: UPLOAD_URL_TTL_SECONDS,
     });
   } catch (error) {
-    console.error("[UPLOAD_FAIL] Presign route fatal error:", error);
+    console.error("[UPLOAD_FAIL]", error);
     return NextResponse.json(
       {
         success: false,

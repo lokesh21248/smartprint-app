@@ -113,7 +113,14 @@ export interface OrderFileRecord {
   file_status?: "active" | "expired";
 }
 
-export type UploadStatus = "pending" | "uploading" | "completed" | "failed";
+export type UploadStatus =
+  | "idle"
+  | "queued"
+  | "preparing"
+  | "uploading"
+  | "success"
+  | "failed"
+  | "cancelled";
 
 
 export interface UploadedFile {
@@ -126,12 +133,14 @@ export interface UploadedFile {
   progress: number;
   status: UploadStatus;
   storagePath?: string;
+  uploadedUrl?: string;
   error?: string;
   copies: number;
   color: boolean;
   doubleSided: boolean;
   mimeType?: string;
   retryAttempt?: number;
+  retryCount: number;
   /** Current upload speed in bytes/sec — populated during "uploading" phase */
   uploadSpeed?: number;
   /** Estimated seconds remaining — populated during "uploading" phase */

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Suspense, useState, useEffect, useMemo, useRef, useCallback, memo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -59,6 +59,144 @@ function generateIdempotencyKey(shopId: string, phone: string, fileNames: string
   return `${shopId}:${phone}:${fileNames}:${Date.now().toString(36)}`;
 }
 
+// ─── Memoized Pricing Summary Card ──────────────────────────────────────────
+const PricingSummaryCard = memo(function PricingSummaryCard({
+  totalAmount,
+  filesCount,
+  totalPages,
+  onCheckout,
+}: {
+  totalAmount: number;
+  filesCount: number;
+  totalPages: number;
+  onCheckout: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl relative overflow-hidden"
+    >
+      <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
+        <Printer className="w-40 h-40" />
+      </div>
+
+      <div className="z-10">
+        <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
+          Estimated Cost
+        </span>
+        <p className="text-3xl font-black text-emerald-400 mt-1">
+          {formatCurrency(totalAmount)}
+        </p>
+        <p className="text-[10px] text-slate-300 font-bold mt-1">
+          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} total print sheets
+        </p>
+      </div>
+
+      <Button
+        onClick={onCheckout}
+        className="px-8 h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-2 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20"
+      >
+        Checkout Details <ChevronRight className="w-4 h-4" />
+      </Button>
+    </motion.div>
+  );
+});
+
+// ─── Memoized Checkout Bar Card ─────────────────────────────────────────────
+const CheckoutBarCard = memo(function CheckoutBarCard({
+  totalAmount,
+  filesCount,
+  totalPages,
+  orderStatus,
+  uploadPhase,
+  overallUploadPercent,
+  isOffline,
+  customerName,
+  customerPhone,
+  canRetry,
+  onPlaceOrder,
+}: {
+  totalAmount: number;
+  filesCount: number;
+  totalPages: number;
+  orderStatus: string;
+  uploadPhase: UploadPhase;
+  overallUploadPercent: number;
+  isOffline: boolean;
+  customerName: string;
+  customerPhone: string;
+  canRetry: boolean;
+  onPlaceOrder: () => void;
+}) {
+  return (
+    <div className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl shadow-slate-950/20 relative overflow-hidden">
+      <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
+        <Printer className="w-40 h-40" />
+      </div>
+
+      <div className="z-10">
+        <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
+          Total Print Bill
+        </span>
+        <p className="text-3xl font-black text-emerald-400 mt-1">
+          {formatCurrency(totalAmount)}
+        </p>
+        <p className="text-[10px] text-slate-300 font-bold mt-1">
+          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} total pages
+        </p>
+      </div>
+
+      <Button
+        id="place-order-btn"
+        onClick={onPlaceOrder}
+        disabled={
+          orderStatus === "saving" ||
+          isOffline ||
+          !customerName ||
+          customerName.trim().length < 3 ||
+          customerPhone.length < 10
+        }
+        className={`px-8 py-4 h-14 rounded-xl font-bold flex items-center gap-2 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 ${
+          canRetry
+            ? "bg-amber-500 hover:bg-amber-600 text-white"
+            : "bg-emerald-500 hover:bg-emerald-600 text-white"
+        }`}
+      >
+        {orderStatus === "success" ? (
+          <>
+            <Loader2 className="animate-spin w-4 h-4" />
+            Redirecting…
+          </>
+        ) : uploadPhase === "compressing" ? (
+          <>
+            <Loader2 className="animate-spin w-4 h-4" />
+            Compressing…
+          </>
+        ) : uploadPhase === "uploading" ? (
+          <>
+            <Loader2 className="animate-spin w-4 h-4" />
+            Uploading ({overallUploadPercent}%)…
+          </>
+        ) : orderStatus === "saving" ? (
+          <>
+            <Loader2 className="animate-spin w-4 h-4" />
+            Finalizing order…
+          </>
+        ) : orderStatus === "failed" ? (
+          <>
+            <RefreshCw className="w-4 h-4" /> Retry Order
+          </>
+        ) : (
+          <>
+            Place Order <ChevronRight className="w-4 h-4" />
+          </>
+        )}
+      </Button>
+    </div>
+  );
+});
+
 // ─── Inner Page Component ─────────────────────────────────────────────────────
 function OrderUploadPageInner() {
   const searchParams = useSearchParams();
@@ -93,12 +231,16 @@ function OrderUploadPageInner() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
+  const handleCheckoutDetails = useCallback(() => {
+    setStep(2);
+  }, []);
+
   const isSubmitting = orderStatus === "saving" || orderStatus === "success";
   const canRetry = orderStatus === "failed";
 
   const uploadPhase = useMemo<UploadPhase>(() => {
     if (orderStatus === "success") return "success";
-    if (files.some((f) => f.status === "uploading" || f.status === "pending")) return "uploading";
+    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "preparing")) return "uploading";
     if (orderStatus === "saving") return "saving";
     return "idle";
   }, [orderStatus, files]);
@@ -129,7 +271,7 @@ function OrderUploadPageInner() {
     };
     const onOnline = () => {
       setIsOffline(false);
-      const failedFiles = files.filter((f) => f.status === "failed");
+      const failedFiles = files.filter((f) => f.status === "failed" || f.status === "cancelled");
       if (failedFiles.length > 0) {
         toast.success(`Back online! Auto-retrying ${failedFiles.length} failed upload${failedFiles.length > 1 ? "s" : ""}…`);
       } else {
@@ -152,7 +294,8 @@ function OrderUploadPageInner() {
   useEffect(() => {
     const clearUploadSession = () => {
       try {
-        uploaderRef.current?.clearSession();
+        uploaderRef.current?.cancelAll();
+        uploaderRef.current?.clear();
       } catch (e) {
         console.warn("Failed to clear upload session on unload/unmount:", e);
       }
@@ -215,20 +358,26 @@ function OrderUploadPageInner() {
   // ── Aggregated Price and Volume Calculations ──────────────────────────────
   const totalAmount = useMemo(() => {
     if (!shop || files.length === 0) return 0;
-    return files.reduce((sum, f) => {
-      const rate = f.color
-        ? (shop.price_color_per_page || 0)
-        : (shop.price_bw_per_page || 0);
-      return sum + (f.pages || 1) * f.copies * rate;
-    }, 0);
+    return files
+      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
+      .reduce((sum, f) => {
+        const rate = f.color
+          ? (shop.price_color_per_page || 0)
+          : (shop.price_bw_per_page || 0);
+        return sum + (f.pages || 1) * f.copies * rate;
+      }, 0);
   }, [files, shop]);
 
   const totalPages = useMemo(() => {
-    return files.reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
+    return files
+      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
+      .reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
   }, [files]);
 
   const totalCopies = useMemo(() => {
-    return files.reduce((sum, f) => sum + f.copies, 0);
+    return files
+      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
+      .reduce((sum, f) => sum + f.copies, 0);
   }, [files]);
 
   // Dynamic overall upload percentage based on files sizes & progress
@@ -301,7 +450,7 @@ function OrderUploadPageInner() {
 
     try {
       // ── Step 1: Double-check uploads are completed ──────────────────────
-      const needsUpload = files.some((f) => f.status !== "completed");
+      const needsUpload = files.some((f) => f.status !== "success");
       if (needsUpload) {
         tracker.markUploadStart();
         if (uploaderRef.current) {
@@ -314,7 +463,7 @@ function OrderUploadPageInner() {
             );
           }
         } else {
-          const failedCount = files.filter((f) => f.status !== "completed").length;
+          const failedCount = files.filter((f) => f.status !== "success").length;
           const noun = failedCount === 1 ? "file" : "files";
           throw new Error(
             `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
@@ -423,18 +572,8 @@ function OrderUploadPageInner() {
       setOrderStatus("failed");
       toast.error("Please review the errors below to complete your order.");
 
-      // Destroy upload instance, clear retry queue, revoke URLs, and reset key on failure
-      try {
-        uploaderRef.current?.clearSession();
-      } catch (e) {
-        console.warn("Failed to clear upload session on error:", e);
-      }
-      setFiles([]);
-      setUploaderResetKey(
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : Math.random().toString(36).substring(2, 15)
-      );
+      // Do NOT clear uploader session or reset files list on failure. 
+      // This preserves files so they remain on screen for retries and prevents total amount from becoming 0.
     } finally {
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
@@ -545,34 +684,12 @@ function OrderUploadPageInner() {
               </div>
 
               {files.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl relative overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
-                    <Printer className="w-40 h-40" />
-                  </div>
-
-                  <div className="z-10">
-                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
-                      Estimated Cost
-                    </span>
-                    <p className="text-3xl font-black text-emerald-400 mt-1">
-                      {formatCurrency(totalAmount)}
-                    </p>
-                    <p className="text-[10px] text-slate-300 font-bold mt-1">
-                      {files.length} {files.length === 1 ? "file" : "files"} · {totalPages} total print sheets
-                    </p>
-                  </div>
-
-                  <Button
-                    onClick={() => setStep(2)}
-                    className="px-8 h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-2 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20"
-                  >
-                    Checkout Details <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </motion.div>
+                <PricingSummaryCard
+                  totalAmount={totalAmount}
+                  filesCount={files.length}
+                  totalPages={totalPages}
+                  onCheckout={handleCheckoutDetails}
+                />
               )}
 
               <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-100 flex items-center gap-4">
@@ -749,70 +866,19 @@ function OrderUploadPageInner() {
               </AnimatePresence>
 
               {/* Checkout Bar */}
-              <div className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white flex items-center justify-between shadow-2xl shadow-slate-950/20 relative overflow-hidden">
-                <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
-                  <Printer className="w-40 h-40" />
-                </div>
-
-                <div className="z-10">
-                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">
-                    Total Print Bill
-                  </span>
-                  <p className="text-3xl font-black text-emerald-400 mt-1">
-                    {formatCurrency(totalAmount)}
-                  </p>
-                  <p className="text-[10px] text-slate-300 font-bold mt-1">
-                    {files.length} {files.length === 1 ? "file" : "files"} · {totalPages} total pages
-                  </p>
-                </div>
-
-                <Button
-                  id="place-order-btn"
-                  onClick={handlePlaceOrder}
-                  disabled={
-                    orderStatus === "saving" ||
-                    isOffline ||
-                    !customerName ||
-                    customerName.trim().length < 3 ||
-                    customerPhone.length < 10
-                  }
-                  className={`px-8 py-4 h-14 rounded-xl font-bold flex items-center gap-2 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 ${
-                    canRetry
-                      ? "bg-amber-500 hover:bg-amber-600 text-white"
-                      : "bg-emerald-500 hover:bg-emerald-600 text-white"
-                  }`}
-                >
-                  {orderStatus === "success" ? (
-                    <>
-                      <Loader2 className="animate-spin w-4 h-4" />
-                      Redirecting…
-                    </>
-                  ) : uploadPhase === "compressing" ? (
-                    <>
-                      <Loader2 className="animate-spin w-4 h-4" />
-                      Compressing…
-                    </>
-                  ) : uploadPhase === "uploading" ? (
-                    <>
-                      <Loader2 className="animate-spin w-4 h-4" />
-                      Uploading ({overallUploadPercent}%)…
-                    </>
-                  ) : orderStatus === "saving" ? (
-                    <>
-                      <Loader2 className="animate-spin w-4 h-4" />
-                      Finalizing order…
-                    </>
-                  ) : orderStatus === "failed" ? (
-                    <>
-                      <RefreshCw className="w-4 h-4" /> Retry Order
-                    </>
-                  ) : (
-                    <>
-                      Place Order <ChevronRight className="w-4 h-4" />
-                    </>
-                  )}
-                </Button>
-              </div>
+              <CheckoutBarCard
+                totalAmount={totalAmount}
+                filesCount={files.length}
+                totalPages={totalPages}
+                orderStatus={orderStatus}
+                uploadPhase={uploadPhase}
+                overallUploadPercent={overallUploadPercent}
+                isOffline={isOffline}
+                customerName={customerName}
+                customerPhone={customerPhone}
+                canRetry={canRetry}
+                onPlaceOrder={handlePlaceOrder}
+              />
 
               {/* Help Support */}
               <div className="text-center pt-2 pb-6">

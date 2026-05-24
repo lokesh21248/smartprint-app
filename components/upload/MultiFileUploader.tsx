@@ -57,8 +57,10 @@ const MultiFileDropzone = dynamic(
 
 export interface MultiFileUploaderRef {
   uploadAll: () => Promise<{ success: boolean; files: UploadedFile[]; failedCount: number }>;
-  retryFailed: () => Promise<void>;
+  retryFailed: () => void;
   clearSession: () => void;
+  cancelAll: () => void;
+  clear: () => void;
 }
 
 interface MultiFileUploaderProps {
@@ -174,10 +176,10 @@ export const MultiFileUploader = memo(
     };
 
     // ── Summary counts ────────────────────────────────────────────────────────
-    const successCount = queueFiles.filter((f) => f.status === "completed").length;
-    const failedCount  = queueFiles.filter((f) => f.status === "failed").length;
+    const successCount = queueFiles.filter((f) => f.status === "success").length;
+    const failedCount  = queueFiles.filter((f) => f.status === "failed" || f.status === "cancelled").length;
     const uploadingCount = queueFiles.filter((f) => f.status === "uploading").length;
-    const queuedCount = queueFiles.filter((f) => f.status === "pending").length;
+    const queuedCount = queueFiles.filter((f) => f.status === "queued" || f.status === "preparing").length;
     const activeOrQueuedCount = uploadingCount + queuedCount;
 
     return (
@@ -357,7 +359,8 @@ const ReorderItemRow = memo(function ReorderItemRow({
   const isPdf = fileItem.file?.type === "application/pdf" || fileItem.name.toLowerCase().endsWith(".pdf");
   const isActivelyUploading =
     fileItem.status === "uploading" ||
-    fileItem.status === "pending";
+    fileItem.status === "queued" ||
+    fileItem.status === "preparing";
 
   // Local object URL for image thumbnail
   const [thumbUrl, setThumbUrl] = useState<string>("");
@@ -395,11 +398,12 @@ const ReorderItemRow = memo(function ReorderItemRow({
     switch (fileItem.status) {
       case "failed":
         return "border-rose-200 shadow-rose-50 shadow-sm bg-rose-50/30";
-      case "completed":
+      case "success":
         return "border-emerald-100 shadow-emerald-50/60 shadow-sm bg-emerald-50/20";
       case "uploading":
         return "border-emerald-200 shadow-sm";
-      case "pending":
+      case "queued":
+      case "preparing":
         return "border-slate-100 shadow-sm bg-slate-50/5";
       default:
         return "border-slate-100 shadow-sm";
@@ -429,7 +433,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
           />
         </div>
       )}
-      {fileItem.status === "completed" && (
+      {fileItem.status === "success" && (
         <div className="h-0.5 w-full bg-emerald-400" />
       )}
 
@@ -448,7 +452,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
 
         {/* Thumbnail */}
         <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
-          {fileItem.status === "completed" && (
+          {fileItem.status === "success" && (
             <motion.div
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -513,8 +517,8 @@ const ReorderItemRow = memo(function ReorderItemRow({
             </div>
           </div>
 
-          {/* Config Controls (pending / failed states) */}
-          {(fileItem.status === "pending" || fileItem.status === "failed") && (
+          {/* Config Controls (queued / preparing / failed states) */}
+          {(fileItem.status === "queued" || fileItem.status === "preparing" || fileItem.status === "idle" || fileItem.status === "failed" || fileItem.status === "cancelled") && (
             <div className="mt-3 pt-3 border-t border-slate-100/70 flex flex-wrap items-center gap-3">
               {/* Copies */}
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
@@ -642,11 +646,11 @@ const ReorderItemRow = memo(function ReorderItemRow({
                       </span>
                     </>
                   )}
-                  {fileItem.status === "pending" && (
+                  {(fileItem.status === "queued" || fileItem.status === "preparing") && (
                     <>
                       <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
                       <span className="text-slate-700">
-                        {fileItem.error ? fileItem.error : "Queued…"}
+                        {fileItem.error ? fileItem.error : (fileItem.status === "preparing" ? "Preparing upload…" : "Queued…")}
                       </span>
                     </>
                   )}
@@ -673,7 +677,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
           )}
 
           {/* Success State */}
-          {fileItem.status === "completed" && (
+          {fileItem.status === "success" && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -685,7 +689,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
           )}
 
           {/* Failure Panel — exact reason + retry */}
-          {fileItem.status === "failed" && (
+          {(fileItem.status === "failed" || fileItem.status === "cancelled") && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
