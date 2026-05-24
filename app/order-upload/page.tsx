@@ -93,7 +93,7 @@ function OrderUploadPageInner() {
   const uploadPhase = useMemo<UploadPhase>(() => {
     if (orderStatus === "success") return "success";
     if (files.some((f) => f.status === "compressing")) return "compressing";
-    if (files.some((f) => f.status === "uploading" || f.status === "queued" || f.status === "retrying" || f.status === "finalizing" || f.status === "paused")) return "uploading";
+    if (files.some((f) => f.status === "uploading" || f.status === "processing" || f.status === "pending")) return "uploading";
     if (orderStatus === "saving") return "saving";
     return "idle";
   }, [orderStatus, files]);
@@ -284,7 +284,7 @@ function OrderUploadPageInner() {
 
     try {
       // ── Step 1: Double-check uploads are completed ──────────────────────
-      const needsUpload = files.some((f) => f.status !== "uploaded");
+      const needsUpload = files.some((f) => f.status !== "completed");
       if (needsUpload) {
         tracker.markUploadStart();
         if (uploaderRef.current) {
@@ -297,7 +297,7 @@ function OrderUploadPageInner() {
             );
           }
         } else {
-          const failedCount = files.filter((f) => f.status !== "uploaded").length;
+          const failedCount = files.filter((f) => f.status !== "completed").length;
           const noun = failedCount === 1 ? "file" : "files";
           throw new Error(
             `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`

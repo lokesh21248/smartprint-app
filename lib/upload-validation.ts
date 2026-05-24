@@ -10,8 +10,8 @@
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Hard cap: 25 MB. Matches Supabase Storage free tier default. */
-export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+/** Hard cap: 500 MB. Updated to support production-scale resumable chunked files. */
+export const MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024;
 
 /** Allowed MIME types — PDF and common image formats + WebP (output of client compressor). */
 export const ALLOWED_MIME_TYPES = new Set([
@@ -47,8 +47,8 @@ const DANGEROUS_EXTENSIONS = new Set([
   "lnk", "url", "desktop",
 ]);
 
-/** Supabase Storage bucket name. */
-export const UPLOAD_BUCKET = "order-files";
+/** Supabase Storage temporary staging bucket name. */
+export const UPLOAD_BUCKET = "temp-uploads";
 
 /** Signed URL TTL in seconds. Extended to 3600s (1 hour) to support large file chunk uploads on slow mobile. */
 export const UPLOAD_URL_TTL_SECONDS = 3600;

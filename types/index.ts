@@ -80,6 +80,7 @@ export interface Order {
   }>;
   order_files?: OrderFileRecord[];
   shops?: Shop;
+  file_status?: "active" | "expired";
 }
 
 export interface PrintConfig {
@@ -109,17 +110,18 @@ export interface OrderFileRecord {
   page_count: number;
   mime_type: string;
   created_at?: string;
+  file_status?: "active" | "expired";
 }
 
 export type UploadStatus =
-  | "queued"
-  | "compressing"
+  | "pending"
   | "uploading"
-  | "paused"
-  | "retrying"
-  | "uploaded"
+  | "compressing"
+  | "processing"
+  | "completed"
   | "failed"
-  | "finalizing";
+  | "abandoned";
+
 
 export interface UploadedFile {
   id: string;

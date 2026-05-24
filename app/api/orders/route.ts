@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitOrders, rateLimitOrdersGet, rateLimitHeaders } from "@/lib/ratelimit";
 import { OrderCreateSchema } from "@/lib/validators";
 import { enqueueBackgroundTasks } from "@/lib/queue/background-tasks";
+import { moveFileAcrossBuckets } from "@/lib/storage";
 
 // ─── Runtime Config ──────────────────────────────────────────────────────────
 // Node.js runtime: required for Supabase client (uses Node crypto internals).
@@ -360,6 +361,47 @@ export async function POST(request: Request) {
         page_count: f.pages,
         mime_type: f.mimeType || (f.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
       }));
+
+      // ── CRITICAL LIFE CYCLE boundary: Move staging uploads from temp-uploads to permanent order-files bucket
+      try {
+        for (const fileToMove of orderFilesPayload) {
+          await moveFileAcrossBuckets(
+            "temp-uploads",
+            "order-files",
+            fileToMove.storage_path,
+            fileToMove.mime_type
+          );
+
+          // Update corresponding upload_sessions row to permanent paid state
+          await supabase
+            .from("upload_sessions")
+            .update({
+              order_id: data.id,
+              bucket_name: "order-files",
+              upload_status: "completed",
+              is_temporary: false,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("storage_path", fileToMove.storage_path);
+        }
+      } catch (moveErr) {
+        console.error("[orders:POST] Failed to move staging files to permanent order-files bucket:", moveErr);
+        // Rollback parent order row
+        await supabase
+          .from("orders")
+          .delete()
+          .eq("id", data.id);
+
+        console.timeEnd("[orders:POST:total]");
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Staging lifecycle integrity check failed. Staging assets could not be secured.",
+            details: moveErr instanceof Error ? moveErr.message : String(moveErr),
+          },
+          { status: 500 }
+        );
+      }
 
       const { error: filesError } = await supabase
         .from("order_files")

@@ -55,3 +55,43 @@ export async function getSignedUrls(
   });
   return result;
 }
+
+/**
+ * Move a storage object from one bucket to another.
+ * Downloads from source, uploads to destination, then deletes from source.
+ */
+export async function moveFileAcrossBuckets(
+  fromBucket: string,
+  toBucket: string,
+  path: string,
+  mimeType: string
+): Promise<void> {
+  const admin = createAdminClient();
+
+  // 1. Download file from source bucket
+  const { data: fileData, error: downloadError } = await admin.storage
+    .from(fromBucket)
+    .download(path);
+
+  if (downloadError || !fileData) {
+    throw new Error(`Failed to download file from ${fromBucket}/${path}: ${downloadError?.message ?? "unknown error"}`);
+  }
+
+  // 2. Upload file to target bucket
+  const { error: uploadError } = await admin.storage
+    .from(toBucket)
+    .upload(path, fileData, { contentType: mimeType, upsert: true });
+
+  if (uploadError) {
+    throw new Error(`Failed to upload file to ${toBucket}/${path}: ${uploadError.message}`);
+  }
+
+  // 3. Delete file from source bucket
+  const { error: removeError } = await admin.storage
+    .from(fromBucket)
+    .remove([path]);
+
+  if (removeError) {
+    console.warn(`[storage] Failed to remove source file from ${fromBucket}/${path} after successful move:`, removeError.message);
+  }
+}

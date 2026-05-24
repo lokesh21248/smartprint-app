@@ -151,12 +151,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Track upload for auto-cleanup (runs every 2 hours via pg_cron)
+    // 8. Track upload in upload_sessions table for production staging lifecycle & daily pg_cron cleanup
+    const expiresAt = new Date(Date.now() + 30 * 60 * 60 * 1000).toISOString(); // Staging expiration: 30 hours
     await supabase
-      .from("uploaded_documents")
-      .insert({ file_path: storagePath })
+      .from("upload_sessions")
+      .insert({
+        bucket_name: UPLOAD_BUCKET,
+        file_name: validation.sanitizedName,
+        storage_path: storagePath,
+        mime_type: mimeType || "application/octet-stream",
+        file_size: fileSize,
+        upload_status: "pending",
+        is_temporary: true,
+        expires_at: expiresAt,
+      })
       .then(({ error }) => {
-        if (error) console.warn("[presign] uploaded_documents insert failed:", error.message);
+        if (error) console.warn("[presign] upload_sessions insert failed:", error.message);
       });
 
     return NextResponse.json({
