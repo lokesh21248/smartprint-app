@@ -71,7 +71,12 @@ function OrderUploadPageInner() {
   const [isLoadingShop, setIsLoadingShop] = useState(true);
   const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [uploaderKey, setUploaderKey] = useState(0);
+  const [uploaderResetKey, setUploaderResetKey] = useState(() => {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return Math.random().toString(36).substring(2, 15);
+  });
   const [notes, setNotes] = useState("");
 
   // Pre-generate unique orderId for this session (for TUS folder structuring)
@@ -426,7 +431,11 @@ function OrderUploadPageInner() {
         console.warn("Failed to clear upload session on error:", e);
       }
       setFiles([]);
-      setUploaderKey((prev) => prev + 1);
+      setUploaderResetKey(
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).substring(2, 15)
+      );
     } finally {
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
@@ -526,7 +535,7 @@ function OrderUploadPageInner() {
             >
               <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
                 <MultiFileUploader
-                  key={uploaderKey}
+                  key={uploaderResetKey}
                   ref={uploaderRef}
                   files={files}
                   onChange={setFiles}

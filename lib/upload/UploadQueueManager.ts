@@ -517,6 +517,11 @@ export class UploadQueueManager {
     const entry = this._files.get(id);
     if (!entry || entry.state === "completed" || entry.state === "failed") return;
 
+    // Point 6: Strict Mutex Lock
+    if (this._activeFileIds.has(id) && entry.state !== "retrying") {
+      return;
+    }
+
     const startedAt = Date.now();
     let attempt = 0;
 
@@ -747,37 +752,61 @@ export class UploadQueueManager {
     const entry = this._files.get(id);
     if (!entry || !entry.file) throw new Error("FILE_ACCESS_REVOKED");
 
-    const res = await fetch("/api/storage/presign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        shopId: this._shopId,
-        orderId: this._orderId,
-        fileName: entry.file.name,
-        fileSize: entry.file.size,
-        mimeType: entry.file.type,
-      }),
-      signal,
+    // Point 4: Mobile Fetch Defense with AbortController and Timeout (15s)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 15000);
+
+    // Chain signals
+    signal.addEventListener("abort", () => {
+      controller.abort();
     });
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? `Server error (${res.status})`);
+    try {
+      const res = await fetch("/api/storage/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shopId: this._shopId,
+          orderId: this._orderId,
+          fileName: entry.file.name,
+          fileSize: entry.file.size,
+          mimeType: entry.file.type,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      // Point 7: Validate response JSON (Vercel HTML check)
+      const contentType = res.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        throw new Error("Invalid API response format (expected JSON)");
+      }
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Server error (${res.status})`);
+      }
+
+      const data = await res.json() as {
+        alreadyExists?: boolean;
+        storagePath: string;
+        token?: string;
+      };
+
+      if (data.alreadyExists) {
+        return { alreadyExists: true, storagePath: data.storagePath };
+      }
+
+      if (!data.token) throw new Error("Presign response missing token");
+
+      return { alreadyExists: false, token: data.token, storagePath: data.storagePath };
+    } catch (err) {
+      clearTimeout(timeout);
+      throw err;
     }
-
-    const data = await res.json() as {
-      alreadyExists?: boolean;
-      storagePath: string;
-      token?: string;
-    };
-
-    if (data.alreadyExists) {
-      return { alreadyExists: true, storagePath: data.storagePath };
-    }
-
-    if (!data.token) throw new Error("Presign response missing token");
-
-    return { alreadyExists: false, token: data.token, storagePath: data.storagePath };
   }
 
   // ─── TUS Upload ───────────────────────────────────────────────────────────────
@@ -981,14 +1010,29 @@ export class UploadQueueManager {
   }
 
   private _handleVisibilityChange(): void {
-    if (document.visibilityState === "visible" && this._online) {
+    if (document.hidden) {
+      // Point 9: Foreground visibility defense — pause uploads immediately when app hidden
+      console.log("[QueueManager] App hidden (tab suspended) — pausing all active uploads.");
+      for (const [id, entry] of this._files) {
+        if (entry.state === "uploading" || entry.state === "requesting_url") {
+          this._abortFileUpload(id);
+          this._patch(id, {
+            state: "paused",
+            error: "Uploads suspended in background…",
+          });
+          this._activeFileIds.delete(id);
+        }
+      }
+      this._releaseWakeLockIfDone();
+    } else if (document.visibilityState === "visible" && this._online) {
+      console.log("[QueueManager] App visible — resuming all suspended uploads.");
       // Reset watchdog baselines — tab may have been hidden for >20s
       const now = Date.now();
       for (const id of this._activeFileIds) {
         this._lastProgressAt.set(id, now);
       }
 
-      // Re-queue any retrying/paused files that may have been starved
+      // Re-queue any paused/starved files
       for (const [id, entry] of this._files) {
         if (entry.state === "paused" || entry.state === "retrying") {
           if (!this._activeFileIds.has(id)) {

@@ -32,8 +32,9 @@ export async function POST(request: Request) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
     const rl = rateLimitPresign(ip);
     if (!rl.success) {
+      console.error("[PRESIGN_ERROR] Rate limit exceeded");
       return NextResponse.json(
-        { error: "Too many upload requests. Please wait before uploading again." },
+        { success: false, error: "Too many upload requests. Please wait before uploading again." },
         { status: 429, headers: rateLimitHeaders(rl) }
       );
     }
@@ -41,7 +42,8 @@ export async function POST(request: Request) {
     // 2. Parse body
     const body = await request.json().catch(() => null);
     if (!body) {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      console.error("[PRESIGN_ERROR] Invalid JSON body");
+      return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
     }
 
     const { shopId, fileName, fileSize, mimeType, orderId } = body as {
@@ -52,18 +54,19 @@ export async function POST(request: Request) {
       orderId?: string;
     };
 
-    console.log("[presign] Creating upload URL request:", {
-      shopId,
+    console.log("[PRESIGN_REQUEST]", {
       fileName,
-      size: fileSize,
-      type: mimeType,
+      fileSize,
+      contentType: mimeType,
+      shopId,
       orderId,
     });
 
     // 3. Validate shopId
     if (!shopId || typeof shopId !== "string") {
+      console.error("[PRESIGN_ERROR] Missing shopId");
       return NextResponse.json(
-        { error: "Missing required field: shopId" },
+        { success: false, error: "Missing required field: shopId" },
         { status: 400 }
       );
     }
@@ -71,8 +74,9 @@ export async function POST(request: Request) {
     // 4. Validate file — MIME type, extension, double-extension, path traversal, size
     const validation = validateUploadRequest({ fileName, fileSize, mimeType });
     if (!validation.valid) {
+      console.error("[PRESIGN_ERROR] File validation failed:", validation.error);
       return NextResponse.json(
-        { error: validation.error },
+        { success: false, error: validation.error },
         { status: validation.statusCode ?? 400 }
       );
     }
@@ -108,12 +112,14 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (shopError || !shop) {
-      return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+      console.error("[PRESIGN_ERROR] Shop not found", shopError);
+      return NextResponse.json({ success: false, error: "Shop not found" }, { status: 404 });
     }
 
     if (!shop.is_active) {
+      console.error("[PRESIGN_ERROR] Shop is inactive");
       return NextResponse.json(
-        { error: "This shop is currently not accepting orders." },
+        { success: false, error: "This shop is currently not accepting orders." },
         { status: 403 }
       );
     }
@@ -152,9 +158,9 @@ export async function POST(request: Request) {
       .createSignedUploadUrl(storagePath, { upsert: true });
 
     if (signError || !signedData) {
-      console.error("[presign] Failed to create signed URL. error:", signError?.message, "errorDetails:", signError);
+      console.error("[PRESIGN_ERROR] Failed to create signed URL. error:", signError?.message, "errorDetails:", signError);
       return NextResponse.json(
-        { error: "Failed to create upload URL", details: signError?.message },
+        { success: false, error: "Failed to create upload URL", details: signError?.message },
         { status: 500 }
       );
     }
@@ -184,9 +190,14 @@ export async function POST(request: Request) {
       sanitizedName: validation.sanitizedName,
       expiresIn: UPLOAD_URL_TTL_SECONDS,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    console.error("[presign] Unexpected error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error("[PRESIGN_FATAL]", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to generate upload URL",
+      },
+      { status: 500 }
+    );
   }
 }
