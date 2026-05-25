@@ -49,6 +49,27 @@ export async function POST(request: Request) {
         });
 
         if (fileInfo.size === expectedSize) {
+          // Update upload_sessions status
+          await admin
+            .from("upload_sessions")
+            .update({
+              security_status: "pending",
+              scan_status: "pending",
+              upload_status: "uploaded",
+            })
+            .eq("storage_path", storagePath);
+
+          try {
+            await admin
+              .from("uploaded_files")
+              .update({
+                security_status: "pending",
+                scan_status: "pending",
+                upload_status: "uploaded",
+              })
+              .eq("storage_path", storagePath);
+          } catch (e) {}
+
           return NextResponse.json({
             success: true,
             verified: true,
@@ -115,6 +136,27 @@ export async function POST(request: Request) {
         error: `Size mismatch. Expected ${expectedSize} bytes, got ${actualSize} bytes.`,
       });
     }
+
+    // Update upload_sessions status
+    await admin
+      .from("upload_sessions")
+      .update({
+        security_status: "pending",
+        scan_status: "pending",
+        upload_status: "uploaded",
+      })
+      .eq("storage_path", storagePath);
+
+    try {
+      await admin
+        .from("uploaded_files")
+        .update({
+          security_status: "pending",
+          scan_status: "pending",
+          upload_status: "uploaded",
+        })
+        .eq("storage_path", storagePath);
+    } catch (e) {}
 
     console.log("[SUPABASE_VERIFY_SUCCESS_LIST]", { path: storagePath, size: actualSize });
     return NextResponse.json({
