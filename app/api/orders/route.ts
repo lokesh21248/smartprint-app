@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitOrders, rateLimitOrdersGet, rateLimitHeaders } from "@/lib/ratelimit";
 import { OrderCreateSchema } from "@/lib/validators";
@@ -118,6 +119,7 @@ export async function POST(request: Request) {
   console.time("[orders:POST:total]");
 
   try {
+    const { userId } = auth();
     const supabase = createAdminClient();
 
     // ── 1. Rate Limiting ──────────────────────────────────────────────────────
@@ -207,6 +209,47 @@ export async function POST(request: Request) {
       fileSize = 1024,
       files = [],
     } = parsed.data;
+
+    // ── 3.5. Security: Block unscanned/infected files & Invalid Types ─────────
+    if (files.length > 0) {
+      const hasUnscanned = files.some(f => f.scanStatus !== "clean");
+      if (hasUnscanned) {
+        console.warn(JSON.stringify({
+          level: "warn",
+          event: "checkout_blocked_unscanned",
+          shop_id: shopId,
+          user_id: userId,
+          ip: ip,
+          timestamp: new Date().toISOString()
+        }));
+        console.timeEnd("[orders:POST:total]");
+        return NextResponse.json(
+          { error: "Security validation failed. One or more files have not passed the virus scan." },
+          { status: 400 }
+        );
+      }
+
+      const hasInvalidType = files.some(f => {
+        const ext = f.name.split('.').pop()?.toLowerCase();
+        return !['pdf', 'jpg', 'jpeg', 'png'].includes(ext || '');
+      });
+
+      if (hasInvalidType) {
+        console.warn(JSON.stringify({
+          level: "warn",
+          event: "checkout_blocked_invalid_type",
+          shop_id: shopId,
+          user_id: userId,
+          ip: ip,
+          timestamp: new Date().toISOString()
+        }));
+        console.timeEnd("[orders:POST:total]");
+        return NextResponse.json(
+          { error: "Invalid file type. Only PDF, JPG, and PNG are allowed." },
+          { status: 400 }
+        );
+      }
+    }
 
     // ── 4. Duplicate Detection ────────────────────────────────────────────────
     // Covered by composite index: idx_orders_dedup (shop_id, customer_phone, file_name, created_at)
@@ -355,11 +398,15 @@ export async function POST(request: Request) {
 
       const orderFilesPayload = filesToInsert.map((f) => ({
         order_id: data.id,
+        shop_id: shopId,
+        uploaded_by: userId || null,
         file_name: f.name,
         storage_path: f.url,
         file_size: f.size,
         page_count: f.pages,
         mime_type: f.mimeType || (f.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
+        scan_status: "clean",
+        infected: false,
       }));
 
       // ── CRITICAL LIFE CYCLE boundary: Move staging uploads from temp-uploads to permanent order-files bucket
@@ -458,9 +505,16 @@ export async function POST(request: Request) {
       {
         name: "log-order-placed",
         fn: async () => {
-          console.log(
-            `[orders:bg] order placed: id=${data.id} shop=${shopId} amount=₹${totalAmount}`
-          );
+          console.log(JSON.stringify({
+            level: "info",
+            event: "order_placed",
+            order_id: data.id,
+            shop_id: shopId,
+            user_id: userId,
+            amount: totalAmount,
+            ip: ip,
+            timestamp: new Date().toISOString()
+          }));
         },
       },
     ]);

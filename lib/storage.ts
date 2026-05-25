@@ -8,10 +8,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * @param path      Object path within the bucket (e.g. "shop-id/order-id/file.pdf")
  * @param expiresIn Seconds until the signed URL expires (default: 1 hour)
  */
-export async function getSignedUrl(
+export async function createSignedUrl(
   bucket: string,
   path: string,
-  expiresIn = 3600
+  expiresIn = 60
 ): Promise<string> {
   const admin = createAdminClient();
 
@@ -32,10 +32,10 @@ export async function getSignedUrl(
  * Generate signed URLs for multiple objects in one call.
  * Returns a map of path → signedUrl.
  */
-export async function getSignedUrls(
+export async function createSignedUrls(
   bucket: string,
   paths: string[],
-  expiresIn = 3600
+  expiresIn = 60
 ): Promise<Record<string, string>> {
   const admin = createAdminClient();
 

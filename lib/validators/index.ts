@@ -2,6 +2,9 @@ import { z } from "zod";
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
+export const ScanStatusEnum = z.enum(["pending", "scanning", "clean", "infected", "failed"]);
+export type ScanStatus = z.infer<typeof ScanStatusEnum>;
+
 export const EmailOtpRequestSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
 });
@@ -115,6 +118,7 @@ export const OrderCreateSchema = z.object({
     color: z.boolean().optional().default(false),
     doubleSided: z.boolean().optional().default(false),
     mimeType: z.string().optional(),
+    scanStatus: ScanStatusEnum.optional().default("pending"),
   })).min(1, "At least one file is required").optional(),
   // Legacy single-file fields (optional for backward compatibility)
   filePath: z.string().trim().min(1)
