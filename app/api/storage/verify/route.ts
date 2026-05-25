@@ -68,7 +68,7 @@ export async function POST(request: Request) {
                 upload_status: "uploaded",
               })
               .eq("storage_path", storagePath);
-          } catch (e) {}
+          } catch {}
 
           return NextResponse.json({
             success: true,
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const uploadedFileItem = fileList?.find((f: any) => f.name === filename);
+    const uploadedFileItem = fileList?.find((f: { name: string }) => f.name === filename);
     if (!uploadedFileItem) {
       console.error("[SUPABASE_VERIFY_MISSING]", { path: storagePath });
       return NextResponse.json({
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
           upload_status: "uploaded",
         })
         .eq("storage_path", storagePath);
-    } catch (e) {}
+    } catch {}
 
     console.log("[SUPABASE_VERIFY_SUCCESS_LIST]", { path: storagePath, size: actualSize });
     return NextResponse.json({

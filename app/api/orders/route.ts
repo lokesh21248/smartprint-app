@@ -215,12 +215,12 @@ export async function POST(request: Request) {
       console.log("FILE SECURITY CHECK", files.map(f => ({
         name: f.name,
         scanStatus: f.scanStatus,
-        securityStatus: (f as any).securityStatus
+        securityStatus: f.securityStatus
       })));
 
       const isBlocked = files.some(f => {
         const scanStatusVal = f.scanStatus;
-        const securityStatusVal = (f as any).securityStatus;
+        const securityStatusVal = f.securityStatus;
         return (
           scanStatusVal === "infected" ||
           scanStatusVal === "failed" ||
@@ -460,7 +460,7 @@ export async function POST(request: Request) {
                 upload_status: "uploaded",
               })
               .eq("storage_path", fileToMove.storage_path);
-          } catch (e) {
+          } catch {
             // Ignore if uploaded_files table does not exist
           }
         }

@@ -18,10 +18,11 @@ export async function GET(req: NextRequest) {
     const signedUrl = await createSignedUrl(bucket, path, 60)
 
     return NextResponse.json({ signedUrl })
-  } catch (err: any) {
+  } catch (err) {
     console.error("[SIGNED_URL_FATAL]", err)
+    const errMsg = err instanceof Error ? err.message : "Unknown error"
     return NextResponse.json(
-      { error: err?.message || "Unknown error" },
+      { error: errMsg },
       { status: 500 }
     )
   }

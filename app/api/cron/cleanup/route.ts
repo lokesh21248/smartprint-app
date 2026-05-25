@@ -16,7 +16,6 @@ export async function GET(request: Request) {
 
   try {
     let deletedTempFiles = 0;
-    let deletedOrphanedRecords = 0;
 
     // 1. Delete abandoned temp uploads (upload_sessions older than 24h and status = 'uploading')
     const { data: abandonedSessions, error: sessionErr } = await supabase
