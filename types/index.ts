@@ -125,6 +125,7 @@ export type UploadStatus =
   | "failed"
   | "cancelled";
 
+export type FileSecurityStatus = "pending" | "clean" | "infected" | "failed";
 
 export interface UploadedFile {
   id: string;
@@ -144,6 +145,8 @@ export interface UploadedFile {
   mimeType?: string;
   retryAttempt?: number;
   retryCount: number;
+  securityStatus?: FileSecurityStatus;
+  scanStatus?: FileSecurityStatus;
   /** Current upload speed in bytes/sec — populated during "uploading" phase */
   uploadSpeed?: number;
   /** Estimated seconds remaining — populated during "uploading" phase */

@@ -26,7 +26,8 @@ import { UploadProgressBar } from "@/components/upload/UploadProgressBar";
 import type { UploadPhase } from "@/components/upload/UploadProgressBar";
 import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
 import { createOrderTracker } from "@/lib/monitoring/orderMetrics";
-import type { UploadedFile } from "@/types";
+import type { UploadedFile, FileSecurityStatus } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 import type { MultiFileUploaderRef } from "@/components/upload/MultiFileUploader";
 
 // Dynamic import for MultiFileUploader to ensure SSR safety
@@ -494,11 +495,61 @@ function OrderUploadPageInner() {
         tracker.markUploadEnd(totalFilesSize);
       }
 
+      // ── Step 1.5: Refresh latest file metadata / Poll for scan status ──────
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const supabaseClient = createClient();
+      
+      const updatedFiles = await Promise.all(
+        files.map(async (fileItem) => {
+          if (!fileItem.storagePath) return fileItem;
+          
+          let securityStatus: FileSecurityStatus = "pending";
+          
+          // Poll up to 10 times with 500ms delay to cover race conditions
+          for (let i = 0; i < 10; i++) {
+            try {
+              const { data, error } = await supabaseClient
+                .from("upload_sessions")
+                .select("security_status, scan_status")
+                .eq("storage_path", fileItem.storagePath)
+                .maybeSingle();
+                
+              if (!error && data) {
+                const status = data.security_status || data.scan_status;
+                if (status) {
+                  securityStatus = status as FileSecurityStatus;
+                  break;
+                }
+              }
+            } catch (err) {
+              console.error("[order:security_poll] Error fetching metadata:", err);
+            }
+            await delay(500);
+          }
+          
+          return {
+            ...fileItem,
+            securityStatus,
+            scanStatus: securityStatus,
+          };
+        })
+      );
+      
+      // Update local React state to reflect latest fetched metadata on screen
+      setFiles((prevFiles) =>
+        prevFiles.map((pf) => {
+          const updated = updatedFiles.find((uf) => uf.id === pf.id);
+          return updated
+            ? { ...pf, securityStatus: updated.securityStatus, scanStatus: updated.scanStatus }
+            : pf;
+        })
+      );
+
       // ── Step 2: Save order metadata to DB ───────────────────────────────────
       tracker.markInsertStart();
 
       // Structure files array for backend schema validator
-      const filesPayload = files.map((f) => ({
+      const filesPayload = updatedFiles.map((f) => ({
         name: f.name,
         size: f.size,
         pages: f.pages || 1,
@@ -506,6 +557,8 @@ function OrderUploadPageInner() {
         copies: f.copies,
         color: f.color,
         mimeType: f.mimeType || f.file?.type || "application/octet-stream",
+        scanStatus: f.scanStatus || "pending",
+        securityStatus: f.securityStatus || "pending",
       }));
 
       // Construct request body (supporting relational array + single file fallback)
@@ -856,14 +909,42 @@ function OrderUploadPageInner() {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
-                    className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-start gap-3"
+                    className={
+                      errorMessage.toLowerCase().includes("infected")
+                        ? "bg-red-50 border border-red-100 rounded-2xl p-4 flex items-start gap-3"
+                        : "bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3"
+                    }
                   >
-                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                    <AlertCircle className={
+                      errorMessage.toLowerCase().includes("infected")
+                        ? "w-5 h-5 text-red-500 shrink-0 mt-0.5"
+                        : "w-5 h-5 text-amber-500 shrink-0 mt-0.5"
+                    } />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-red-700">{errorMessage}</p>
-                      <p className="text-[10px] text-red-500 font-bold mt-1">
-                        ✓ Successfully uploaded files are saved — only the order save will retry.
-                      </p>
+                      {errorMessage.toLowerCase().includes("infected") ? (
+                        <>
+                          <p className="text-sm font-bold text-red-700">Security Scan Flagged File</p>
+                          <p className="text-xs text-red-600 mt-1">
+                            One or more of your files has been flagged as infected. Order submission is blocked for security reasons.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-bold text-amber-800">
+                            {errorMessage.includes("Security validation failed")
+                              ? "Security scan in progress."
+                              : errorMessage}
+                          </p>
+                          {errorMessage.includes("Security validation failed") && (
+                            <p className="text-xs text-amber-700 mt-1">
+                              Your files uploaded successfully. Order submission will continue automatically.
+                            </p>
+                          )}
+                          <p className="text-[10px] text-amber-600 font-bold mt-1.5">
+                            ✓ Successfully uploaded files are saved — only the order save will retry.
+                          </p>
+                        </>
+                      )}
                     </div>
                   </motion.div>
                 )}

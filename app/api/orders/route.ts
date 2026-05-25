@@ -119,7 +119,7 @@ export async function POST(request: Request) {
   console.time("[orders:POST:total]");
 
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
     const supabase = createAdminClient();
 
     // ── 1. Rate Limiting ──────────────────────────────────────────────────────
@@ -212,15 +212,32 @@ export async function POST(request: Request) {
 
     // ── 3.5. Security: Block unscanned/infected files & Invalid Types ─────────
     if (files.length > 0) {
-      const hasUnscanned = files.some(f => f.scanStatus !== "clean");
-      if (hasUnscanned) {
+      console.log("FILE SECURITY CHECK", files.map(f => ({
+        name: f.name,
+        scanStatus: f.scanStatus,
+        securityStatus: (f as any).securityStatus
+      })));
+
+      const isBlocked = files.some(f => {
+        const scanStatusVal = f.scanStatus;
+        const securityStatusVal = (f as any).securityStatus;
+        return (
+          scanStatusVal === "infected" ||
+          scanStatusVal === "failed" ||
+          securityStatusVal === "infected" ||
+          securityStatusVal === "failed"
+        );
+      });
+
+      if (isBlocked) {
         console.warn(JSON.stringify({
           level: "warn",
           event: "checkout_blocked_unscanned",
           shop_id: shopId,
           user_id: userId,
           ip: ip,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          reason: "One or more files have been flagged as infected or failed security scanning."
         }));
         console.timeEnd("[orders:POST:total]");
         return NextResponse.json(
@@ -405,7 +422,8 @@ export async function POST(request: Request) {
         file_size: f.size,
         page_count: f.pages,
         mime_type: f.mimeType || (f.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
-        scan_status: "clean",
+        scan_status: "pending",
+        security_status: "pending",
         infected: false,
       }));
 
@@ -428,8 +446,23 @@ export async function POST(request: Request) {
               upload_status: "completed",
               is_temporary: false,
               completed_at: new Date().toISOString(),
+              security_status: "pending",
+              scan_status: "pending",
             })
             .eq("storage_path", fileToMove.storage_path);
+
+          // Try updating generic uploaded_files table as well
+          try {
+            await supabase
+              .from("uploaded_files")
+              .update({
+                security_status: "pending",
+                upload_status: "uploaded",
+              })
+              .eq("storage_path", fileToMove.storage_path);
+          } catch (e) {
+            // Ignore if uploaded_files table does not exist
+          }
         }
       } catch (moveErr) {
         console.error("[orders:POST] Failed to move staging files to permanent order-files bucket:", moveErr);
