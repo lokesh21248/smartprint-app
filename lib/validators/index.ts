@@ -104,6 +104,7 @@ export type StaffInviteInput = z.infer<typeof StaffInviteSchema>;
 // ─── Order Create ─────────────────────────────────────────────────────────────
 
 export const OrderCreateSchema = z.object({
+  id: z.string().uuid().optional(),
   shopId: z.string().uuid("Invalid shopId"),
   // Support for multiple files
   files: z.array(z.object({

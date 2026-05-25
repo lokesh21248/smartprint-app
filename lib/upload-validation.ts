@@ -20,6 +20,8 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
   "image/webp", // Client-side compressor converts large PNG/JPG → WebP for faster mobile uploads
+  "image/heic",
+  "image/heif",
 ]);
 
 /** Allowed file extensions (lowercase, without dot). */
@@ -29,6 +31,8 @@ export const ALLOWED_EXTENSIONS = new Set([
   "jpg",
   "jpeg",
   "webp", // Output of client-side compression
+  "heic",
+  "heif",
 ]);
 
 /**
@@ -114,6 +118,7 @@ export function validateUploadRequest(params: {
     else if (ext === "png") mimeTypeNormalized = "image/png";
     else if (ext === "webp") mimeTypeNormalized = "image/webp";
     else if (ext === "jpg" || ext === "jpeg") mimeTypeNormalized = "image/jpeg";
+    else if (ext === "heic" || ext === "heif") mimeTypeNormalized = "image/heic";
     else mimeTypeNormalized = "application/octet-stream";
   }
 

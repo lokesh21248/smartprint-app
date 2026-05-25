@@ -148,7 +148,9 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   {/* Config */}
                   <p className="text-xs text-[#6B7280] mb-2">
                     <FileText className="h-3 w-3 inline mr-1" />
-                    1 file · {order.page_count}pg x {order.copies} copies ({order.color ? "Color" : "B&W"})
+                    {order.files && order.files.length > 0 
+                      ? `${order.files.length} file${order.files.length > 1 ? "s" : ""} · mixed config`
+                      : `1 file · ${order.page_count}pg x ${order.copies} copies (${order.color ? "Color" : "B&W"})`}
                   </p>
 
                   {/* Special instructions */}
@@ -166,7 +168,11 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   <p className="text-xl font-black text-[#111827]">
                     {formatCurrency(order.total_amount)}
                   </p>
-                  <p className="text-xs text-[#9CA3AF]">{order.page_count * order.copies} total pages</p>
+                  <p className="text-xs text-[#9CA3AF]">
+                    {order.files && order.files.length > 0 
+                      ? `${order.files.reduce((acc, f) => acc + (f.pages * (f.copies || 1)), 0)} total pages`
+                      : `${order.page_count * order.copies} total pages`}
+                  </p>
                 </div>
               </div>
 

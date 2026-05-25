@@ -195,7 +195,8 @@ export async function POST(request: Request) {
         mime_type: mimeType || "application/octet-stream",
         file_size: fileSize,
         upload_status: "pending",
-        is_temporary: true,
+        is_temporary: orderId ? false : true,
+        order_id: orderId || null,
         expires_at: expiresAt,
       })
       .then(({ error }) => {

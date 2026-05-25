@@ -79,8 +79,10 @@ const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
   "image/webp",
+  "image/heic",
+  "image/heif",
 ]);
-const ALLOWED_EXTS = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
+const ALLOWED_EXTS = new Set(["pdf", "png", "jpg", "jpeg", "webp", "heic", "heif"]);
 const MAX_SIZE_BYTES = 500 * 1024 * 1024; // Hardened 500MB size limit
 const MAX_FILES = 50; // Hardened 50 files limit
 
@@ -151,7 +153,7 @@ export const MultiFileUploader = memo(
         const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
 
         if (!ALLOWED_TYPES.has(type) && !ALLOWED_EXTS.has(ext)) {
-          toast.error(`"${file.name}" is not supported. Only PDF, PNG, and JPG files are accepted.`);
+          toast.error(`"${file.name}" is not supported. Only PDF, PNG, JPG, WebP, and HEIC files are accepted.`);
           continue;
         }
         if ((type.includes("heic") || ext === "heic") && file.size > 50 * 1024 * 1024) {

@@ -58,6 +58,31 @@ function generateIdempotencyKey(shopId: string, phone: string, fileNames: string
   return `${shopId}:${phone}:${fileNames}:${Date.now().toString(36)}`;
 }
 
+// ─── Sanitize filename on client to match backend ──────────────────────────────
+function sanitizeFileName(raw: string): string {
+  const lastDotIdx = raw.lastIndexOf(".");
+  const hasExt = lastDotIdx > 0;
+  const baseName = hasExt ? raw.slice(0, lastDotIdx) : raw;
+  const extension = hasExt ? raw.slice(lastDotIdx).toLowerCase() : "";
+
+  let clean = baseName
+    .replace(/[\s\t]+/g, "_")
+    .replace(/[^a-zA-Z0-9\-_.]/g, "")
+    .replace(/\.{2,}/g, ".")
+    .replace(/_{2,}/g, "_")
+    .replace(/^[._]+|[._]+$/g, "");
+
+  if (clean.length > 100) {
+    clean = clean.slice(0, 100);
+  }
+
+  if (clean.length === 0) {
+    clean = "upload";
+  }
+
+  return clean + extension;
+}
+
 // ─── Memoized Pricing Summary Card ──────────────────────────────────────────
 const PricingSummaryCard = memo(function PricingSummaryCard({
   totalAmount,
@@ -163,7 +188,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
             !customerName ||
             customerName.trim().length < 3 ||
             customerPhone.length < 10 ||
-            !allFilesCompleted
+            filesCount === 0
           }
           className={`w-full sm:w-auto px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
             canRetry
@@ -269,6 +294,7 @@ function OrderUploadPageInner() {
   const uploaderRef = useRef<MultiFileUploaderRef>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const persistUploadRef = useRef(false);
 
   const { user, isLoaded } = useUser();
   const [customerName, setCustomerName] = useState(nameParam);
@@ -312,6 +338,10 @@ function OrderUploadPageInner() {
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
   useEffect(() => {
     const clearUploadSession = () => {
+      if (persistUploadRef.current) {
+        console.log("[order-upload] Preserving upload queue for status page redirection.");
+        return;
+      }
       try {
         uploaderRef.current?.cancelAll();
         uploaderRef.current?.clear();
@@ -471,107 +501,42 @@ function OrderUploadPageInner() {
     }
 
     try {
-      // ── Step 1: Double-check uploads are completed ──────────────────────
-      const needsUpload = files.some((f) => f.status !== "completed");
-      if (needsUpload) {
-        tracker.markUploadStart();
-        if (uploaderRef.current) {
-          const uploadResult = await uploaderRef.current.uploadAll();
-          if (!uploadResult || !uploadResult.success) {
-            const failedCount = uploadResult?.failedCount ?? 1;
-            const noun = failedCount === 1 ? "file" : "files";
-            throw new Error(
-              `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
-            );
-          }
-        } else {
-          const failedCount = files.filter((f) => f.status !== "completed").length;
-          const noun = failedCount === 1 ? "file" : "files";
-          throw new Error(
-            `${failedCount} ${noun} failed to upload — check the error details on each file above and tap the Retry button.`
-          );
-        }
-        const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
-        tracker.markUploadEnd(totalFilesSize);
-      }
-
-      // ── Step 1.5: Refresh latest file metadata / Poll for scan status ──────
-      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      const supabaseClient = createClient();
-      
-      const updatedFiles = await Promise.all(
-        files.map(async (fileItem) => {
-          if (!fileItem.storagePath) return fileItem;
-          
-          let securityStatus: FileSecurityStatus = "pending";
-          
-          // Poll up to 10 times with 500ms delay to cover race conditions
-          for (let i = 0; i < 10; i++) {
-            try {
-              const { data, error } = await supabaseClient
-                .from("upload_sessions")
-                .select("security_status, scan_status")
-                .eq("storage_path", fileItem.storagePath)
-                .maybeSingle();
-                
-              if (!error && data) {
-                const status = data.security_status || data.scan_status;
-                if (status) {
-                  securityStatus = status as FileSecurityStatus;
-                  break;
-                }
-              }
-            } catch (err) {
-              console.error("[order:security_poll] Error fetching metadata:", err);
-            }
-            await delay(500);
-          }
-          
-          return {
-            ...fileItem,
-            securityStatus,
-            scanStatus: securityStatus,
-          };
-        })
-      );
-      
-      // Update local React state to reflect latest fetched metadata on screen
-      setFiles((prevFiles) =>
-        prevFiles.map((pf) => {
-          const updated = updatedFiles.find((uf) => uf.id === pf.id);
-          return updated
-            ? { ...pf, securityStatus: updated.securityStatus, scanStatus: updated.scanStatus }
-            : pf;
-        })
-      );
+      // Kick off background uploads if not already active
+      uploaderRef.current?.retryFailed?.();
 
       // ── Step 2: Save order metadata to DB ───────────────────────────────────
       tracker.markInsertStart();
 
-      // Structure files array for backend schema validator
-      const filesPayload = updatedFiles.map((f) => ({
-        name: f.name,
-        size: f.size,
-        pages: f.pages || 1,
-        url: f.storagePath!, // Presigned token path direct to Supabase bucket
-        copies: f.copies,
-        color: f.color,
-        mimeType: f.mimeType || f.file?.type || "application/octet-stream",
-        scanStatus: f.scanStatus || "pending",
-        securityStatus: f.securityStatus || "pending",
-      }));
+      // Structure files array for backend schema validator using precalculated permanent S3 paths
+      const filesPayload = files.map((f) => {
+        const sanitized = sanitizeFileName(f.name);
+        const calculatedPath = `orders/${orderId}/${sanitized}`;
+        return {
+          name: f.name,
+          size: f.size,
+          pages: f.pages || 1,
+          url: calculatedPath,
+          copies: f.copies || 1,
+          color: f.color || false,
+          doubleSided: f.doubleSided || false,
+          mimeType: f.mimeType || f.file?.type || "application/octet-stream",
+          scanStatus: f.scanStatus || "pending",
+          securityStatus: f.securityStatus || "pending",
+        };
+      });
 
       // Construct request body (supporting relational array + single file fallback)
       const orderBody = JSON.stringify({
+        id: orderId,
         shopId: shop.id,
         // Legacy fields mapping (using the first file in the array)
-        filePath: files[0].storagePath!,
-        fileName: files[0].name,
-        fileSize: files[0].size,
-        pageCount: files[0].pages || 1,
-        copies: files[0].copies,
-        color: files[0].color,
-        doubleSided: files[0].doubleSided,
+        filePath: filesPayload[0].url,
+        fileName: filesPayload[0].name,
+        fileSize: filesPayload[0].size,
+        pageCount: filesPayload[0].pages,
+        copies: filesPayload[0].copies,
+        color: filesPayload[0].color,
+        doubleSided: filesPayload[0].doubleSided,
         notes: notes?.trim() || "",
         customerName: formattedName,
         customerPhone: cleanedPhone,
@@ -616,11 +581,8 @@ function OrderUploadPageInner() {
       if (res.ok && data.shortToken) {
         setOrderStatus("success");
         tracker.markSuccess();
-        // Clear session on successful order placement
-        uploaderRef.current?.clearSession?.();
-        setTimeout(() => {
-          router.push(`/order/${data.shortToken}`);
-        }, 600);
+        persistUploadRef.current = true;
+        router.push(`/order/${data.shortToken}`);
       } else {
         throw new Error(data.message || data.error || "Order creation failed");
       }
@@ -763,7 +725,7 @@ function OrderUploadPageInner() {
                   filesCount={files.length}
                   totalPages={totalPages}
                   onCheckout={handleCheckoutDetails}
-                  disabled={!allFilesCompleted || isSubmitting}
+                  disabled={isSubmitting}
                 />
               )}
 

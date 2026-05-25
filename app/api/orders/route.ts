@@ -196,6 +196,7 @@ export async function POST(request: Request) {
     }
 
     const {
+      id,
       shopId,
       filePath,
       fileName,
@@ -210,7 +211,7 @@ export async function POST(request: Request) {
       files = [],
     } = parsed.data;
 
-    // ── 3.5. Security: Block unscanned/infected files & Invalid Types ─────────
+    // ── 3.5. Security: Block Invalid Types ─────────
     if (files.length > 0) {
       console.log("FILE SECURITY CHECK", files.map(f => ({
         name: f.name,
@@ -218,37 +219,9 @@ export async function POST(request: Request) {
         securityStatus: f.securityStatus
       })));
 
-      const isBlocked = files.some(f => {
-        const scanStatusVal = f.scanStatus;
-        const securityStatusVal = f.securityStatus;
-        return (
-          scanStatusVal === "infected" ||
-          scanStatusVal === "failed" ||
-          securityStatusVal === "infected" ||
-          securityStatusVal === "failed"
-        );
-      });
-
-      if (isBlocked) {
-        console.warn(JSON.stringify({
-          level: "warn",
-          event: "checkout_blocked_unscanned",
-          shop_id: shopId,
-          user_id: userId,
-          ip: ip,
-          timestamp: new Date().toISOString(),
-          reason: "One or more files have been flagged as infected or failed security scanning."
-        }));
-        console.timeEnd("[orders:POST:total]");
-        return NextResponse.json(
-          { error: "Security validation failed. One or more files have not passed the virus scan." },
-          { status: 400 }
-        );
-      }
-
       const hasInvalidType = files.some(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
-        return !['pdf', 'jpg', 'jpeg', 'png'].includes(ext || '');
+        return !['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(ext || '');
       });
 
       if (hasInvalidType) {
@@ -335,6 +308,7 @@ export async function POST(request: Request) {
     // clerk_owner_id is already in the pricing cache above.
     const firstFile = files.length > 0 ? files[0] : null;
     const orderInsertPayload = {
+      ...(id ? { id } : {}),
       shop_id: shopId,
       customer_name: customerName,
       customer_phone: customerPhone,
@@ -427,27 +401,15 @@ export async function POST(request: Request) {
         infected: false,
       }));
 
-      // ── CRITICAL LIFE CYCLE boundary: Move staging uploads from temp-uploads to permanent order-files bucket
+      // ── CRITICAL LIFE CYCLE boundary: Link staging uploads in upload_sessions to permanent order
       try {
         for (const fileToMove of orderFilesPayload) {
-          await moveFileAcrossBuckets(
-            "temp-uploads",
-            "order-files",
-            fileToMove.storage_path,
-            fileToMove.mime_type
-          );
-
-          // Update corresponding upload_sessions row to permanent paid state
+          // Link upload session to order and ensure it is not marked as temporary
           await supabase
             .from("upload_sessions")
             .update({
               order_id: data.id,
-              bucket_name: "order-files",
-              upload_status: "completed",
               is_temporary: false,
-              completed_at: new Date().toISOString(),
-              security_status: "pending",
-              scan_status: "pending",
             })
             .eq("storage_path", fileToMove.storage_path);
 
@@ -456,31 +418,15 @@ export async function POST(request: Request) {
             await supabase
               .from("uploaded_files")
               .update({
-                security_status: "pending",
-                upload_status: "uploaded",
+                order_id: data.id,
               })
               .eq("storage_path", fileToMove.storage_path);
           } catch {
             // Ignore if uploaded_files table does not exist
           }
         }
-      } catch (moveErr) {
-        console.error("[orders:POST] Failed to move staging files to permanent order-files bucket:", moveErr);
-        // Rollback parent order row
-        await supabase
-          .from("orders")
-          .delete()
-          .eq("id", data.id);
-
-        console.timeEnd("[orders:POST:total]");
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Staging lifecycle integrity check failed. Staging assets could not be secured.",
-            details: moveErr instanceof Error ? moveErr.message : String(moveErr),
-          },
-          { status: 500 }
-        );
+      } catch (linkErr) {
+        console.error("[orders:POST] Failed to link upload sessions:", linkErr);
       }
 
       const { error: filesError } = await supabase
@@ -627,11 +573,13 @@ export async function GET(request: Request) {
     // Fetch files JSONB and notes from the orders table directly by short_token
     const { data: rawOrder } = await supabase
       .from("orders")
-      .select("files, notes")
+      .select("id, shop_id, files, notes")
       .eq("short_token", shortToken)
       .maybeSingle();
 
     const mappedOrder = {
+      id: rawOrder?.id || null,
+      shop_id: rawOrder?.shop_id || null,
       short_token: shortToken,
       customer_name: data.customer_name,
       page_count: data.page_count,

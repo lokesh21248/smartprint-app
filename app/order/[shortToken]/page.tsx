@@ -6,13 +6,14 @@ import {
   CheckCircle2, Clock, Printer, 
   XCircle, ArrowLeft, Phone,
   FileText, RefreshCcw, AlertCircle, Store,
-  Sparkles, Check, Navigation
+  Sparkles, Check, Navigation, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatFileSize } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
 import { motion } from "framer-motion";
+import { useUploadQueue } from "@/hooks/useUploadQueue";
 
 export default function OrderStatusPage() {
   const params = useParams();
@@ -22,6 +23,31 @@ export default function OrderStatusPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const shopId = order?.shop_id || "";
+  const orderId = order?.id || "";
+
+  const {
+    files: uploadQueueFiles,
+    retryFile,
+  } = useUploadQueue({
+    shopId,
+    orderId,
+    disabled: !orderId,
+  });
+
+  const isSyncing = uploadQueueFiles.some(
+    (f) =>
+      f.status === "uploading" ||
+      f.status === "queued" ||
+      f.status === "preparing" ||
+      f.status === "verifying" ||
+      f.status === "retrying"
+  );
+
+  const hasFailedUploads = uploadQueueFiles.some(
+    (f) => f.status === "failed" || f.status === "cancelled"
+  );
 
   const loadOrder = useCallback(async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -263,6 +289,42 @@ export default function OrderStatusPage() {
           </div>
         </motion.div>
 
+        {isSyncing && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-indigo-50 border border-indigo-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm"
+          >
+            <div className="w-10 h-10 rounded-xl bg-indigo-100/50 flex items-center justify-center text-indigo-600 shrink-0">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-extrabold text-indigo-900 text-sm">Syncing Files in Background...</h3>
+              <p className="text-indigo-700 text-xs font-semibold mt-0.5">
+                We are uploading your documents directly to the store. Please keep this page open.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {hasFailedUploads && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-rose-50 border border-rose-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm"
+          >
+            <div className="w-10 h-10 rounded-xl bg-rose-100/50 flex items-center justify-center text-rose-500 shrink-0">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-extrabold text-rose-850 text-sm">Upload Sync Failed</h3>
+              <p className="text-rose-700 text-xs font-semibold mt-0.5">
+                One or more files failed to sync. Tap the retry button next to the file to resume.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         {/* Shop Info Card */}
         {shop && (
           <motion.div 
@@ -324,46 +386,185 @@ export default function OrderStatusPage() {
           
           {hasMultipleFiles ? (
             <div className="space-y-3">
-              {order.files?.map((file, idx) => (
-                <div key={idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
-                  <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500">
-                    <FileText className="w-5.5 h-5.5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-extrabold text-slate-900 truncate text-sm" title={file.name}>{file.name}</p>
-                    <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
-                      {formatFileSize(file.size)} · {file.pages} {file.pages === 1 ? "Page" : "Pages"} · {file.copies || 1} {(file.copies || 1) === 1 ? "Copy" : "Copies"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
-                      file.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
-                    }`}>
-                      {file.color ? "Color" : "B&W"}
+              {order.files?.map((file, idx) => {
+                const queueFile = uploadQueueFiles.find((qf) => qf.name === file.name);
+                const isActivelyUploading = queueFile && (
+                  queueFile.status === "uploading" ||
+                  queueFile.status === "queued" ||
+                  queueFile.status === "preparing" ||
+                  queueFile.status === "verifying" ||
+                  queueFile.status === "retrying"
+                );
+                const isFailed = queueFile && (queueFile.status === "failed" || queueFile.status === "cancelled");
+
+                return (
+                  <div key={idx} className="flex flex-col gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
+                    <div className="flex items-center gap-4">
+                      <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500 relative">
+                        {queueFile?.status === "completed" && (
+                          <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10 rounded-xl">
+                            <Check className="w-5 h-5 text-emerald-600" />
+                          </div>
+                        )}
+                        {isActivelyUploading && (
+                          <div className="absolute inset-0 bg-indigo-500/10 flex items-center justify-center z-10 rounded-xl">
+                            <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
+                          </div>
+                        )}
+                        <FileText className="w-5.5 h-5.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-extrabold text-slate-900 truncate text-sm" title={file.name}>{file.name}</p>
+                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                          {formatFileSize(file.size)} · {file.pages} {file.pages === 1 ? "Page" : "Pages"} · {file.copies || 1} {(file.copies || 1) === 1 ? "Copy" : "Copies"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isFailed ? (
+                          <button
+                            onClick={() => retryFile(queueFile.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-[9px] font-black uppercase tracking-wider transition active:scale-95"
+                          >
+                            <RefreshCcw className="w-3 h-3 animate-spin-reverse" />
+                            Retry
+                          </button>
+                        ) : isActivelyUploading ? (
+                          <div className="px-2.5 py-1 rounded-lg text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100/50 font-extrabold uppercase tracking-wider">
+                            {queueFile.status === "verifying" ? "Verifying" : `Uploading ${queueFile.progress}%`}
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
+                              file.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
+                            }`}>
+                              {file.color ? "Color" : "B&W"}
+                            </div>
+                            <div className="px-2.5 py-1 rounded-lg text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100/50 font-extrabold uppercase tracking-wider">
+                              {file.doubleSided ? "2-Sided" : "1-Sided"}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="px-2.5 py-1 rounded-lg text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100/50 font-extrabold uppercase tracking-wider">
-                      {file.doubleSided ? "2-Sided" : "1-Sided"}
-                    </div>
+
+                    {isActivelyUploading && (
+                      <div className="space-y-1">
+                        <div className="h-1.5 w-full bg-slate-200/50 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${queueFile.progress}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {isFailed && (
+                      <p className="text-[10px] font-bold text-rose-600 flex items-center gap-1 bg-rose-50/50 rounded-lg p-1.5 border border-rose-100/30">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        {queueFile.error || "Sync failed. Please check internet connection."}
+                      </p>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
-              <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500">
-                <FileText className="w-5.5 h-5.5" />
+            <div className="flex flex-col gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
+              <div className="flex items-center gap-4">
+                {(() => {
+                  const queueFile = uploadQueueFiles.find((qf) => qf.name === order.file_name);
+                  const isActivelyUploading = queueFile && (
+                    queueFile.status === "uploading" ||
+                    queueFile.status === "queued" ||
+                    queueFile.status === "preparing" ||
+                    queueFile.status === "verifying" ||
+                    queueFile.status === "retrying"
+                  );
+                  const isFailed = queueFile && (queueFile.status === "failed" || queueFile.status === "cancelled");
+
+                  return (
+                    <>
+                      <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100 text-rose-500 relative">
+                        {queueFile?.status === "completed" && (
+                          <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10 rounded-xl">
+                            <Check className="w-5 h-5 text-emerald-600" />
+                          </div>
+                        )}
+                        {isActivelyUploading && (
+                          <div className="absolute inset-0 bg-indigo-500/10 flex items-center justify-center z-10 rounded-xl">
+                            <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
+                          </div>
+                        )}
+                        <FileText className="w-5.5 h-5.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-extrabold text-slate-900 truncate text-sm">{order.file_name || "Document"}</p>
+                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                          {order.page_count} Pages · {order.copies} {order.copies === 1 ? "Copy" : "Copies"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isFailed ? (
+                          <button
+                            onClick={() => retryFile(queueFile.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-[9px] font-black uppercase tracking-wider transition active:scale-95"
+                          >
+                            <RefreshCcw className="w-3 h-3 animate-spin-reverse" />
+                            Retry
+                          </button>
+                        ) : isActivelyUploading ? (
+                          <div className="px-2.5 py-1 rounded-lg text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100/50 font-extrabold uppercase tracking-wider">
+                            {queueFile.status === "verifying" ? "Verifying" : `Uploading ${queueFile.progress}%`}
+                          </div>
+                        ) : (
+                          <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
+                            order.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
+                          }`}>
+                            {order.color ? "Color" : "B&W"}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-extrabold text-slate-900 truncate text-sm">{order.file_name || "Document"}</p>
-                <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
-                  {order.page_count} Pages · {order.copies} {order.copies === 1 ? "Copy" : "Copies"}
-                </p>
-              </div>
-              <div className={`px-2.5 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider ${
-                order.color ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-700"
-              }`}>
-                {order.color ? "Color" : "B&W"}
-              </div>
+
+              {(() => {
+                const queueFile = uploadQueueFiles.find((qf) => qf.name === order.file_name);
+                const isActivelyUploading = queueFile && (
+                  queueFile.status === "uploading" ||
+                  queueFile.status === "queued" ||
+                  queueFile.status === "preparing" ||
+                  queueFile.status === "verifying" ||
+                  queueFile.status === "retrying"
+                );
+                const isFailed = queueFile && (queueFile.status === "failed" || queueFile.status === "cancelled");
+
+                return (
+                  <>
+                    {isActivelyUploading && (
+                      <div className="space-y-1">
+                        <div className="h-1.5 w-full bg-slate-200/50 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${queueFile.progress}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {isFailed && (
+                      <p className="text-[10px] font-bold text-rose-600 flex items-center gap-1 bg-rose-50/50 rounded-lg p-1.5 border border-rose-100/30">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        {queueFile.error || "Sync failed. Please check internet connection."}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
           

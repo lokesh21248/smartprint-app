@@ -26,10 +26,12 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
   "image/webp", // Output of client-side compressor (Chrome/Safari WebP encoding)
+  "image/heic",
+  "image/heif",
 ]);
 
 /** Extensions accepted by the presign API (lowercase, no dot). */
-export const ALLOWED_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
+export const ALLOWED_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg", "webp", "heic", "heif"]);
 
 /** FilePond acceptedFileTypes format. */
 export const FILEPOND_ACCEPTED_TYPES = [
@@ -37,6 +39,8 @@ export const FILEPOND_ACCEPTED_TYPES = [
   "image/png",
   "image/jpeg",
   "image/webp",
+  "image/heic",
+  "image/heif",
 ];
 
 /** Max FilePond size string. */
@@ -76,6 +80,7 @@ export function validateFileClient(file: File): ClientValidationResult {
     else if (ext === "png") mimeTypeNormalized = "image/png";
     else if (ext === "webp") mimeTypeNormalized = "image/webp";
     else if (ext === "jpg" || ext === "jpeg") mimeTypeNormalized = "image/jpeg";
+    else if (ext === "heic" || ext === "heif") mimeTypeNormalized = "image/heic";
   }
 
   // 1. MIME type check
@@ -176,7 +181,7 @@ export async function validateUploadFile(file: File): Promise<void> {
   // 2. Check extension
   const parts = file.name.split(".");
   const ext = parts.length >= 2 ? parts[parts.length - 1].toLowerCase() : "";
-  const allowedExts = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
+  const allowedExts = new Set(["pdf", "png", "jpg", "jpeg", "webp", "heic", "heif"]);
   if (!allowedExts.has(ext)) {
     throw new StructuredUploadError("FILE_VALIDATION_FAILED", `File extension ".${ext}" is not supported. Upload a PDF, PNG, or JPG.`);
   }
