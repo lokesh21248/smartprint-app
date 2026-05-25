@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing params" }, { status: 400 })
     }
 
-    // 1. Generate short-lived signed URL (60 seconds)
-    const signedUrl = await createSignedUrl(bucket, path, 60)
+    // 1. Generate signed URL (3600 seconds = 1 hour)
+    const signedUrl = await createSignedUrl(bucket, path, 3600)
 
     return NextResponse.json({ signedUrl })
   } catch (err) {

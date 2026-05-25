@@ -11,7 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function createSignedUrl(
   bucket: string,
   path: string,
-  expiresIn = 60
+  expiresIn = 3600
 ): Promise<string> {
   const admin = createAdminClient();
 
@@ -35,7 +35,7 @@ export async function createSignedUrl(
 export async function createSignedUrls(
   bucket: string,
   paths: string[],
-  expiresIn = 60
+  expiresIn = 3600
 ): Promise<Record<string, string>> {
   const admin = createAdminClient();
 
