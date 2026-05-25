@@ -92,8 +92,8 @@ export async function GET(request: Request) {
         throw new Error("Invalid file signature. Only PDF, JPEG, and PNG are allowed.");
       }
 
-      // MOCK: 1% chance of being infected
-      const isInfected = Math.random() < 0.01;
+      // Since we don't have an external AV scanner integrated, files with valid magic bytes are considered clean.
+      const isInfected = false;
 
       if (isInfected) {
         // Delete from storage immediately
@@ -115,7 +115,7 @@ export async function GET(request: Request) {
           shop_id: file.shop_id,
           user_id: "system",
           action: "scan_infected",
-          details: { reason: "Mock virus signature detected or invalid magic bytes" }
+          details: { reason: "Virus signature detected or invalid magic bytes" }
         });
 
         console.log(JSON.stringify({

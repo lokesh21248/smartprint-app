@@ -183,32 +183,6 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
         </div>
       </div>
 
-      {/* Ratings */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 flex items-center gap-8">
-        <div className="text-center">
-          <p className="text-5xl font-black text-[#111827]">4.6</p>
-          <div className="flex justify-center gap-0.5 mt-1">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <span key={i} className={i < 5 ? "text-yellow-400" : "text-gray-300"}>⭐</span>
-            ))}
-          </div>
-          <p className="text-sm text-[#6B7280] mt-1">128 reviews</p>
-        </div>
-        <div className="flex-1 space-y-2">
-          {[5, 4, 3, 2, 1].map((star) => {
-            const pct = star === 5 ? 72 : star === 4 ? 18 : star === 3 ? 6 : star === 2 ? 2 : 2;
-            return (
-              <div key={star} className="flex items-center gap-2 text-sm">
-                <span className="text-[#6B7280] w-4">{star}★</span>
-                <div className="flex-1 bg-[#F3F4F6] rounded-full h-2">
-                  <div className="h-2 rounded-full bg-yellow-400 transition-all duration-500" style={{ width: `${pct}%` }} />
-                </div>
-                <span className="text-[#9CA3AF] w-8 text-right text-xs">{pct}%</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 }

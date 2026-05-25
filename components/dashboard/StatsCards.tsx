@@ -16,7 +16,7 @@ const cards = (stats: DashboardStats) => [
     icon: ShoppingBag,
     color: "bg-blue-50 text-blue-600",
     iconBg: "bg-blue-100",
-    change: "+3 from yesterday",
+    change: "today's orders",
     positive: true,
   },
   {

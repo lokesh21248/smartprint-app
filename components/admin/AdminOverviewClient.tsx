@@ -39,21 +39,16 @@ export function AdminOverviewClient({ stats, latestOrders, chartData }: AdminOve
         <p className="text-gray-500 mt-1">Global performance and system health</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {[
-          { label: "Total Revenue", value: formatCurrency(stats.totalRevenue), icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50", trend: "+12.5%", positive: true },
-          { label: "Active Shops", value: stats.activeShops, icon: Store, color: "text-blue-600", bg: "bg-blue-50", trend: "+2", positive: true },
-          { label: "Total Orders", value: stats.totalOrders, icon: ShoppingBag, color: "text-orange-600", bg: "bg-orange-50", trend: "+8.2%", positive: true },
-          { label: "Platform Users", value: "1,240", icon: Users, color: "text-purple-600", bg: "bg-purple-50", trend: "+5.1%", positive: true },
+          { label: "Total Revenue", value: formatCurrency(stats.totalRevenue), icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Active Shops", value: stats.activeShops, icon: Store, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Total Orders", value: stats.totalOrders, icon: ShoppingBag, color: "text-orange-600", bg: "bg-orange-50" },
         ].map((item, i) => (
           <div key={i} className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div className={`w-12 h-12 rounded-2xl ${item.bg} flex items-center justify-center`}>
                 <item.icon className={`h-6 w-6 ${item.color}`} />
-              </div>
-              <div className={`flex items-center gap-1 text-xs font-bold ${item.positive ? "text-emerald-600" : "text-red-600"}`}>
-                {item.positive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                {item.trend}
               </div>
             </div>
             <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">{item.label}</p>
