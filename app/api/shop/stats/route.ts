@@ -50,7 +50,10 @@ export async function GET(request: Request) {
     }
 
     const orders = rawStats ?? [];
-    const completed = orders.filter(o => o.status === 'COMPLETED');
+    const completed = orders.filter(o => {
+      const s = o.status?.toUpperCase();
+      return s === 'COMPLETED' || s === 'SUCCESS';
+    });
     const revenueToday = completed.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
     const avgMins = completed.length > 0 
       ? completed.reduce((sum, o) => {
@@ -62,7 +65,10 @@ export async function GET(request: Request) {
     const uniqueCustomers = new Set(orders.map(o => o.customer_phone)).size;
 
     return NextResponse.json({
-      pendingOrders: orders.filter(o => o.status === 'PLACED').length,
+      pendingOrders: orders.filter(o => {
+        const s = o.status?.toUpperCase();
+        return s === 'PLACED' || s === 'NEW';
+      }).length,
       ordersToday: orders.length,
       revenueToday,
       avgCompletionMins: Math.round(avgMins),

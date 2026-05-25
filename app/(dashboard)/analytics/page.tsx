@@ -67,23 +67,23 @@ export default async function AnalyticsPage() {
   let completionCount = 0;
 
   for (const o of rawOrders) {
-    const status = o.status || "PLACED"; // ← correct column name
+    const status = (o.status || "PLACED").toUpperCase();
     
     // Stats
-    if (status !== "COMPLETED" && status !== "CANCELLED") {
+    if (status !== "COMPLETED" && status !== "CANCELLED" && status !== "SUCCESS" && status !== "REJECTED") {
       pendingOrdersCount++;
     }
     
     const createdDate = new Date(o.created_at).toISOString().split("T")[0];
     if (createdDate === todayStr) {
       ordersTodayCount++;
-      if (status === "COMPLETED") {
+      if (status === "COMPLETED" || status === "SUCCESS") {
         revenueTodayCount += Number(o.total_amount) || 0;
         completedTodayCount++;
       }
     }
 
-    if (status === "COMPLETED") {
+    if (status === "COMPLETED" || status === "SUCCESS") {
       const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
       const diffMins = (completedTime - new Date(o.created_at).getTime()) / 60000;
       totalCompletionMins += diffMins;
@@ -92,16 +92,17 @@ export default async function AnalyticsPage() {
 
     if (o.customer_phone) activeCustomersSet.add(o.customer_phone);
 
-    // Status Breakdown
-    if (statusCount[status] !== undefined) {
-      statusCount[status]++;
+    // Status Breakdown (normalize legacy NEW to PLACED for chart grouping)
+    const chartStatus = status === "NEW" ? "PLACED" : status;
+    if (statusCount[chartStatus] !== undefined) {
+      statusCount[chartStatus]++;
     }
 
     // Revenue Trend (group by YYYY-MM-DD, only COMPLETED)
     if (!revenueByDate[createdDate]) {
       revenueByDate[createdDate] = { revenue: 0, orders: 0 };
     }
-    if (status === "COMPLETED") {
+    if (status === "COMPLETED" || status === "SUCCESS") {
       revenueByDate[createdDate].revenue += Number(o.total_amount) || 0;
     }
     revenueByDate[createdDate].orders++;

@@ -46,16 +46,16 @@ async function getDashboardData(userId: string): Promise<{
         .from("orders")
         .select("id, short_token, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, status_history, created_at, updated_at")
         .eq("shop_id", shop.id)
-        .eq("status", "PLACED")
+        .in("status", ["PLACED", "placed", "new", "NEW"])
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
 
     const rawOrders = ordersResult.data ?? [];
     const totalRevenue = rawOrders
-      .filter((o) => o.status === "COMPLETED")
+      .filter((o) => o.status?.toUpperCase() === "COMPLETED")
       .reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-    const completedOrders = rawOrders.filter((o) => o.status === "COMPLETED");
+    const completedOrders = rawOrders.filter((o) => o.status?.toUpperCase() === "COMPLETED");
     const avgMins =
       completedOrders.length > 0
         ? completedOrders.reduce((sum, o) => {
@@ -91,7 +91,10 @@ async function getDashboardData(userId: string): Promise<{
 
     return {
       stats: {
-        pendingOrders: rawOrders.filter((o) => o.status === "PLACED").length,
+        pendingOrders: rawOrders.filter((o) => {
+          const s = o.status?.toUpperCase();
+          return s === "PLACED" || s === "NEW";
+        }).length,
         ordersToday: rawOrders.length,
         revenueToday: totalRevenue,
         avgCompletionMins: Math.round(avgMins),
