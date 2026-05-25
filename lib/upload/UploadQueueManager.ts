@@ -84,7 +84,7 @@ const WATCHDOG_INTERVAL_MS = 5_000;
  * IMPORTANT: Supabase Storage TUS implementation requires chunks to be exactly 6MB (6 * 1024 * 1024 bytes)
  * to avoid S3 multipart size violations and server stalls. Other sizes like 1MB, 2MB, 5MB will fail or stall.
  */
-function getChunkSize(isMobile: boolean): number {
+function getChunkSize(): number {
   return 6 * 1024 * 1024; // Enforced 6MB for Supabase TUS compatibility
 }
 
@@ -214,7 +214,7 @@ export class UploadQueueManager {
     this._shopId = options.shopId;
     this._orderId = options.orderId;
     this._isMobile = detectMobile();
-    this._chunkSize = getChunkSize(this._isMobile);
+    this._chunkSize = getChunkSize();
     this._concurrencyLimit = getConcurrencyLimit(this._isMobile);
 
     // ── Bind handlers once (stable references for removeEventListener) ──────────
@@ -1244,7 +1244,7 @@ export class UploadQueueManager {
       let initialized = false;
       let initTimeout: ReturnType<typeof setTimeout> | null = null;
 
-      const options: any = {
+      const options: tus.UploadOptions & { chunkTimeout?: number } = {
         endpoint: uploadEndpoint,
         retryDelays: [0, 1000, 3000, 5000], // Point 8
         chunkSize: 6 * 1024 * 1024, // Enforced 6MB chunk size (Point 2)
@@ -1263,11 +1263,11 @@ export class UploadQueueManager {
           filename: encodeURIComponent(entry.file.name),
           filetype: safeMimeType,
         },
-        fingerprint: (_file: any, opts: any) =>
+        fingerprint: (_file: File, opts: tus.UploadOptions) =>
           Promise.resolve(
             `tus-${id}-${opts?.endpoint ?? ""}-${entry.file!.size}`
           ),
-        onBeforeRequest: (req: any) => {
+        onBeforeRequest: (req: { getURL: () => string }) => {
           initialized = true;
           if (initTimeout) clearTimeout(initTimeout);
           this._lastProgressAt.set(id, Date.now());
@@ -1297,10 +1297,10 @@ export class UploadQueueManager {
             });
           }
         },
-        onChunkComplete: (chunkSize: number, bytesAccepted: number, bytesTotal: number) => {
+        onChunkComplete: () => {
           console.log("[UPLOAD_CHUNK_SENT]");
         },
-        onAfterResponse: (req: any, res: any) => {
+        onAfterResponse: (req: { getMethod: () => string }, res: { getStatus: () => number; getBody: () => string }) => {
           if (req.getMethod() === "PATCH") {
             console.log("[UPLOAD_PATCH]"); // Point 11
             console.log("[UPLOAD_PATCH_RESPONSE]", {
@@ -1327,7 +1327,7 @@ export class UploadQueueManager {
           this._tusInstances.delete(id);
           wrappedResolve("success");
         },
-        onError: (err: any) => {
+        onError: (err: Error) => {
           initialized = true;
           if (initTimeout) clearTimeout(initTimeout);
           upload.abort(false).catch(() => {});
@@ -1344,8 +1344,8 @@ export class UploadQueueManager {
             fileSize: entry?.file?.size ?? 0,
             status: "initializing",
             online: typeof navigator !== "undefined" ? navigator.onLine : true,
-            connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
-            memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
+            connection: typeof navigator !== "undefined" ? (navigator as unknown as { connection?: { effectiveType?: string } }).connection?.effectiveType : undefined,
+            memory: typeof performance !== "undefined" && (performance as unknown as { memory?: unknown }).memory ? (performance as unknown as { memory?: unknown }).memory : undefined,
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
             timestamp: Date.now(),
             error: err,
@@ -1361,8 +1361,8 @@ export class UploadQueueManager {
 
           wrappedResolve("error");
         },
-        onShouldRetry: (err: any, retryAttempt: number, options: any) => {
-          return retryAttempt < options.retryDelays!.length;
+        onShouldRetry: (err: Error, retryAttempt: number, opts: tus.UploadOptions) => {
+          return retryAttempt < (opts.retryDelays?.length ?? 0);
         },
       };
 
@@ -1411,8 +1411,8 @@ export class UploadQueueManager {
                 fileSize: entry.size,
                 status: "initializing",
                 online: typeof navigator !== "undefined" ? navigator.onLine : true,
-                connection: typeof navigator !== "undefined" ? (navigator as any).connection?.effectiveType : undefined,
-                memory: typeof performance !== "undefined" && (performance as any).memory ? (performance as any).memory : undefined,
+                connection: typeof navigator !== "undefined" ? (navigator as unknown as { connection?: { effectiveType?: string } }).connection?.effectiveType : undefined,
+                memory: typeof performance !== "undefined" && (performance as unknown as { memory?: unknown }).memory ? (performance as unknown as { memory?: unknown }).memory : undefined,
                 userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
                 timestamp: Date.now(),
                 error: err,

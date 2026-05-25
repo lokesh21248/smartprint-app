@@ -41,35 +41,44 @@ export async function GET(request: Request) {
 
     const { data: rawStats, error: statsError } = await supabase
       .from("orders")
-      .select("total_amount, status, customer_phone, created_at, updated_at")
+      .select("total_amount, status, customer_phone, created_at, updated_at, completed_at")
       .eq("shop_id", shopId)
-      .gte("created_at", today.toISOString());
+      .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`);
 
     if (statsError) {
       return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
     }
 
     const orders = rawStats ?? [];
+    
+    // An order is completed today if its status is COMPLETED/SUCCESS and completed_at (or updated_at) is today
     const completed = orders.filter(o => {
       const s = o.status?.toUpperCase();
-      return s === 'COMPLETED' || s === 'SUCCESS';
+      const isCompleted = s === 'COMPLETED' || s === 'SUCCESS';
+      if (!isCompleted) return false;
+      const compDate = o.completed_at ? new Date(o.completed_at) : new Date(o.updated_at);
+      return compDate >= today;
     });
+
     const revenueToday = completed.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
     const avgMins = completed.length > 0 
       ? completed.reduce((sum, o) => {
-          const diff = (new Date(o.updated_at).getTime() - new Date(o.created_at).getTime()) / 60000;
+          const compTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
+          const diff = (compTime - new Date(o.created_at).getTime()) / 60000;
           return sum + diff;
         }, 0) / completed.length
       : 0;
 
-    const uniqueCustomers = new Set(orders.map(o => o.customer_phone)).size;
+    // Filters today's placed orders using created_at >= today
+    const ordersToday = orders.filter(o => new Date(o.created_at) >= today);
+    const uniqueCustomers = new Set(ordersToday.map(o => o.customer_phone)).size;
 
     return NextResponse.json({
       pendingOrders: orders.filter(o => {
         const s = o.status?.toUpperCase();
         return s === 'PLACED' || s === 'NEW';
       }).length,
-      ordersToday: orders.length,
+      ordersToday: ordersToday.length,
       revenueToday,
       avgCompletionMins: Math.round(avgMins),
       activeCustomers: uniqueCustomers,

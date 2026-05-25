@@ -21,9 +21,6 @@ import {
   FileText,
   Image as ImageIcon,
   X,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
 } from "lucide-react";
 import { formatBytes } from "@/lib/upload/fileValidation";
 import type { UploadStatus } from "@/hooks/useSafeFileUpload";

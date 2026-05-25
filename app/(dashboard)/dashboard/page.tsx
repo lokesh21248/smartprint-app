@@ -41,7 +41,7 @@ async function getDashboardData(userId: string): Promise<{
         .from("orders")
         .select("total_amount, status, created_at, updated_at, completed_at, customer_phone")
         .eq("shop_id", shop.id)
-        .gte("created_at", today.toISOString()),
+        .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`),
       supabase
         .from("orders")
         .select("id, short_token, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, status_history, created_at, updated_at")
@@ -52,23 +52,29 @@ async function getDashboardData(userId: string): Promise<{
     ]);
 
     const rawOrders = ordersResult.data ?? [];
-    const totalRevenue = rawOrders
-      .filter((o) => o.status?.toUpperCase() === "COMPLETED")
-      .reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-    const completedOrders = rawOrders.filter((o) => o.status?.toUpperCase() === "COMPLETED");
+    
+    // An order is completed today if its status is COMPLETED/SUCCESS and completed_at (or updated_at) is today
+    const completedOrders = rawOrders.filter((o) => {
+      const s = o.status?.toUpperCase();
+      const isCompleted = s === "COMPLETED" || s === "SUCCESS";
+      if (!isCompleted) return false;
+      const compDate = o.completed_at ? new Date(o.completed_at) : new Date(o.updated_at);
+      return compDate >= today;
+    });
+
+    const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
     const avgMins =
       completedOrders.length > 0
         ? completedOrders.reduce((sum, o) => {
-            const diff =
-              (new Date(o.completed_at || o.updated_at).getTime() -
-                new Date(o.created_at).getTime()) /
-              60000;
+            const compTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
+            const diff = (compTime - new Date(o.created_at).getTime()) / 60000;
             return sum + diff;
           }, 0) / completedOrders.length
         : 0;
 
+    const ordersToday = rawOrders.filter(o => new Date(o.created_at) >= today);
     const uniqueCustomers = new Set(
-      rawOrders.map((o) => o.customer_phone || "anonymous")
+      ordersToday.map((o) => o.customer_phone || "anonymous")
     ).size;
 
     const mappedNewOrders = (newOrdersResult.data ?? []).map((ord) => ({

@@ -54,7 +54,7 @@ export function getDiagnosticsSnapshot(params: {
     if (/android/i.test(ua)) {
       deviceType = "mobile_android";
       os = "Android";
-    } else if (/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream) {
+    } else if (/iPad|iPhone|iPod/.test(ua) && !(window as unknown as { MSStream?: unknown }).MSStream) {
       deviceType = "mobile_ios";
       os = "iOS";
     } else if (/windows/i.test(ua)) {
@@ -79,16 +79,24 @@ export function getDiagnosticsSnapshot(params: {
     }
 
     // 3. Network Connection
-    const conn =
-      (navigator as any).connection ||
-      (navigator as any).mozConnection ||
-      (navigator as any).webkitConnection;
+    const nav = navigator as unknown as {
+      connection?: { effectiveType?: string };
+      mozConnection?: { effectiveType?: string };
+      webkitConnection?: { effectiveType?: string };
+    };
+    const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
     if (conn) {
       effectiveConnectionType = conn.effectiveType;
     }
 
     // 4. Memory Heap Usage
-    const perf = window.performance as any;
+    const perf = window.performance as unknown as {
+      memory?: {
+        usedJSHeapSize: number;
+        totalJSHeapSize: number;
+        jsHeapSizeLimit: number;
+      };
+    };
     if (perf && perf.memory) {
       memoryUsage = {
         usedJSHeapSize: perf.memory.usedJSHeapSize,

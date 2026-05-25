@@ -77,14 +77,19 @@ export default async function AnalyticsPage() {
     const createdDate = new Date(o.created_at).toISOString().split("T")[0];
     if (createdDate === todayStr) {
       ordersTodayCount++;
-      if (status === "COMPLETED" || status === "SUCCESS") {
+    }
+
+    const isCompleted = status === "COMPLETED" || status === "SUCCESS";
+    let compDateStr = "";
+    if (isCompleted) {
+      const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
+      compDateStr = new Date(completedTime).toISOString().split("T")[0];
+      
+      if (compDateStr === todayStr) {
         revenueTodayCount += Number(o.total_amount) || 0;
         completedTodayCount++;
       }
-    }
 
-    if (status === "COMPLETED" || status === "SUCCESS") {
-      const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
       const diffMins = (completedTime - new Date(o.created_at).getTime()) / 60000;
       totalCompletionMins += diffMins;
       completionCount++;
@@ -99,11 +104,16 @@ export default async function AnalyticsPage() {
     }
 
     // Revenue Trend (group by YYYY-MM-DD, only COMPLETED)
+    const trendDateStr = isCompleted && compDateStr ? compDateStr : createdDate;
+    if (!revenueByDate[trendDateStr]) {
+      revenueByDate[trendDateStr] = { revenue: 0, orders: 0 };
+    }
+    if (isCompleted) {
+      revenueByDate[trendDateStr].revenue += Number(o.total_amount) || 0;
+    }
+    // Track order creation counts by creation date
     if (!revenueByDate[createdDate]) {
       revenueByDate[createdDate] = { revenue: 0, orders: 0 };
-    }
-    if (status === "COMPLETED" || status === "SUCCESS") {
-      revenueByDate[createdDate].revenue += Number(o.total_amount) || 0;
     }
     revenueByDate[createdDate].orders++;
 
