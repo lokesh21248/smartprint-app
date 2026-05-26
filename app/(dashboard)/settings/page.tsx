@@ -14,11 +14,12 @@ export default async function SettingsPage() {
   const supabase = createAdminClient();
   const { data: shop } = await supabase
     .from("shops")
-    .select("name, owner_email, city, state, address_line1")
+    .select("id, name, owner_email, city, state, address_line1")
     .eq("clerk_owner_id", userId)
     .limit(1)
     .maybeSingle();
 
+  const shopId = shop?.id || null;
   const shopName = shop?.name || "My Shop";
   const shopEmail = shop?.owner_email || "";
   const shopLocation =
@@ -28,6 +29,7 @@ export default async function SettingsPage() {
 
   return (
     <SettingsClient
+      shopId={shopId}
       shopName={shopName}
       shopEmail={shopEmail}
       shopLocation={shopLocation}

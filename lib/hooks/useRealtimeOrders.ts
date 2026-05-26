@@ -6,31 +6,22 @@ import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { audioManager } from "@/lib/audioManager";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { Order } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Audio notification (singleton AudioContext)
+// Audio notification (Delegated to preloaded AudioManager & settingsStore)
 // ─────────────────────────────────────────────────────────────────────────────
-let audioCtx: AudioContext | null = null;
-
 function playNotificationSound() {
   try {
-    if (!audioCtx) audioCtx = new AudioContext();
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-    oscillator.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.1);
-    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime + 0.2);
-    gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-    oscillator.start(audioCtx.currentTime);
-    oscillator.stop(audioCtx.currentTime + 0.5);
-  } catch {
-    // Audio not available in this context
+    const { soundEnabled, notificationSound } = useSettingsStore.getState();
+    if (soundEnabled) {
+      audioManager.play(notificationSound);
+    }
+  } catch (err) {
+    console.error("[useRealtimeOrders] Failed to play notification sound:", err);
   }
 }
 
@@ -70,7 +61,7 @@ function mapRawToOrder(raw: Record<string, unknown>): Order {
 // ─────────────────────────────────────────────────────────────────────────────
 export function useRealtimeOrders(shopId: string | null) {
   const queryClient = useQueryClient();
-  const { soundEnabled, incrementNotifications } = useShopStore();
+  const { incrementNotifications } = useShopStore();
   const { addNewOrder, incrementPending, setRealtimeChannel } = useOrderStore();
 
   // Stable refs so callbacks don't stale-close over old values
@@ -103,7 +94,7 @@ export function useRealtimeOrders(shopId: string | null) {
       addNewOrder(order);
       incrementPending();
       incrementNotifications();
-      if (soundEnabled) playNotificationSound();
+      playNotificationSound();
       showBrowserNotification(order);
     });
 
@@ -146,7 +137,7 @@ export function useRealtimeOrders(shopId: string | null) {
         }
       }, 600);
     }
-  }, [queryClient, shopId, soundEnabled, addNewOrder, incrementPending, incrementNotifications]);
+  }, [queryClient, shopId, addNewOrder, incrementPending, incrementNotifications]);
 
   // ── Realtime event handler ────────────────────────────────────────────────
   const handleRealtimeEvent = useCallback(

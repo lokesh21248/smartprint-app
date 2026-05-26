@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Header } from "@/components/shared/Header";
 import { ShopStoreInitializer } from "@/components/shared/ShopStoreInitializer";
+import { AudioInitializer } from "@/components/shared/AudioInitializer";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 
 
@@ -31,6 +32,7 @@ export default async function DashboardLayout({
   return (
     <>
       <ShopStoreInitializer shop={shop} />
+      <AudioInitializer shopId={shop?.id ?? null} />
       <div className="flex h-screen overflow-hidden bg-[#FAFAFA]">
         <Sidebar />
         <div

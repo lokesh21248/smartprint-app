@@ -2,32 +2,73 @@
 
 import { toast } from "sonner";
 import {
-  Bell, Volume2, VolumeX, Zap, Globe, LogOut,
+  Bell, Volume2, VolumeX, Zap, Globe, LogOut, MessageSquare, Coins, BellRing, Radio, CheckCircle2, Play
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useShopStore } from "@/stores/shopStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { audioManager } from "@/lib/audioManager";
 import { useClerk } from "@clerk/nextjs";
 import { useState, useEffect } from "react";
 
 interface SettingsClientProps {
+  shopId: string | null;
   shopName: string;
   shopEmail: string;
   shopLocation: string;
 }
 
-export function SettingsClient({ shopName, shopEmail, shopLocation }: SettingsClientProps) {
+const AVAILABLE_SOUNDS = [
+  {
+    id: "whatsapp",
+    name: "WhatsApp Merchant",
+    description: "Double chime alert ideal for retail messaging.",
+    icon: MessageSquare,
+    color: "from-[#25D366] to-[#128C7E]",
+  },
+  {
+    id: "cash",
+    name: "Cash Register",
+    description: "Classic register cha-ching! for successful sales.",
+    icon: Coins,
+    color: "from-[#F59E0B] to-[#D97706]",
+  },
+  {
+    id: "bell",
+    name: "Service Bell",
+    description: "A ringing desk bell chime that grabs attention.",
+    icon: BellRing,
+    color: "from-[#3B82F6] to-[#2563EB]",
+  },
+  {
+    id: "ding",
+    name: "Minimalist Ding",
+    description: "A short, clean, modern high-frequency beep.",
+    icon: Radio,
+    color: "from-[#EC4899] to-[#DB2777]",
+  }
+];
+
+export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: SettingsClientProps) {
   const { signOut } = useClerk();
-  // Only use Zustand for persisted UI preferences — NOT for shop identity data
+  
+  // Synchronized sound settings from database-backed Zustand store
   const {
     soundEnabled, setSoundEnabled,
+    notificationSound, setNotificationSound,
+  } = useSettingsStore();
+
+  // Legacy local-storage store for order automation
+  const {
+    setSoundEnabled: setShopStoreSoundEnabled,
     autoAccept, setAutoAccept,
     autoAcceptWindow, setAutoAcceptWindow,
   } = useShopStore();
   
   // mounted guard: needed only to prevent hydration mismatch from Zustand-persisted
-  // values (soundEnabled, autoAccept) which may differ between server and client.
+  // values which may differ between server and client.
   const [mounted, setMounted] = useState(false);
   const [language, setLanguage] = useState("en");
   const [loggingOut, setLoggingOut] = useState(false);
@@ -84,7 +125,7 @@ export function SettingsClient({ shopName, shopEmail, shopLocation }: SettingsCl
   return (
     <div className="space-y-6 max-w-2xl">
       {/* Notifications */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
+      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 shadow-sm">
         <h2 className="text-lg font-bold text-[#111827] mb-1">Notifications</h2>
         <p className="text-sm text-[#6B7280] mb-5">Manage how you get alerted for new orders</p>
 
@@ -97,37 +138,84 @@ export function SettingsClient({ shopName, shopEmail, shopLocation }: SettingsCl
             <Switch
               checked={soundEnabled}
               onCheckedChange={(v) => {
-                setSoundEnabled(v);
-                toast.success(v ? "🔔 Sound alerts on" : "🔇 Sound alerts off");
+                setSoundEnabled(v, shopId);
+                setShopStoreSoundEnabled(v);
+                toast.success(v ? "🔔 Sound alerts enabled" : "🔇 Sound alerts disabled");
               }}
             />
           }
         />
-        <SettingRow
-          id="browser-notify-toggle"
-          icon={Bell}
-          title="Browser Notifications"
-          description="Show desktop popup when you're on another tab"
-          control={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                if (typeof Notification !== "undefined") {
-                  Notification.requestPermission().then((perm) => {
-                    toast.success(
-                      perm === "granted"
-                        ? "✅ Browser notifications enabled"
-                        : "Browser notifications blocked"
-                    );
-                  });
-                }
-              }}
-            >
-              Enable
-            </Button>
-          }
-        />
+
+        {soundEnabled && (
+          <div className="mt-6 border-t border-[#F3F4F6] pt-6 animate-fade-in">
+            <h3 className="text-sm font-semibold text-[#374151] mb-3 flex items-center gap-2">
+              <span>Notification Sound Choice</span>
+              <span className="text-xs font-normal text-[#9CA3AF]">(Select to preview)</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {AVAILABLE_SOUNDS.map((sound) => {
+                const isSelected = notificationSound === sound.id;
+                const IconComponent = sound.icon;
+                return (
+                  <button
+                    key={sound.id}
+                    onClick={async () => {
+                      await setNotificationSound(sound.id as any, shopId);
+                      audioManager.play(sound.id);
+                    }}
+                    className={`relative flex items-start text-left p-4 rounded-xl border text-sm transition-all duration-300 ${
+                      isSelected
+                        ? "border-[#10B981] bg-[#ECFDF5]/50 shadow-[0_4px_16px_-4px_rgba(16,185,129,0.15)] ring-1 ring-[#10B981]"
+                        : "border-[#E5E7EB] bg-white hover:border-[#D1D5DB] hover:bg-[#F9FAFB]"
+                    }`}
+                  >
+                    <div className={`p-2.5 rounded-lg bg-gradient-to-br ${sound.color} text-white mr-3 flex-shrink-0`}>
+                      <IconComponent className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 pr-5">
+                      <p className="font-semibold text-[#111827]">{sound.name}</p>
+                      <p className="text-xs text-[#6B7280] mt-1 leading-normal">{sound.description}</p>
+                    </div>
+                    {isSelected && (
+                      <div className="absolute top-3 right-3 text-[#10B981]">
+                        <CheckCircle2 className="h-5 w-5 fill-[#ECFDF5]" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 border-t border-[#F3F4F6] pt-4">
+          <SettingRow
+            id="browser-notify-toggle"
+            icon={Bell}
+            title="Browser Notifications"
+            description="Show desktop popup when you're on another tab"
+            control={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (typeof Notification !== "undefined") {
+                    Notification.requestPermission().then((perm) => {
+                      toast.success(
+                        perm === "granted"
+                          ? "✅ Browser notifications enabled"
+                          : "Browser notifications blocked"
+                      );
+                    });
+                  }
+                }}
+              >
+                Enable
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       {/* Order Automation */}
