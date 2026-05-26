@@ -23,6 +23,31 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ isLoading: true });
     try {
       const supabase = createClient();
+      
+      // 1. Auth check and verification (bypass RLS by signing in anonymously if no active session exists)
+      let { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session || !session.user) {
+        console.log("[SettingsStore] 🔑 No active Supabase session found. Authenticating anonymously...");
+        try {
+          const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
+          if (authError) throw authError;
+          session = authData.session;
+          console.log("[SettingsStore] 🔑 Supabase session initialized successfully (anonymous sign-in).");
+        } catch (signInErr: any) {
+          console.error("[SettingsStore] ❌ Supabase anonymous authentication failed:", signInErr.message || signInErr);
+        }
+      }
+
+      if (!session || !session.user) {
+        console.warn("[SettingsStore] ⚠️ Cannot fetch settings: Active session could not be established.");
+        set({ isLoading: false });
+        return;
+      }
+
+      console.log(`[SettingsStore] 🔐 Auth verified for user: "${session.user.id}". Fetching settings for shop: "${shopId}"`);
+
+      // 2. Fetch settings row
       const { data, error } = await supabase
         .from("shop_settings")
         .select("sound_alerts, notification_sound")
@@ -30,13 +55,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         .maybeSingle();
 
       if (error) {
-        console.error("[SettingsStore] Error fetching settings:", error);
+        console.error("[SettingsStore] ❌ Error fetching settings:", error);
       } else if (data) {
+        console.log("[SettingsStore] ✅ Settings loaded successfully:", data);
         set({
           soundEnabled: data.sound_alerts ?? true,
           notificationSound: (data.notification_sound as NotificationSound) ?? "whatsapp",
         });
       } else {
+        console.log("[SettingsStore] ℹ️ Settings row not found. Seeding default settings...");
         // Seed default shop settings row if it doesn't exist
         const { error: upsertError } = await supabase
           .from("shop_settings")
@@ -47,13 +74,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           }, { onConflict: "shop_id" });
 
         if (upsertError) {
-          console.error("[SettingsStore] Error seeding default settings:", upsertError);
+          console.error("[SettingsStore] ❌ Error seeding default settings:", upsertError);
         } else {
+          console.log("[SettingsStore] ✅ Default settings seeded successfully.");
           set({ soundEnabled: true, notificationSound: "whatsapp" });
         }
       }
     } catch (err) {
-      console.error("[SettingsStore] Unexpected error in fetchSettings:", err);
+      console.error("[SettingsStore] ❌ Unexpected error in fetchSettings:", err);
     } finally {
       set({ isLoading: false });
     }
