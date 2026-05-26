@@ -35,7 +35,7 @@ const ContentSecurityPolicy = `
   frame-src https://challenges.cloudflare.com
     https://*.clerk.com
     https://clerk.scan2paper.com;
-  media-src 'none';
+  media-src 'self';
   object-src 'none';
 `.replace(/\n\s+/g, " ").trim();
 
