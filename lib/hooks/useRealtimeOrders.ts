@@ -17,11 +17,16 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 function playNotificationSound() {
   try {
     const { soundEnabled, notificationSound } = useSettingsStore.getState();
+    console.log(
+      `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}, Choice="${notificationSound}"`
+    );
     if (soundEnabled) {
       audioManager.play(notificationSound);
+    } else {
+      console.log("[Realtime] 🔇 playNotificationSound: Alert sound skipped (merchant sound toggle is off)");
     }
   } catch (err) {
-    console.error("[useRealtimeOrders] Failed to play notification sound:", err);
+    console.error("[Realtime] ❌ playNotificationSound: Playback exception inside realtime trigger:", err);
   }
 }
 
@@ -148,6 +153,9 @@ export function useRealtimeOrders(shopId: string | null) {
     }) => {
       if (payload.eventType === "INSERT") {
         const order = mapRawToOrder(payload.new);
+        console.log(
+          `[Realtime] 📥 Order INSERT received: ID="${order.id}", customer="${order.customer_name || "Guest"}", amount=₹${order.total_amount}`
+        );
         pendingInserts.current.push(order);
         if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
         // 300ms debounce — tight enough to feel instant, loose enough to batch bursts
@@ -182,16 +190,17 @@ export function useRealtimeOrders(shopId: string | null) {
   // ── Subscribe / unsubscribe helpers ──────────────────────────────────────
   const unsubscribe = useCallback(async () => {
     if (channelRef.current) {
+      console.log(`[Realtime] 🔌 Unsubscribing/removing channel for shop: ${shopId}`);
       try {
         const supabase = createClient();
         await supabase.removeChannel(channelRef.current);
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn("[Realtime] Warning: Channel unsubscribe error ignored during lifecycle tear down:", err);
       }
       channelRef.current = null;
       setRealtimeChannel(null);
     }
-  }, [setRealtimeChannel]);
+  }, [shopId, setRealtimeChannel]);
 
   const subscribe = useCallback(() => {
     if (!shopId) return;
@@ -202,11 +211,13 @@ export function useRealtimeOrders(shopId: string | null) {
 
     // Tear down any existing channel first to prevent duplicate subscriptions
     if (channelRef.current) {
+      console.log("[Realtime] Tearing down duplicate subscription channel...");
       const supabase = createClient();
       supabase.removeChannel(channelRef.current).catch(() => {});
       channelRef.current = null;
     }
 
+    console.log(`[Realtime] 🔌 Subscribing to Supabase orders for shop_id: "${shopId}"...`);
     const supabase = createClient();
     const channel = supabase
       .channel(`shop:${shopId}:orders:v2`)
@@ -224,13 +235,14 @@ export function useRealtimeOrders(shopId: string | null) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === "SUBSCRIBED") {
+          console.log(`[Realtime] 🔌 Subscribed connected: Realtime channel listening to public.orders successfully for shop "${shopId}"`);
           retryCountRef.current = 0; // reset backoff on success
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           // Exponential backoff: 1s → 2s → 4s → … → max 30s
           const delay = Math.min(1_000 * 2 ** retryCountRef.current, 30_000);
           retryCountRef.current += 1;
           console.warn(
-            `[Realtime] ${status} — retrying in ${delay}ms (attempt ${retryCountRef.current})`,
+            `[Realtime] ⚠️ Subscription status "${status}" - Retrying WebSocket in ${delay}ms (attempt ${retryCountRef.current})`,
             err
           );
           if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
