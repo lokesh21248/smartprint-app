@@ -2,6 +2,11 @@ import { currentUser } from "@clerk/nextjs/server";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminTopBar } from "@/components/admin/AdminTopBar";
 import { requireAdmin } from "@/lib/auth/role-guard";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AdminLayout({
   children,

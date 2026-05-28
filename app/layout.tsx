@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description:
     "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
   keywords: ["xerox shop", "print shop", "order management", "SmartPrint"],
-  robots: { index: false, follow: false }, // private admin panel
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

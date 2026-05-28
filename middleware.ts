@@ -12,6 +12,8 @@ const isPublicRoute = createRouteMatcher([
   "/verify-email(.*)",
   "/unauthorized(.*)",
   "/not-found(.*)",
+  "/sitemap.xml",
+  "/robots.txt",
 
   // Customer-facing flows (no Clerk account required)
   "/s/(.*)",
