@@ -232,12 +232,13 @@ export function useRealtimeOrders(shopId: string | null) {
   const unsubscribe = useCallback(async () => {
     if (channelRef.current) {
       const activeShopId = shopIdRef.current;
-      console.log(`[Realtime] 🔌 Unsubscribing/removing channel for shop: ${activeShopId}`);
+      console.log(`[Realtime] 🔌 Unsubscribing channel for shop: "${activeShopId}"`);
       try {
         const supabase = createClient();
         await supabase.removeChannel(channelRef.current);
+        console.log("[Realtime] ✅ Cleanup complete");
       } catch (err) {
-        console.warn("[Realtime] Warning: Channel unsubscribe error ignored during lifecycle tear down:", err);
+        console.warn("[Realtime] ⚠️ Channel removal error (ignored during teardown):", err);
       }
       channelRef.current = null;
       setRealtimeChannel(null);
@@ -252,16 +253,33 @@ export function useRealtimeOrders(shopId: string | null) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
     if (!url || url.includes("your-project")) return;
 
-    // 1. Prevent duplicate subscription channels
+    // 1. Prevent duplicate subscription channels (local ref guard)
     if (channelRef.current) {
-      console.log("[Realtime] 🛡️ Duplicate subscription check: active channel exists. Skipping subscription creation.");
+      console.log("[Realtime] 🛡️ Local ref guard: active channel ref exists. Skipping subscription creation.");
       return;
     }
 
-    console.log(`[Realtime] 🔌 Subscribing to Supabase orders for shop_id: "${activeShopId}"...`);
     const supabase = createClient();
+    const channelName = `shop:${activeShopId}:orders:v3`;
+    const channelTopic = `realtime:${channelName}`;
+
+    // 2. Global Supabase registry check — catches React Strict Mode double-invocations
+    //    where cleanup nulled channelRef but the channel is still alive in Supabase internals.
+    const existingChannel = supabase
+      .getChannels()
+      .find((c) => c.topic === channelTopic);
+
+    if (existingChannel) {
+      console.log(`[Realtime] 🗑️ Removed duplicate channel from Supabase registry: ${channelName}`);
+      supabase.removeChannel(existingChannel).catch(() => {
+        // Best-effort removal; ignore errors
+      });
+    }
+
+    console.log(`[Realtime] 🔌 Subscribing to Supabase orders for shop: "${activeShopId}"...`);
+
     const channel = supabase
-      .channel(`shop:${activeShopId}:orders:v3`)
+      .channel(channelName)
       .on(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "postgres_changes" as any,
@@ -276,13 +294,13 @@ export function useRealtimeOrders(shopId: string | null) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === "SUBSCRIBED") {
-          console.log(`[Realtime] 🔌 Subscribed connected: Realtime channel listening to public.orders successfully for shop "${activeShopId}"`);
+          console.log(`[Realtime] ✅ Connected: listening to public.orders for shop "${activeShopId}"`);
           retryCountRef.current = 0; // reset backoff on success
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           const delay = Math.min(1_000 * 2 ** retryCountRef.current, 30_000);
           retryCountRef.current += 1;
           console.warn(
-            `[Realtime] ⚠️ Subscription status "${status}" - Retrying WebSocket in ${delay}ms (attempt ${retryCountRef.current})`,
+            `[Realtime] ⚠️ Subscription status "${status}" — retrying in ${delay}ms (attempt ${retryCountRef.current})`,
             err
           );
           if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
@@ -327,7 +345,7 @@ export function useRealtimeOrders(shopId: string | null) {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      console.log("[Realtime] useRealtimeOrders unmounting: Cleaning up handlers & unsubscribing...");
+      console.log("[Realtime] 🧹 Unmounting: cleaning up handlers & unsubscribing...");
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
