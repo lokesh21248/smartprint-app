@@ -24,28 +24,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const supabase = createClient();
       
-      // 1. Auth check and verification (bypass RLS by signing in anonymously if no active session exists)
-      let { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session || !session.user) {
-        console.log("[SettingsStore] 🔑 No active Supabase session found. Authenticating anonymously...");
-        try {
-          const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-          if (authError) throw authError;
-          session = authData.session;
-          console.log("[SettingsStore] 🔑 Supabase session initialized successfully (anonymous sign-in).");
-        } catch (signInErr: any) {
-          console.error("[SettingsStore] ❌ Supabase anonymous authentication failed:", signInErr.message || signInErr);
-        }
-      }
-
-      if (!session || !session.user) {
-        console.warn("[SettingsStore] ⚠️ Cannot fetch settings: Active session could not be established.");
-        set({ isLoading: false });
-        return;
-      }
-
-      console.log(`[SettingsStore] 🔐 Auth verified for user: "${session.user.id}". Fetching settings for shop: "${shopId}"`);
+      console.log(`[SettingsStore] Fetching settings for shop: "${shopId}"`);
 
       // 2. Fetch settings row
       const { data, error } = await supabase
