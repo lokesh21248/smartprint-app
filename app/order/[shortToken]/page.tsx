@@ -72,9 +72,15 @@ export default function OrderStatusPage() {
   }, [loadOrder]);
 
   // Real-time updates
+  const loadOrderRef = useRef(loadOrder);
+  useEffect(() => {
+    loadOrderRef.current = loadOrder;
+  }, [loadOrder]);
+
   useEffect(() => {
     if (!shortToken) return;
     
+    console.log("[Realtime] Subscribing:", shortToken);
     const supabase = createClient();
     const channel = supabase
       .channel(`order_${shortToken}`)
@@ -87,15 +93,16 @@ export default function OrderStatusPage() {
           filter: `short_token=eq.${shortToken}`,
         },
         () => {
-          loadOrder(false); // Reload to get relations
+          loadOrderRef.current(false); // Reload to get relations using stable ref
         }
       )
       .subscribe();
       
     return () => {
-      supabase.removeChannel(channel);
+      console.log("[Realtime] Unsubscribing:", shortToken);
+      supabase.removeChannel(channel).catch(() => {});
     };
-  }, [shortToken, loadOrder]);
+  }, [shortToken]);
 
   if (isLoading) {
     return (
