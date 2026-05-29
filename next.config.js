@@ -145,6 +145,21 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "www.scan2paper.com",
+          },
+        ],
+        destination: "https://scan2paper.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

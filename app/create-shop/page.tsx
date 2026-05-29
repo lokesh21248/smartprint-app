@@ -3,7 +3,10 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CreateShopForm } from "@/components/shop/CreateShopForm";
 
-export const metadata = { title: "Create your shop" };
+export const metadata = {
+  title: "Create your shop",
+  robots: { index: false, follow: false },
+};
 
 export default async function CreateShopPage() {
   const { userId } = await auth();

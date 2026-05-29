@@ -53,6 +53,17 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   return {
     title,
     description,
+    alternates: {
+      canonical: `/s/${shop.slug}`,
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+      },
+    },
     openGraph: {
       title,
       description,

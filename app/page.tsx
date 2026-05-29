@@ -11,12 +11,12 @@ export const metadata: Metadata = {
   description: "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
   keywords: ["online printing", "xerox shop", "document printout", "PDF printing", "SmartPrint", "scan2paper"],
   alternates: {
-    canonical: appUrl,
+    canonical: "https://scan2paper.com",
   },
   openGraph: {
     title: "SmartPrint - Online Printing Service",
     description: "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
-    url: appUrl,
+    url: "https://scan2paper.com",
     type: "website",
     siteName: "SmartPrint",
   },
@@ -24,6 +24,14 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "SmartPrint - Online Printing Service",
     description: "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
   },
 };
 

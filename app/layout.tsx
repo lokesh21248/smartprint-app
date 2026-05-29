@@ -11,6 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://scan2paper.com"),
   title: {
     default: "SmartPrint — Shop Owner Panel",
     template: "%s | SmartPrint",
@@ -18,7 +19,17 @@ export const metadata: Metadata = {
   description:
     "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
   keywords: ["xerox shop", "print shop", "order management", "SmartPrint"],
-  robots: { index: true, follow: true },
+  alternates: {
+    canonical: "https://scan2paper.com",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
+  },
 };
 
 export default function RootLayout({
