@@ -112,7 +112,10 @@ export const MultiFileUploader = memo(
 
     // ── Keep parent state in sync ─────────────────────────────────────────────
     useEffect(() => {
-      // Check if files actually changed to prevent redundant parent state updates and infinite render loops (Point 2 & 6)
+      // Check if files actually changed to prevent redundant parent state updates and infinite render loops.
+      // IMPORTANT: copies, color, and doubleSided MUST be included here — without them, config changes
+      // made by the user never propagate to the parent page's `files` state, so the order payload
+      // always uses the initial defaults (copies=1, color=false).
       const changed =
         !files ||
         files.length !== queueFiles.length ||
@@ -124,11 +127,22 @@ export const MultiFileUploader = memo(
             f.status !== q.status ||
             f.progress !== q.progress ||
             f.pages !== q.pages ||
-            f.error !== q.error
+            f.error !== q.error ||
+            f.copies !== q.copies ||
+            f.color !== q.color ||
+            f.doubleSided !== q.doubleSided
           );
         });
 
       if (changed) {
+        console.log("[MultiFileUploader] Syncing file config to parent:", queueFiles.map(f => ({
+          name: f.name,
+          copies: f.copies,
+          color: f.color,
+          doubleSided: f.doubleSided,
+          pages: f.pages,
+          status: f.status,
+        })));
         onChange(queueFiles);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -211,6 +211,15 @@ export async function POST(request: Request) {
       files = [],
     } = parsed.data;
 
+    // Debug log: verify copies are received correctly from the client
+    console.log("[orders:POST] Incoming order payload:", JSON.stringify({
+      copies,
+      color,
+      doubleSided,
+      filesCount: files.length,
+      filesCopies: files.map(f => ({ name: f.name, copies: f.copies, color: f.color })),
+    }));
+
     // ── 3.5. Security: Block Invalid Types ─────────
     if (files.length > 0) {
       console.log("FILE SECURITY CHECK", files.map(f => ({
@@ -408,6 +417,9 @@ export async function POST(request: Request) {
         storage_path: f.url,
         file_size: f.size,
         page_count: f.pages,
+        copies: Number((f as { copies?: number }).copies ?? 1),
+        is_color: Boolean((f as { color?: boolean }).color ?? false),
+        is_double_sided: Boolean((f as { doubleSided?: boolean }).doubleSided ?? false),
         mime_type: f.mimeType || (f.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
         scan_status: "pending",
         security_status: "pending",

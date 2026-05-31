@@ -520,6 +520,16 @@ function OrderUploadPageInner() {
       // ── Step 2: Save order metadata to DB ───────────────────────────────────
       tracker.markInsertStart();
 
+      // Debug: verify copies/color/doubleSided are captured correctly at checkout time
+      console.log("[OrderUpload] Files state at checkout:", files.map(f => ({
+        name: f.name,
+        copies: f.copies,
+        color: f.color,
+        doubleSided: f.doubleSided,
+        pages: f.pages,
+        status: f.status,
+      })));
+
       // Structure files array for backend schema validator using precalculated permanent S3 paths
       const filesPayload = files.map((f) => {
         const sanitized = sanitizeFileName(f.name);
