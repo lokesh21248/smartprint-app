@@ -15,6 +15,7 @@ import type { Order, Shop } from "@/types";
 import { motion } from "framer-motion";
 import { useUploadQueue } from "@/hooks/useUploadQueue";
 import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
+import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 
 export default function OrderStatusPage() {
   const params = useParams();
@@ -320,7 +321,7 @@ export default function OrderStatusPage() {
                status === "ACCEPTED" ? "Store preparing sheets" :
                status === "PRINTING" ? "Vivid ink hitting paper now" :
                status === "READY" ? "Ready at the pickup counter" :
-               status === "COMPLETED" ? "Thank you for using SmartPrint" :
+               status === "COMPLETED" ? "Thank you for using Scan2Paper" :
                "This session has been terminated"}
             </p>
           </div>
@@ -710,7 +711,7 @@ export default function OrderStatusPage() {
             <span className="text-emerald-600 font-extrabold">{shop?.owner_phone}</span>
           </div>
           <p className="text-[9px] font-extrabold text-slate-300 uppercase tracking-[0.3em]">
-            SmartPrint Secure Print Cloud v2.0
+            Scan2Paper — Secure Print Cloud
           </p>
         </div>
 

@@ -41,14 +41,14 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
 
   if (!shop) {
     return {
-      title: "Shop Not Found | SmartPrint",
+      title: "Shop Not Found | Scan2Paper",
     };
   }
 
-  const title = `${shop.name} | Print Online at SmartPrint`;
+  const title = `${shop.name} | Print Online at Scan2Paper`;
   const description = `Order high-quality prints from ${shop.name} at ${shop.address_line1}. Upload PDF, pay via UPI, and pick up when ready.`;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://smartprint.in";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
 
   return {
     title,

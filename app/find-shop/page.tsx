@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Hash, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { Scan2PaperLogo } from '@/components/shared/Scan2PaperLogo';
 
 export default function FindShopPage() {
   const [code, setCode] = useState('');
@@ -51,8 +52,8 @@ export default function FindShopPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-blue-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
-            <Hash className="w-8 h-8 text-emerald-600" />
+          <div className="flex justify-center mb-4">
+            <Scan2PaperLogo variant="full" size={48} color="color" />
           </div>
           <h1 className="text-2xl font-bold mb-2">Enter Shop Code</h1>
           <p className="text-gray-600">Type the 6-letter code your shop gave you</p>

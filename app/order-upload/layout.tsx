@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Upload Documents | SmartPrint",
-  description: "Upload your PDF documents, configure print settings, and place your order securely with SmartPrint.",
+  title: "Upload Documents | Scan2Paper",
+  description: "Upload your PDF documents, configure print settings, and place your order securely with Scan2Paper.",
   alternates: {
     canonical: "/order-upload",
   },

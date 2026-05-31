@@ -6,7 +6,6 @@ import {
   Loader2, 
   AlertCircle, 
   Store, 
-  Zap, 
   ShieldCheck,
   MapPin,
   Smartphone,
@@ -20,6 +19,7 @@ import { toast } from "sonner";
 import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 import { formatCurrency } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 
 interface ShopDisplay {
   id?: string;
@@ -120,10 +120,8 @@ export default function QRLandingPage() {
       <nav className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-100/80 px-6 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/10">
-              <Zap className="w-4 h-4 fill-white" />
-            </div>
-            <span className="font-extrabold text-sm tracking-tight text-slate-800">SmartPrint</span>
+            <Scan2PaperLogo variant="icon" size={30} color="color" />
+            <span className="font-extrabold text-sm tracking-tight text-slate-800">Scan2Paper</span>
           </div>
           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${shop.is_open !== false ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
             {shop.is_open !== false && (
@@ -394,7 +392,7 @@ export default function QRLandingPage() {
 
         {/* Branding Footer */}
         <div className="pt-8 text-center text-slate-300 font-bold uppercase tracking-[0.3em] text-[9px]">
-          SmartPrint Secure Print Cloud v2.0
+          Scan2Paper — Secure Print Cloud
         </div>
       </div>
     </div>

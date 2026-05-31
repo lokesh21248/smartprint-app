@@ -22,7 +22,7 @@ const pageTitles: Record<string, string> = {
 
 function getPageTitle(pathname: string): string {
   if (pathname.startsWith("/dashboard/orders/")) return "Order Details";
-  return pageTitles[pathname] ?? "SmartPrint";
+  return pageTitles[pathname] ?? "Scan2Paper";
 }
 
 /** Dispatch a custom event that Sidebar listens to for mobile open */

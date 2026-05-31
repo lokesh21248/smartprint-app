@@ -91,7 +91,7 @@ function ShopWelcome({ shop }: { shop: {
             </div>
           </div>
         </div>
-        <p className="text-center text-gray-500 text-sm mt-6">Powered by SmartPrint</p>
+        <p className="text-center text-gray-500 text-sm mt-6">Powered by <span className="font-semibold text-[#2563EB]">Scan2Paper</span></p>
       </div>
     </div>
   );

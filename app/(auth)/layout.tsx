@@ -5,11 +5,11 @@ import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 // However they CAN be followed (links on them may point to public pages).
 export const metadata: Metadata = {
   title: {
-    default: "Sign In | SmartPrint",
-    template: "%s | SmartPrint",
+    default: "Sign In | Scan2Paper",
+    template: "%s | Scan2Paper",
   },
   description:
-    "Sign in to your SmartPrint shop owner panel to manage orders, staff, and analytics.",
+    "Sign in to your Scan2Paper shop owner panel to manage orders, staff, and analytics.",
   robots: {
     index: false,
     follow: true,

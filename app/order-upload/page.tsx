@@ -29,6 +29,7 @@ import { createOrderTracker } from "@/lib/monitoring/orderMetrics";
 import type { UploadedFile, FileSecurityStatus } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 import type { MultiFileUploaderRef } from "@/components/upload/MultiFileUploader";
+import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 
 // Dynamic import for MultiFileUploader to ensure SSR safety
 const MultiFileUploader = dynamic(
@@ -639,7 +640,7 @@ function OrderUploadPageInner() {
           </div>
         </div>
         <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-          Loading SmartPrint...
+          Loading Scan2Paper...
         </p>
       </div>
     );
@@ -684,6 +685,9 @@ function OrderUploadPageInner() {
               >
                 <ArrowLeft className="w-4 h-4 text-slate-600" />
               </button>
+            )}
+            {step === 1 && (
+              <Scan2PaperLogo variant="icon" size={28} color="color" />
             )}
             <div>
               <h1 className="text-base font-extrabold text-slate-900 tracking-tight">

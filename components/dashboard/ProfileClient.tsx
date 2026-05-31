@@ -134,7 +134,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
 
         const doc = win.document;
         doc.open();
-        doc.title = `SmartPrint Poster — ${shopName}`;
+        doc.title = `Scan2Paper Poster — ${shopName}`;
 
       const style = doc.createElement("style");
       style.textContent = `
@@ -173,7 +173,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
         </div>
         <div class="cta">Scan or enter code to order</div>
         <div class="footer">
-          Powered by SmartPrint &copy; ${new Date().getFullYear()}
+          Powered by Scan2Paper &copy; ${new Date().getFullYear()}
         </div>
       `;
       poster.querySelector(".shop-name")!.textContent = shopName;

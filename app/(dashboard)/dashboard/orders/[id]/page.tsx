@@ -6,7 +6,7 @@ import type { Order } from "@/types";
 import { OrderDetailView } from "@/components/orders/OrderDetailView";
 import { OrderDetailError } from "@/components/orders/OrderDetailError";
 
-export const metadata: Metadata = { title: "Order Details | SmartPrint" };
+export const metadata: Metadata = { title: "Order Details | Scan2Paper" };
 export const dynamic = "force-dynamic";
 
 type FetchResult =

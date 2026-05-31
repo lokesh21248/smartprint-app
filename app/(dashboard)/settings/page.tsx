@@ -6,7 +6,7 @@ import { SettingsClient } from "@/components/dashboard/SettingsClient";
 
 export const metadata: Metadata = {
   title: "Settings",
-  description: "Configure notifications, sound alerts, auto-accept settings, and printer preferences for your SmartPrint shop.",
+  description: "Configure notifications, sound alerts, auto-accept settings, and printer preferences for your Scan2Paper shop.",
 };
 
 export default async function SettingsPage() {

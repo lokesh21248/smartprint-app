@@ -326,7 +326,7 @@ export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: Se
 
       {/* App info */}
       <div className="text-center py-4 text-xs text-[#9CA3AF]">
-        <p>SmartPrint Shop Panel · v1.0.0</p>
+        <p>Scan2Paper Shop Panel · v1.0.0</p>
         <p className="mt-0.5">Built for Indian Xerox shop owners 🇮🇳</p>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Find a Shop | SmartPrint",
-  description: "Find your local print shop on SmartPrint using their 6-letter shop code.",
+  title: "Find a Shop | Scan2Paper",
+  description: "Find your local print shop on Scan2Paper using their 6-letter shop code.",
   alternates: {
     canonical: "/find-shop",
   },

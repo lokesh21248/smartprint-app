@@ -5,33 +5,32 @@ import type { Metadata } from "next";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
 
 export const metadata: Metadata = {
-  title: "SmartPrint - Online Printing Service",
+  title: "Scan2Paper - Online Printing Service",
   description:
-    "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+    "Upload documents and order printouts online with Scan2Paper. Fast, secure, and convenient printing for all your files.",
   keywords: [
     "online printing",
     "xerox shop",
     "document printout",
     "PDF printing",
-    "SmartPrint",
-    "scan2paper",
+    "Scan2Paper",
   ],
   alternates: {
     canonical: appUrl,
   },
   openGraph: {
-    title: "SmartPrint - Online Printing Service",
+    title: "Scan2Paper - Online Printing Service",
     description:
-      "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+      "Upload documents and order printouts online with Scan2Paper. Fast, secure, and convenient printing for all your files.",
     url: appUrl,
     type: "website",
-    siteName: "SmartPrint",
+    siteName: "Scan2Paper",
   },
   twitter: {
     card: "summary_large_image",
-    title: "SmartPrint - Online Printing Service",
+    title: "Scan2Paper - Online Printing Service",
     description:
-      "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+      "Upload documents and order printouts online with Scan2Paper. Fast, secure, and convenient printing for all your files.",
   },
   robots: {
     index: true,
