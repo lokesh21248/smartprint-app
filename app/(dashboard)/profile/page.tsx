@@ -4,7 +4,10 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ProfileClient } from "@/components/dashboard/ProfileClient";
 
-export const metadata: Metadata = { title: "Profile" };
+export const metadata: Metadata = {
+  title: "Profile",
+  description: "View and manage your shop owner profile, contact details, and business information.",
+};
 
 export default async function ProfilePage() {
   const { userId } = await auth();

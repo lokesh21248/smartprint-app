@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SettingsClient } from "@/components/dashboard/SettingsClient";
 
-export const metadata: Metadata = { title: "Settings" };
+export const metadata: Metadata = {
+  title: "Settings",
+  description: "Configure notifications, sound alerts, auto-accept settings, and printer preferences for your SmartPrint shop.",
+};
 
 export default async function SettingsPage() {
   const { userId } = await auth();

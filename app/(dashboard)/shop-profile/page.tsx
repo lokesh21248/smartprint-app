@@ -3,8 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { ShopProfileForm } from "@/components/dashboard/ShopProfileForm";
 import { getShopByUserId } from "@/lib/data/shop";
 
-export const metadata: Metadata = { title: "My Shop Profile" };
-export const revalidate = 60;
+export const metadata: Metadata = {
+  title: "My Shop Profile",
+  description: "View and edit your print shop details, address, contact information, and business settings.",
+};
+export const dynamic = "force-dynamic";
 
 export default async function ShopProfilePage() {
   const { userId } = await auth();

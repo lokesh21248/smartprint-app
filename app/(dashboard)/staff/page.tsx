@@ -6,8 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { ShopStaff } from "@/types";
 import { getShopByUserId } from "@/lib/data/shop";
 
-export const metadata: Metadata = { title: "Staff" };
-export const revalidate = 60;
+export const metadata: Metadata = {
+  title: "Staff",
+  description: "Manage staff members, assign roles, and control access permissions for your print shop.",
+};
+export const dynamic = "force-dynamic";
 
 export default async function StaffPage() {
   const { userId } = await auth();

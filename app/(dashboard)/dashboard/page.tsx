@@ -12,8 +12,14 @@ import { StatsSection } from "@/components/dashboard/StatsSection";
 import { NewOrdersFeed } from "@/components/dashboard/NewOrdersFeed";
 import { PendingOrdersBanner } from "@/components/dashboard/PendingOrdersBanner";
 
-export const metadata: Metadata = { title: "Dashboard" };
-export const revalidate = 60; // Cache dashboard data for 60 seconds
+export const metadata: Metadata = {
+  title: "Dashboard",
+  description: "Manage your print shop orders, view analytics, and control your shop status from one place.",
+};
+
+// Force dynamic: this page is user-specific — ISR would cache one user's data
+// and serve it to others sharing the same CDN cache key.
+export const dynamic = "force-dynamic";
 
 
 

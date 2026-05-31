@@ -7,7 +7,11 @@ import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 
 import type { DashboardStats } from "@/types";
 
-export const metadata: Metadata = { title: "Analytics" };
+export const metadata: Metadata = {
+  title: "Analytics",
+  description: "View revenue trends, order status breakdowns, peak hours, and service analytics for your print shop.",
+};
+export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
   const { userId } = await auth();

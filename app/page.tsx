@@ -1,29 +1,37 @@
 import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
-
-// Force dynamic so Next.js doesn't try to statically pre-render this redirect
-export const dynamic = "force-dynamic";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
 
 export const metadata: Metadata = {
   title: "SmartPrint - Online Printing Service",
-  description: "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
-  keywords: ["online printing", "xerox shop", "document printout", "PDF printing", "SmartPrint", "scan2paper"],
+  description:
+    "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+  keywords: [
+    "online printing",
+    "xerox shop",
+    "document printout",
+    "PDF printing",
+    "SmartPrint",
+    "scan2paper",
+  ],
   alternates: {
-    canonical: "https://scan2paper.com",
+    canonical: appUrl,
   },
   openGraph: {
     title: "SmartPrint - Online Printing Service",
-    description: "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
-    url: "https://scan2paper.com",
+    description:
+      "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+    url: appUrl,
     type: "website",
     siteName: "SmartPrint",
   },
   twitter: {
     card: "summary_large_image",
     title: "SmartPrint - Online Printing Service",
-    description: "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
+    description:
+      "Upload documents and order printouts online with SmartPrint. Fast, secure, and convenient printing for all your files.",
   },
   robots: {
     index: true,
@@ -35,6 +43,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Home() {
-  redirect("/dashboard");
+export default async function Home() {
+  const { userId } = await auth();
+  // Authenticated shop owners go to the dashboard.
+  // Unauthenticated visitors (customers & potential owners) go to the
+  // public find-shop page which IS indexed by search engines.
+  if (userId) {
+    redirect("/dashboard");
+  } else {
+    redirect("/find-shop");
+  }
 }

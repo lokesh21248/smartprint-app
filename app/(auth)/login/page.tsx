@@ -160,7 +160,13 @@ function LoginForm() {
         </div>
 
         {error && (
-          <p className="text-sm text-red-600 font-medium">{error}</p>
+          <p
+            className="text-sm text-red-600 font-medium"
+            role="alert"
+            aria-live="assertive"
+          >
+            {error}
+          </p>
         )}
 
         <Button type="submit" className="w-full mt-2" size="lg" disabled={isLoading}>

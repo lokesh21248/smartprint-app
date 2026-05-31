@@ -7,7 +7,10 @@ import { OrdersClient } from "@/components/orders/OrdersClient";
 import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
 import type { Order } from "@/types";
 
-export const metadata: Metadata = { title: "Orders | SmartPrint" };
+export const metadata: Metadata = {
+  title: "Orders | SmartPrint",
+  description: "View and manage all incoming print orders — accept, print, and track order status in real time.",
+};
 export const dynamic = "force-dynamic";
 
 async function getInitialOrders(
