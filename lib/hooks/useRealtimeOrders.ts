@@ -73,18 +73,71 @@ let activeChannel: RealtimeChannel | null = null;
 let activeChannelShopId: string | null = null;
 let subscriberCount = 0;
 
+// Controlled reconnection manager variables
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempts = 0;
+let isReconnecting = false;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const INITIAL_RECONNECT_DELAY = 2000;
+
 // Set of active event handlers across all mounted hook instances
 const activeHandlers = new Set<(payload: any) => void>();
+
+// Centralized reconnect helper with exponential backoff
+function handleReconnect(
+  shopId: string,
+  setRealtimeChannel: (c: RealtimeChannel | null) => void
+) {
+  if (isReconnecting) return;
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error(`[Realtime] ❌ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached for shop "${shopId}". Stopping retries.`);
+    return;
+  }
+
+  isReconnecting = true;
+  reconnectAttempts++;
+  const delay = Math.min(INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), 30000);
+
+  console.log(`[Realtime] 🔄 Scheduling reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} for shop "${shopId}" in ${delay}ms...`);
+
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(async () => {
+    isReconnecting = false;
+    try {
+      console.log(`[Realtime] 🚀 Executing scheduled reconnect attempt ${reconnectAttempts} for shop "${shopId}"...`);
+      // Ensure we remove the channel before establishing a new one
+      if (activeChannel) {
+        const channelToCleanup = activeChannel;
+        activeChannel = null;
+        const supabase = createClient();
+        await supabase.removeChannel(channelToCleanup).catch(() => {});
+      }
+      await initSubscription(shopId, setRealtimeChannel);
+    } catch (e) {
+      console.error(`[Realtime] ❌ Reconnect attempt ${reconnectAttempts} failed:`, e);
+      handleReconnect(shopId, setRealtimeChannel);
+    }
+  }, delay);
+}
 
 // Centralized subscription initializer
 async function initSubscription(
   shopId: string,
   setRealtimeChannel: (c: RealtimeChannel | null) => void
 ) {
-  // If we are already subscribed to this shopId, reuse the channel!
+  // If we are already subscribed to this shopId, reuse the channel if it's active!
   if (activeChannel && activeChannelShopId === shopId) {
-    console.log(`[Realtime] 🛡️ Channel already exists for shop ${shopId}. Reusing active channel.`);
-    return;
+    const state = (activeChannel as any).state;
+    if (state === "joined" || state === "joining") {
+      console.log(`[Realtime] 🛡️ Channel already exists and is active (${state}) for shop ${shopId}. Reusing active channel.`);
+      return;
+    } else {
+      console.log(`[Realtime] 🔄 Channel exists but is in "${state}" state. Re-initializing.`);
+      const oldChannel = activeChannel;
+      activeChannel = null;
+      const supabase = createClient();
+      await supabase.removeChannel(oldChannel).catch(() => {});
+    }
   }
 
   // Guard against placeholder / demo configs
@@ -136,8 +189,15 @@ async function initSubscription(
   channel.subscribe((status: string, err?: Error) => {
     if (status === "SUBSCRIBED") {
       console.log(`[Realtime] ✅ Connected: listening to public.orders for shop "${shopId}"`);
+      reconnectAttempts = 0;
+      isReconnecting = false;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       console.warn(`[Realtime] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
+      handleReconnect(shopId, setRealtimeChannel);
     }
   });
 
@@ -151,6 +211,13 @@ async function terminateSubscription(
   setRealtimeChannel: (c: RealtimeChannel | null) => void
 ) {
   const shopId = activeChannelShopId;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempts = 0;
+  isReconnecting = false;
+
   if (activeChannel) {
     console.log("[Realtime] Unsubscribing:", shopId);
     const channelToCleanup = activeChannel;
@@ -333,14 +400,10 @@ export function useRealtimeOrders(shopId: string | null) {
     initSubscription(shopId, setRealtimeChannel);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        console.log(`[Realtime] Visibility hidden: Pausing subscription for shop: ${shopId}...`);
-        if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
-        terminateSubscription(setRealtimeChannel);
-      } else {
-        console.log(`[Realtime] Visibility visible: Resuming subscription for shop: ${shopId}...`);
-        initSubscription(shopId, setRealtimeChannel);
+      if (document.visibilityState === "visible") {
+        console.log(`[Realtime] Visibility visible: Refreshing queries for shop: ${shopId} to fetch background updates...`);
         queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
+        queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
       }
     };
 
