@@ -14,6 +14,7 @@ import { formatCurrency, formatFileSize } from "@/lib/utils";
 import type { Order, Shop } from "@/types";
 import { motion } from "framer-motion";
 import { useUploadQueue } from "@/hooks/useUploadQueue";
+import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
 
 export default function OrderStatusPage() {
   const params = useParams();
@@ -23,6 +24,8 @@ export default function OrderStatusPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fetchingRef = useRef(false);
 
   const shopId = order?.shop_id || "";
   const orderId = order?.id || "";
@@ -50,18 +53,61 @@ export default function OrderStatusPage() {
   );
 
   const loadOrder = useCallback(async (showLoading = true) => {
+    if (fetchingRef.current) {
+      console.log("[Tracking] Fetch already in progress, ignoring duplicate call");
+      return;
+    }
+
+    if (!shortToken || typeof shortToken !== "string" || !/^[a-zA-Z0-9]{8,16}$/.test(shortToken)) {
+      console.error("[Tracking] Invalid shortToken format:", shortToken);
+      setError("Invalid Order ID format. Order IDs must be 8 to 16 alphanumeric characters.");
+      setIsLoading(false);
+      setIsRefreshing(false);
+      setOrder(null);
+      return;
+    }
+
     if (showLoading) setIsLoading(true);
     else setIsRefreshing(true);
+    setError(null);
+    fetchingRef.current = true;
     
     try {
-      const res = await fetch(`/api/orders?shortToken=${shortToken}`);
+      const res = await fetchWithRetry(
+        `/api/orders?shortToken=${shortToken}`,
+        { method: "GET" },
+        {
+          maxRetries: 2, // 3 attempts total (initial + 2 retries)
+          baseDelayMs: 600,
+          onRetry: (attempt, delay) => {
+            console.warn(`[Tracking] Fetch attempt ${attempt} failed, retrying in ${delay}ms`);
+          }
+        }
+      );
+      
       if (res.ok) {
         const data = await res.json();
         setOrder(data);
+      } else {
+        const errText = await res.text();
+        let errMsg = `Server returned status ${res.status}`;
+        try {
+          const errData = JSON.parse(errText);
+          errMsg = errData.error || errData.message || errMsg;
+        } catch {}
+        console.error(`[Tracking] API Error (Status ${res.status}):`, errMsg);
+        
+        if (res.status === 404) {
+          setOrder(null); // This will trigger the "Order Not Found" page
+        } else {
+          setError(`Failed to retrieve order: ${errMsg}`);
+        }
       }
     } catch (err) {
-      console.error("Failed to load order:", err);
+      console.error("[Tracking] Network failure loading order:", err);
+      setError("Network error. Please check your internet connection and try again.");
     } finally {
+      fetchingRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
     }
@@ -114,6 +160,37 @@ export default function OrderStatusPage() {
           </div>
         </div>
         <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">Tracking Order...</p>
+      </div>
+    );
+  }
+
+  if (error && !order) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9FAFB] p-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl p-10 shadow-xl max-w-md w-full border border-slate-100"
+        >
+          <AlertCircle className="w-16 h-16 text-amber-500 mb-4 mx-auto animate-pulse" />
+          <h1 className="text-2xl font-black text-slate-900 mb-2">Failed to Load Order</h1>
+          <p className="text-slate-500 mb-6 font-semibold text-sm leading-relaxed">{error}</p>
+          <div className="flex flex-col gap-3">
+            <Button 
+              onClick={() => loadOrder(true)} 
+              className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-lg flex items-center justify-center gap-2"
+            >
+              <RefreshCcw className="w-4.5 h-4.5" /> Try Again
+            </Button>
+            <Button 
+              onClick={() => router.push("/")} 
+              variant="outline"
+              className="w-full h-14 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition"
+            >
+              Go Home
+            </Button>
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -174,6 +251,29 @@ export default function OrderStatusPage() {
       </div>
 
       <main className="max-w-2xl mx-auto px-4 mt-6 space-y-6">
+        
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-rose-50 border border-rose-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm"
+          >
+            <div className="w-10 h-10 rounded-xl bg-rose-100/50 flex items-center justify-center text-rose-500 shrink-0">
+              <AlertCircle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-extrabold text-rose-900 text-sm">Synchronization Warning</h3>
+              <p className="text-rose-700 text-xs font-semibold mt-0.5">{error}</p>
+            </div>
+            <Button
+              onClick={() => loadOrder(false)}
+              variant="outline"
+              className="h-9 px-3 rounded-lg border-rose-200 hover:bg-rose-100/50 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 shrink-0"
+            >
+              <RefreshCcw className="w-3.5 h-3.5" /> Retry
+            </Button>
+          </motion.div>
+        )}
         
         {/* State Banner / Main Success Card */}
         <motion.div 

@@ -68,10 +68,13 @@ export async function fetchWithRetry(
     onRetry,
   } = options;
 
+  // Cap at 2 retries (3 attempts total: 1 initial + 2 retries) to prevent infinite loops
+  const cappedRetries = Math.min(maxRetries, 2);
+
   let lastError: unknown;
   let lastResponse: Response | null = null;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= cappedRetries; attempt++) {
     // Abort check before each attempt
     if (signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
@@ -80,7 +83,7 @@ export async function fetchWithRetry(
     try {
       const response = await fetch(url, { ...init, signal });
 
-      if (!isRetryable(response, null) || attempt === maxRetries) {
+      if (!isRetryable(response, null) || attempt === cappedRetries) {
         // Return for all non-retryable responses, or final attempt
         return response;
       }
@@ -96,7 +99,7 @@ export async function fetchWithRetry(
         throw err; // AbortError or similar — don't retry
       }
 
-      if (attempt === maxRetries) break;
+      if (attempt === cappedRetries) break;
     }
 
     // Exponential backoff with ±20% jitter
@@ -104,7 +107,7 @@ export async function fetchWithRetry(
     const jitter = base * 0.2 * (Math.random() - 0.5);
     const delay = Math.round(base + jitter);
 
-    console.warn(`[fetchWithRetry] attempt ${attempt + 1}/${maxRetries} failed — retrying in ${delay}ms`);
+    console.warn(`[fetchWithRetry] attempt ${attempt + 1}/${cappedRetries} failed — retrying in ${delay}ms`);
     onRetry?.(attempt + 1, delay);
 
     await sleepWithAbort(delay, signal);
