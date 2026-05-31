@@ -1,11 +1,13 @@
 /**
  * Scan2PaperLogo — reusable SVG logo component.
+ * Matches the exact brand design: 3 stacked diamond outlines (stroke-only,
+ * white fill) with the Scan2Paper wordmark below.
  *
  * Props:
- *  - variant: "full" (icon + wordmark) | "icon" (icon only)
- *  - size:    controls the icon height in px (wordmark scales proportionally)
- *  - color:   "color" (charcoal + blue accent) | "mono" (all charcoal)
- *  - className: extra Tailwind / CSS classes on the wrapper <div>
+ *  - variant:   "full" (icon + wordmark) | "icon" (icon only)
+ *  - size:      icon height in px (wordmark scales proportionally)
+ *  - color:     "color" (charcoal icon, blue "2") | "mono" (all charcoal)
+ *  - className: extra Tailwind / CSS classes on the wrapper element
  */
 
 import React from "react";
@@ -24,52 +26,89 @@ export function Scan2PaperLogo({
   color = "color",
   className,
 }: Scan2PaperLogoProps) {
+  const strokeColor = "#111827";
   const accentColor = color === "color" ? "#2563EB" : "#111827";
-  const midLayerColor = color === "color" ? "#93C5FD" : "#6B7280";
-  const backLayerColor = color === "color" ? "#CBD5E1" : "#9CA3AF";
-  const dotRing = color === "color" ? "#111827" : "#111827";
 
-  // The SVG icon viewBox is 60 x 68 — scale via width/height
-  const iconW = Math.round(size * (60 / 68));
+  // viewBox is 120 x 100; scale via width/height
+  const iconW = Math.round(size * (120 / 100));
   const iconH = size;
+
+  const icon = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 120 100"
+      width={iconW}
+      height={iconH}
+      aria-hidden="true"
+      focusable="false"
+      shapeRendering="geometricPrecision"
+      overflow="visible"
+    >
+      {/*
+       * Three diamond (rhombus) shapes drawn bottom → top so front
+       * layer sits on top. Each is a rotated square with white fill so
+       * the stacking depth is visible. Stroke = dark charcoal.
+       *
+       * Diamond geometry (cx, cy, half-width hw, half-height hh):
+       *   points = "cx,cy-hh  cx+hw,cy  cx,cy+hh  cx-hw,cy"
+       *
+       * hw=46 hh=27 gives the wide-flat diamond shape in the logo.
+       * Layer offsets (bottom→top):  cy = 68, 56, 44
+       */}
+
+      {/* ── Layer 3 — back (bottommost, drawn first) ── */}
+      <polygon
+        points="60,41  106,68  60,95  14,68"
+        fill="white"
+        stroke={strokeColor}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+
+      {/* ── Layer 2 — middle ── */}
+      <polygon
+        points="60,29  106,56  60,83  14,56"
+        fill="white"
+        stroke={strokeColor}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+
+      {/* ── Layer 1 — front (topmost) ── */}
+      <polygon
+        points="60,17  106,44  60,71  14,44"
+        fill="white"
+        stroke={strokeColor}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 
   if (variant === "icon") {
     return (
       <div className={cn("flex-shrink-0", className)} aria-label="Scan2Paper">
-        <IconSVG
-          width={iconW}
-          height={iconH}
-          accentColor={accentColor}
-          midLayerColor={midLayerColor}
-          backLayerColor={backLayerColor}
-          dotRing={dotRing}
-        />
+        {icon}
       </div>
     );
   }
 
-  // Full variant: icon above wordmark, stacked vertically
-  const fontSize = Math.round(size * 0.45);
+  // Full variant — icon above wordmark
+  const fontSize = Math.round(size * 0.52);
 
   return (
     <div
-      className={cn("flex flex-col items-center gap-1.5", className)}
+      className={cn("flex flex-col items-center", className)}
+      style={{ gap: Math.round(size * 0.18) }}
       aria-label="Scan2Paper"
     >
-      <IconSVG
-        width={iconW}
-        height={iconH}
-        accentColor={accentColor}
-        midLayerColor={midLayerColor}
-        backLayerColor={backLayerColor}
-        dotRing={dotRing}
-      />
+      {icon}
       <span
         style={{
           fontFamily: "'Poppins', 'Inter', 'Segoe UI', Arial, sans-serif",
-          fontWeight: 600,
+          fontWeight: 700,
           fontSize: `${fontSize}px`,
-          letterSpacing: "-0.02em",
+          letterSpacing: "-0.025em",
           color: "#111827",
           lineHeight: 1,
           whiteSpace: "nowrap",
@@ -83,88 +122,12 @@ export function Scan2PaperLogo({
   );
 }
 
-// ─── Inline icon SVG ─────────────────────────────────────────────────────────
-
-interface IconSVGProps {
-  width: number;
-  height: number;
-  accentColor: string;
-  midLayerColor: string;
-  backLayerColor: string;
-  dotRing: string;
-}
-
-function IconSVG({
-  width,
-  height,
-  accentColor,
-  midLayerColor,
-  backLayerColor,
-  dotRing,
-}: IconSVGProps) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 60 68"
-      width={width}
-      height={height}
-      aria-hidden="true"
-      focusable="false"
-      shapeRendering="geometricPrecision"
-    >
-      {/* ── Back layer ── */}
-      <rect
-        x="0" y="10"
-        width="52" height="56"
-        rx="5"
-        fill={backLayerColor}
-        transform="rotate(-11, 26, 38)"
-      />
-
-      {/* ── Middle layer ── */}
-      <rect
-        x="1" y="8"
-        width="52" height="56"
-        rx="5"
-        fill={midLayerColor}
-        transform="rotate(-4.5, 27, 36)"
-      />
-
-      {/* ── Front layer (primary document) ── */}
-      <rect
-        x="2" y="4"
-        width="52" height="56"
-        rx="5"
-        fill={accentColor}
-      />
-
-      {/* ── Text / scan lines on front sheet ── */}
-      <rect x="11" y="16" width="34" height="4" rx="2" fill="#fff" opacity="0.95" />
-      <rect x="11" y="25" width="26" height="4" rx="2" fill="#fff" opacity="0.72" />
-      <rect x="11" y="34" width="31" height="4" rx="2" fill="#fff" opacity="0.95" />
-      <rect x="11" y="43" width="20" height="4" rx="2" fill="#fff" opacity="0.60" />
-      <rect x="11" y="52" width="28" height="4" rx="2" fill="#fff" opacity="0.80" />
-
-      {/* ── Corner scan-point dot ── */}
-      <circle cx="47" cy="11" r="6" fill={dotRing} />
-      <circle cx="47" cy="11" r="3.2" fill="#fff" />
-    </svg>
-  );
-}
-
 /**
- * Inline SVG used in <head> for og:image / social preview — returns raw SVG string.
- * Not a React component; use in scripts or server-side generation only.
+ * Raw SVG string — use for og:image, email templates, or server-side rendering.
+ * Not a React component.
  */
-export const SCAN2PAPER_SVG_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 68" shape-rendering="geometricPrecision">
-  <rect x="0" y="10" width="52" height="56" rx="5" fill="#CBD5E1" transform="rotate(-11, 26, 38)"/>
-  <rect x="1" y="8"  width="52" height="56" rx="5" fill="#93C5FD" transform="rotate(-4.5, 27, 36)"/>
-  <rect x="2" y="4"  width="52" height="56" rx="5" fill="#2563EB"/>
-  <rect x="11" y="16" width="34" height="4" rx="2" fill="#fff" opacity="0.95"/>
-  <rect x="11" y="25" width="26" height="4" rx="2" fill="#fff" opacity="0.72"/>
-  <rect x="11" y="34" width="31" height="4" rx="2" fill="#fff" opacity="0.95"/>
-  <rect x="11" y="43" width="20" height="4" rx="2" fill="#fff" opacity="0.60"/>
-  <rect x="11" y="52" width="28" height="4" rx="2" fill="#fff" opacity="0.80"/>
-  <circle cx="47" cy="11" r="6"   fill="#111827"/>
-  <circle cx="47" cy="11" r="3.2" fill="#fff"/>
+export const SCAN2PAPER_SVG_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" shape-rendering="geometricPrecision" overflow="visible">
+  <polygon points="60,41  106,68  60,95  14,68" fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <polygon points="60,29  106,56  60,83  14,56" fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <polygon points="60,17  106,44  60,71  14,44" fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
 </svg>`;

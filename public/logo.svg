@@ -1,17 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 68" shape-rendering="geometricPrecision">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" shape-rendering="geometricPrecision" overflow="visible">
   <!-- Back layer -->
-  <rect x="0" y="10" width="52" height="56" rx="5" fill="#CBD5E1" transform="rotate(-11, 26, 38)"/>
+  <polygon points="60,41  106,68  60,95  14,68"
+           fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
   <!-- Middle layer -->
-  <rect x="1" y="8"  width="52" height="56" rx="5" fill="#93C5FD" transform="rotate(-4.5, 27, 36)"/>
+  <polygon points="60,29  106,56  60,83  14,56"
+           fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
   <!-- Front layer -->
-  <rect x="2" y="4"  width="52" height="56" rx="5" fill="#2563EB"/>
-  <!-- Scan lines -->
-  <rect x="11" y="16" width="34" height="4" rx="2" fill="#fff" opacity="0.95"/>
-  <rect x="11" y="25" width="26" height="4" rx="2" fill="#fff" opacity="0.72"/>
-  <rect x="11" y="34" width="31" height="4" rx="2" fill="#fff" opacity="0.95"/>
-  <rect x="11" y="43" width="20" height="4" rx="2" fill="#fff" opacity="0.60"/>
-  <rect x="11" y="52" width="28" height="4" rx="2" fill="#fff" opacity="0.80"/>
-  <!-- Corner dot -->
-  <circle cx="47" cy="11" r="6"   fill="#111827"/>
-  <circle cx="47" cy="11" r="3.2" fill="#fff"/>
+  <polygon points="60,17  106,44  60,71  14,44"
+           fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
 </svg>

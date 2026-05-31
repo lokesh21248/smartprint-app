@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" width="360" height="200" shape-rendering="geometricPrecision">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- White presentation background -->
+  <rect width="360" height="200" fill="#ffffff"/>
+
+  <!-- ── 3 stacked diamond outlines, drawn back → front ── -->
+  <!-- Back diamond -->
+  <polygon points="180,55  234,83  180,111  126,83"
+           fill="white" stroke="#111827" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- Middle diamond -->
+  <polygon points="180,43  234,71  180,99  126,71"
+           fill="white" stroke="#111827" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- Front diamond -->
+  <polygon points="180,31  234,59  180,87  126,59"
+           fill="white" stroke="#111827" stroke-width="4.5" stroke-linejoin="round"/>
+
+  <!-- ── Wordmark ── -->
+  <text
+    x="180" y="155"
+    text-anchor="middle"
+    font-family="'Poppins', 'Inter', 'Segoe UI', Arial, sans-serif"
+    font-weight="700"
+    font-size="36"
+    letter-spacing="-0.9"
+    fill="#111827">Scan2Paper</text>
+</svg>
