@@ -88,12 +88,14 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
   totalAmount,
   filesCount,
   totalPages,
+  totalCopies,
   onCheckout,
   disabled,
 }: {
   totalAmount: number;
   filesCount: number;
   totalPages: number;
+  totalCopies: number;
   onCheckout: () => void;
   disabled?: boolean;
 }) {
@@ -101,7 +103,7 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-col sm:flex-row sm:items-center text-center sm:text-left justify-between gap-4 shadow-2xl relative overflow-hidden"
+      className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-row items-center justify-between gap-4 shadow-2xl relative overflow-hidden fixed bottom-4 left-4 right-4 z-40 md:relative md:bottom-auto md:left-auto md:right-auto md:m-0"
     >
       <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
         <Printer className="w-40 h-40" />
@@ -115,14 +117,14 @@ const PricingSummaryCard = memo(function PricingSummaryCard({
           {formatCurrency(totalAmount)}
         </p>
         <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold mt-1.5 truncate">
-          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} print {totalPages === 1 ? "sheet" : "sheets"}
+          {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} {totalPages === 1 ? "page" : "pages"} · {totalCopies} {totalCopies === 1 ? "copy" : "copies"}
         </p>
       </div>
 
       <Button
         onClick={onCheckout}
         disabled={disabled}
-        className="w-full sm:w-auto px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm disabled:opacity-50 disabled:pointer-events-none"
+        className="px-5 sm:px-8 h-12 sm:h-14 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition active:scale-[0.98] z-10 shadow-lg shadow-emerald-500/20 shrink-0 text-xs sm:text-sm disabled:opacity-50 disabled:pointer-events-none"
       >
         Checkout <ChevronRight className="w-4 h-4" />
       </Button>
@@ -135,6 +137,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   totalAmount,
   filesCount,
   totalPages,
+  totalCopies,
   orderStatus,
   uploadPhase,
   overallUploadPercent,
@@ -149,6 +152,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   totalAmount: number;
   filesCount: number;
   totalPages: number;
+  totalCopies: number;
   orderStatus: string;
   uploadPhase: UploadPhase;
   overallUploadPercent: number;
@@ -161,12 +165,12 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
   allFilesCompleted: boolean;
 }) {
   return (
-    <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-col gap-5 sm:gap-6 shadow-2xl shadow-slate-950/20 relative overflow-hidden">
+    <div className="bg-slate-900 rounded-3xl p-5 sm:p-6 md:p-8 text-white flex flex-col gap-5 sm:gap-6 shadow-2xl shadow-slate-950/20 relative overflow-hidden fixed bottom-4 left-4 right-4 z-40 md:relative md:bottom-auto md:left-auto md:right-auto md:m-0">
       <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 opacity-5">
         <Printer className="w-40 h-40" />
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center text-center sm:text-left justify-between gap-4 z-10">
+      <div className="flex flex-row items-center justify-between gap-4 z-10">
         <div className="flex flex-col justify-center min-w-0">
           <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
             Total Print Bill
@@ -175,7 +179,7 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
             {formatCurrency(totalAmount)}
           </p>
           <p className="text-[9px] sm:text-[10px] text-slate-300 font-bold mt-1.5 truncate">
-            {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} print {totalPages === 1 ? "sheet" : "sheets"}
+            {filesCount} {filesCount === 1 ? "file" : "files"} · {totalPages} {totalPages === 1 ? "page" : "pages"} · {totalCopies} {totalCopies === 1 ? "copy" : "copies"}
           </p>
         </div>
 
@@ -184,13 +188,15 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
           onClick={onPlaceOrder}
           disabled={
             orderStatus === "saving" ||
+            orderStatus === "success" ||
+            !allFilesCompleted ||
             isOffline ||
             !customerName ||
             customerName.trim().length < 3 ||
             customerPhone.length < 10 ||
             filesCount === 0
           }
-          className={`w-full sm:w-auto px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
+          className={`px-5 sm:px-8 py-3 sm:py-4 h-12 sm:h-14 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none z-10 shrink-0 text-xs sm:text-sm ${
             canRetry
               ? "bg-amber-500 hover:bg-amber-600 text-white"
               : "bg-emerald-500 hover:bg-emerald-600 text-white"
@@ -420,7 +426,13 @@ function OrderUploadPageInner() {
   const totalPages = useMemo(() => {
     return files
       .filter((f) => f.status !== "failed" && f.status !== "cancelled")
-      .reduce((sum, f) => sum + (f.pages || 1) * f.copies, 0);
+      .reduce((sum, f) => sum + (f.pages || 1), 0);
+  }, [files]);
+
+  const totalCopies = useMemo(() => {
+    return files
+      .filter((f) => f.status !== "failed" && f.status !== "cancelled")
+      .reduce((sum, f) => sum + f.copies, 0);
   }, [files]);
 
 
@@ -642,7 +654,7 @@ function OrderUploadPageInner() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white pb-24 font-sans antialiased font-medium text-slate-800">
+    <div className={`min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white font-sans antialiased font-medium text-slate-800 transition-all ${files.length > 0 ? "pb-36 md:pb-24" : "pb-24"}`}>
       {/* Offline Banner */}
       <AnimatePresence>
         {isOffline && (
@@ -705,9 +717,9 @@ function OrderUploadPageInner() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-6"
+              className="space-y-4 md:space-y-6"
             >
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6 min-h-[300px] h-auto flex flex-col justify-start">
+              <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6 min-h-[220px] sm:min-h-[300px] h-auto flex flex-col justify-start">
                 <MultiFileUploader
                   key={uploaderResetKey}
                   ref={uploaderRef}
@@ -724,8 +736,9 @@ function OrderUploadPageInner() {
                   totalAmount={totalAmount}
                   filesCount={files.length}
                   totalPages={totalPages}
+                  totalCopies={totalCopies}
                   onCheckout={handleCheckoutDetails}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !allFilesCompleted}
                 />
               )}
 
@@ -751,10 +764,10 @@ function OrderUploadPageInner() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-6"
+              className="space-y-4 md:space-y-6"
             >
               {/* Order Document Review List */}
-              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-4">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-6 space-y-3 sm:space-y-4">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">
                   Review Files ({files.length})
                 </h3>
@@ -794,7 +807,7 @@ function OrderUploadPageInner() {
               </div>
 
               {/* Delivery Info */}
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-6">
+              <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
                     <User className="w-5 h-5" />
@@ -851,7 +864,7 @@ function OrderUploadPageInner() {
               </div>
 
               {/* Notes */}
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-6 md:p-8 space-y-3">
+              <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-4 sm:p-6 md:p-8 space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
                   Special Instructions (Optional)
                 </label>
@@ -917,6 +930,7 @@ function OrderUploadPageInner() {
                 totalAmount={totalAmount}
                 filesCount={files.length}
                 totalPages={totalPages}
+                totalCopies={totalCopies}
                 orderStatus={orderStatus}
                 uploadPhase={uploadPhase}
                 overallUploadPercent={overallUploadPercent}

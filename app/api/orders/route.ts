@@ -346,15 +346,28 @@ export async function POST(request: Request) {
 
       // DB-level unique constraint — idempotent fallback
       if (error.code === "23505") {
-        const { data: existing } = await supabase
-          .from("orders")
-          .select("id, short_token")
-          .eq("shop_id", shopId)
-          .eq("customer_phone", customerPhone)
-          .eq("file_name", fileName || (firstFile ? firstFile.name : ""))
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let existing = null;
+        if (id) {
+          const { data } = await supabase
+            .from("orders")
+            .select("id, short_token")
+            .eq("id", id)
+            .maybeSingle();
+          existing = data;
+        }
+
+        if (!existing) {
+          const { data } = await supabase
+            .from("orders")
+            .select("id, short_token")
+            .eq("shop_id", shopId)
+            .eq("customer_phone", customerPhone)
+            .eq("file_name", fileName || (firstFile ? firstFile.name : ""))
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          existing = data;
+        }
 
         console.timeEnd("[orders:POST:total]");
         return NextResponse.json(

@@ -62,12 +62,12 @@ const FILEPOND_OVERRIDES = `
   /* Bigger tap targets on mobile */
   @media (max-width: 640px) {
     .sp-filepond-root .filepond--panel-root {
-      min-height: 130px;
+      min-height: 120px;
       border-radius: 16px;
     }
     .sp-filepond-root .filepond--drop-label {
       font-size: 13px;
-      min-height: 130px;
+      min-height: 120px;
     }
   }
 `;

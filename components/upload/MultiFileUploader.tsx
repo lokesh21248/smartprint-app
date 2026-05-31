@@ -17,6 +17,7 @@ import {
   useEffect,
   useState,
   memo,
+  useRef,
 } from "react";
 import { Reorder, useDragControls, motion, AnimatePresence } from "framer-motion";
 import {
@@ -91,6 +92,9 @@ const MAX_FILES = 50; // Hardened 50 files limit
 export const MultiFileUploader = memo(
   forwardRef<MultiFileUploaderRef, MultiFileUploaderProps>(
     ({ files, onChange, shopId, orderId, disabled }, ref) => {
+    const [isDropzoneCollapsed, setIsDropzoneCollapsed] = useState(false);
+    const lastCollapsedCountRef = useRef(0);
+
     // ── Upload queue ──────────────────────────────────────────────────────────
     const {
       files: queueFiles,
@@ -128,6 +132,22 @@ export const MultiFileUploader = memo(
         onChange(queueFiles);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [queueFiles]);
+
+    // ── Auto-collapse dropzone on successful upload ───────────────────────────
+    useEffect(() => {
+      const successCount = queueFiles.filter((f) => f.status === "completed").length;
+      if (queueFiles.length > 0 && successCount === queueFiles.length) {
+        if (lastCollapsedCountRef.current !== queueFiles.length) {
+          setIsDropzoneCollapsed(true);
+          lastCollapsedCountRef.current = queueFiles.length;
+        }
+      } else {
+        lastCollapsedCountRef.current = 0;
+        if (queueFiles.length === 0) {
+          setIsDropzoneCollapsed(false);
+        }
+      }
     }, [queueFiles]);
 
     // ── Expose imperative handle ──────────────────────────────────────────────
@@ -250,12 +270,22 @@ export const MultiFileUploader = memo(
         </AnimatePresence>
 
         {/* Dropzone */}
-        <div className={queueFiles.length >= MAX_FILES ? "opacity-50 pointer-events-none" : ""}>
-          <MultiFileDropzone
-            onFilesSelected={handleFilesSelected}
-            disabled={disabled || queueFiles.length >= MAX_FILES}
-          />
-        </div>
+        <AnimatePresence initial={false}>
+          {!isDropzoneCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className={`overflow-hidden ${queueFiles.length >= MAX_FILES ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              <MultiFileDropzone
+                onFilesSelected={handleFilesSelected}
+                disabled={disabled || queueFiles.length >= MAX_FILES}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Header row */}
         {queueFiles.length > 0 && (
@@ -303,8 +333,19 @@ export const MultiFileUploader = memo(
             </div>
 
             <div className="flex items-center gap-3">
+              {isDropzoneCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setIsDropzoneCollapsed(false)}
+                  className="flex items-center gap-1 text-xs font-extrabold text-emerald-600 hover:text-emerald-700 transition active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  Add More Files
+                </button>
+              )}
               {failedCount > 0 && !disabled && (
                 <button
+                  type="button"
                   onClick={retryAll}
                   className="flex items-center gap-1 text-xs font-extrabold text-amber-600 hover:text-amber-700 transition active:scale-95"
                 >
@@ -314,6 +355,7 @@ export const MultiFileUploader = memo(
               )}
               {queueFiles.length > 0 && !disabled && (
                 <button
+                  type="button"
                   onClick={clearSession}
                   className="text-xs font-extrabold text-red-500 hover:text-red-600 transition"
                 >
@@ -434,7 +476,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
       transition={{ duration: 0.2 }}
       className={`bg-white rounded-2xl border transition-colors duration-200 overflow-hidden ${cardStyle}`}
     >
-      <div className="p-4 flex flex-col gap-3">
+      <div className="p-3 flex flex-col gap-2">
         {/* Main Details Row */}
         <div className="flex items-center gap-3">
           {/* Drag Handle */}
@@ -450,38 +492,38 @@ const ReorderItemRow = memo(function ReorderItemRow({
           </div>
 
           {/* Thumbnail */}
-          <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
+          <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 relative">
             {fileItem.status === "completed" && (
               <motion.div
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center z-10"
               >
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               </motion.div>
             )}
             {isPdf ? (
               <div className="w-full h-full bg-rose-50 flex flex-col items-center justify-center text-rose-500">
-                <FileText className="w-6 h-6" />
-                <span className="text-[7px] font-black uppercase tracking-widest mt-0.5">PDF</span>
+                <FileText className="w-4 h-4" />
+                <span className="text-[6px] font-black uppercase tracking-widest mt-0.5">PDF</span>
               </div>
             ) : thumbUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={thumbUrl} alt={fileItem.name} className="w-full h-full object-cover" />
             ) : (
-              <ImageIcon className="w-5 h-5 text-slate-400" />
+              <ImageIcon className="w-4 h-4 text-slate-400" />
             )}
           </div>
 
           {/* File Info */}
           <div className="flex-1 min-w-0">
             <h4
-              className="text-sm font-extrabold text-slate-800 truncate"
+              className="text-xs font-extrabold text-slate-800 truncate"
               title={fileItem.name}
             >
               {fileItem.name}
             </h4>
-            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+            <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
               {formatSize(fileItem.size)}
               {fileItem.pages !== null ? ` · ${fileItem.pages} pgs` : " · counting pages…"}
             </p>
@@ -517,7 +559,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
         {/* Upload Progress State */}
         {isActivelyUploading && (
           <div className="space-y-1.5 pt-1 px-1">
-            <div className="flex items-center justify-between text-xs font-bold">
+            <div className="flex items-center justify-between text-[10px] font-bold">
               <span className="text-slate-500 flex items-center gap-1.5">
                 {fileItem.status === "uploading" && (
                   <>
@@ -561,7 +603,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
 
             {/* Progress bar */}
             {(fileItem.status === "uploading" || fileItem.status === "verifying") && (
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
                 <motion.div
                   className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
                   initial={{ width: 0 }}
@@ -578,98 +620,101 @@ const ReorderItemRow = memo(function ReorderItemRow({
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 px-1 mt-0.5"
+            className="flex items-center gap-1.5 text-[9px] font-bold text-emerald-700 px-1 mt-0.5"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <CheckCircle2 className="w-3 h-3 shrink-0" />
             Upload complete
           </motion.div>
         )}
 
-        {(fileItem.status === "idle" || fileItem.status === "completed" || fileItem.status === "paused" || fileItem.status === "failed" || fileItem.status === "cancelled") && (
-          <div className="pt-2 border-t border-slate-100/70 flex flex-wrap items-center gap-3 px-1 mt-1">
-            {/* Copies */}
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-0.5">
+        {/* Configuration options grid */}
+        <div className={`pt-2 border-t border-slate-100/70 grid grid-cols-2 gap-1.5 px-1 mt-1 ${
+          (isActivelyUploading || disabled) ? "opacity-45 pointer-events-none" : ""
+        }`}>
+          {/* Copies */}
+          <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl p-0.5 w-full">
+            <button
+              type="button"
+              onClick={() =>
+                onUpdateConfig(fileItem.id, { copies: Math.max(1, fileItem.copies - 1) })
+              }
+              disabled={disabled}
+              className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
+            >
+              <Minus className="w-3 h-3 text-slate-500" />
+            </button>
+            <span className="text-xs font-extrabold text-slate-700 min-w-4 text-center">
+              {fileItem.copies} {fileItem.copies === 1 ? "copy" : "copies"}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                onUpdateConfig(fileItem.id, { copies: Math.min(50, fileItem.copies + 1) })
+              }
+              disabled={disabled}
+              className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
+            >
+              <Plus className="w-3 h-3 text-slate-600" />
+            </button>
+          </div>
+
+          {/* Ink Mode */}
+          <div className="flex bg-slate-100 rounded-xl p-0.5 w-full">
+            <button
+              type="button"
+              onClick={() => onUpdateConfig(fileItem.id, { color: false })}
+              disabled={disabled}
+              className={`flex-1 py-1.5 rounded-lg text-[10px] font-extrabold transition ${
+                !fileItem.color ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+              }`}
+            >
+              B&amp;W
+            </button>
+            <button
+              type="button"
+              onClick={() => onUpdateConfig(fileItem.id, { color: true })}
+              disabled={disabled}
+              className={`flex-1 py-1.5 rounded-lg text-[10px] font-extrabold transition ${
+                fileItem.color ? "bg-emerald-600 text-white shadow-sm" : "text-slate-500"
+              }`}
+            >
+              Color
+            </button>
+          </div>
+
+          {/* Duplex (PDFs only) */}
+          {isPdf && (
+            <div className={`flex bg-slate-100 rounded-xl p-0.5 w-full ${!fileItem.pdfParseFailed ? "col-span-2" : ""}`}>
               <button
                 type="button"
-                onClick={() =>
-                  onUpdateConfig(fileItem.id, { copies: Math.max(1, fileItem.copies - 1) })
-                }
+                onClick={() => onUpdateConfig(fileItem.id, { doubleSided: false })}
                 disabled={disabled}
-                className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
+                className={`flex-1 py-1.5 rounded-lg text-[10px] font-extrabold transition ${
+                  !fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                }`}
               >
-                <Minus className="w-3 h-3 text-slate-500" />
+                1-Sided
               </button>
-              <span className="text-xs font-extrabold text-slate-700 min-w-4 text-center">
-                {fileItem.copies}
+              <button
+                type="button"
+                onClick={() => onUpdateConfig(fileItem.id, { doubleSided: true })}
+                disabled={disabled}
+                className={`flex-1 py-1.5 rounded-lg text-[10px] font-extrabold transition ${
+                  fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                }`}
+              >
+                2-Sided
+              </button>
+            </div>
+          )}
+
+          {/* Manual page override */}
+          {fileItem.pdfParseFailed && (
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-xl p-0.5 w-full">
+              <span className="text-[9px] font-extrabold text-amber-700 uppercase tracking-wider pl-1.5">
+                Pages:
               </span>
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateConfig(fileItem.id, { copies: Math.min(50, fileItem.copies + 1) })
-                }
-                disabled={disabled}
-                className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center transition disabled:opacity-40"
-              >
-                <Plus className="w-3 h-3 text-slate-600" />
-              </button>
-            </div>
-
-            {/* Ink Mode */}
-            <div className="flex bg-slate-100 rounded-lg p-0.5">
-              <button
-                type="button"
-                onClick={() => onUpdateConfig(fileItem.id, { color: false })}
-                disabled={disabled}
-                className={`px-3 py-1 rounded-md text-[10px] font-extrabold transition ${
-                  !fileItem.color ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-                }`}
-              >
-                B&amp;W
-              </button>
-              <button
-                type="button"
-                onClick={() => onUpdateConfig(fileItem.id, { color: true })}
-                disabled={disabled}
-                className={`px-3 py-1 rounded-md text-[10px] font-extrabold transition ${
-                  fileItem.color ? "bg-emerald-600 text-white shadow-sm" : "text-slate-500"
-                }`}
-              >
-                Color
-              </button>
-            </div>
-
-            {/* Duplex (PDFs only) */}
-            {isPdf && (
-              <div className="flex bg-slate-100 rounded-lg p-0.5">
-                <button
-                  type="button"
-                  onClick={() => onUpdateConfig(fileItem.id, { doubleSided: false })}
-                  disabled={disabled}
-                  className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition ${
-                    !fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-                  }`}
-                >
-                  1-Sided
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onUpdateConfig(fileItem.id, { doubleSided: true })}
-                  disabled={disabled}
-                  className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold transition ${
-                    fileItem.doubleSided ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-                  }`}
-                >
-                  2-Sided
-                </button>
-              </div>
-            )}
-
-            {/* Manual page override */}
-            {fileItem.pdfParseFailed && (
-              <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl p-0.5 ml-auto">
-                <span className="text-[9px] font-extrabold text-amber-700 uppercase tracking-wider pl-1.5">
-                  Pages:
-                </span>
+              <div className="flex items-center">
                 <button
                   type="button"
                   onClick={() =>
@@ -696,9 +741,9 @@ const ReorderItemRow = memo(function ReorderItemRow({
                   <Plus className="w-3 h-3 text-amber-700" />
                 </button>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         {/* Failure Panel */}
         {(fileItem.status === "failed" || fileItem.status === "cancelled") && (
