@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Providers } from "@/lib/providers";
@@ -11,17 +11,30 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  display: "swap",
+  variable: "--font-poppins",
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://scan2paper.com"),
   title: {
-    default: "SmartPrint — Shop Owner Panel",
-    template: "%s | SmartPrint",
+    default: "Scan2Paper — Shop Owner Panel",
+    template: "%s | Scan2Paper",
   },
   description:
     "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
-  keywords: ["xerox shop", "print shop", "order management", "SmartPrint"],
+  keywords: ["xerox shop", "print shop", "order management", "Scan2Paper", "SmartPrint"],
   alternates: {
     canonical: "https://scan2paper.com",
+  },
+  icons: {
+    icon: [
+      { url: "/logo.svg", type: "image/svg+xml" },
+    ],
+    apple: "/logo.svg",
   },
   robots: {
     index: true,
@@ -43,7 +56,7 @@ export default function RootLayout({
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
     >
-      <html lang="en" className={inter.variable}>
+      <html lang="en" className={`${inter.variable} ${poppins.variable}`}>
         <body className="font-sans antialiased">
           <Providers>{children}</Providers>
           <Analytics />

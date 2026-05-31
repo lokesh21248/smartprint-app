@@ -9,13 +9,13 @@ import {
   BarChart3,
   Users,
   Settings,
-  Printer,
   Bell,
   ChevronLeft,
   ChevronRight,
   User,
   X,
 } from "lucide-react";
+import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 import { cn } from "@/lib/utils";
 import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
@@ -106,14 +106,18 @@ export function Sidebar() {
       aria-label="Dashboard navigation"
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-[64px] border-b border-[#E5E7EB] flex-shrink-0">
-        <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[#2E8B57] flex items-center justify-center">
-          <Printer className="h-5 w-5 text-white" aria-hidden="true" />
-        </div>
-        {!collapsed && (
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-[15px] text-[#111827] truncate">SmartPrint</p>
-            <p className="text-[11px] text-[#6B7280] truncate">{shopName}</p>
+      <div className="flex items-center gap-2 px-3 h-[64px] border-b border-[#E5E7EB] flex-shrink-0">
+        {collapsed ? (
+          /* Collapsed: icon only */
+          <Scan2PaperLogo variant="icon" size={34} color="color" className="mx-auto" />
+        ) : (
+          /* Expanded: icon + wordmark side by side */
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Scan2PaperLogo variant="icon" size={34} color="color" />
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[15px] text-[#111827] truncate leading-tight">Scan2Paper</p>
+              <p className="text-[11px] text-[#6B7280] truncate">{shopName}</p>
+            </div>
           </div>
         )}
         <button
@@ -248,12 +252,10 @@ export function Sidebar() {
                 aria-label="Mobile navigation"
               >
                 {/* Logo */}
-                <div className="flex items-center gap-3 px-4 h-[64px] border-b border-[#E5E7EB] flex-shrink-0">
-                  <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[#2E8B57] flex items-center justify-center">
-                    <Printer className="h-5 w-5 text-white" aria-hidden="true" />
-                  </div>
+                <div className="flex items-center gap-2 px-3 h-[64px] border-b border-[#E5E7EB] flex-shrink-0">
+                  <Scan2PaperLogo variant="icon" size={34} color="color" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-[15px] text-[#111827] truncate">SmartPrint</p>
+                    <p className="font-bold text-[15px] text-[#111827] truncate leading-tight">Scan2Paper</p>
                     <p className="text-[11px] text-[#6B7280] truncate">{shopName}</p>
                   </div>
                 </div>
