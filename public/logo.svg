@@ -1,31 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" shape-rendering="geometricPrecision" overflow="visible">
-  <defs>
-    <!-- Mask for middle layer: hides anything under top layer's outer boundary -->
-    <mask id="mask-top">
-      <rect x="-10" y="-10" width="140" height="120" fill="white" />
-      <polygon points="60,17  106,44  60,71  14,44" fill="black" />
-    </mask>
-    <!-- Mask for bottom layer: hides anything under top or middle layer's outer boundary -->
-    <mask id="mask-top-middle">
-      <rect x="-10" y="-10" width="140" height="120" fill="white" />
-      <polygon points="60,17  106,44  60,71  14,44" fill="black" />
-      <polygon points="60,29  106,56  60,83  14,56" fill="black" />
-    </mask>
-  </defs>
-
-  <!-- Bottom Layer (Layer 3) -->
-  <g mask="url(#mask-top-middle)">
-    <polygon points="60,41  106,68  60,95  14,68" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-    <polygon points="60,48  94,68  60,88  26,68" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-  </g>
-
-  <!-- Middle Layer (Layer 2) -->
-  <g mask="url(#mask-top)">
-    <polygon points="60,29  106,56  60,83  14,56" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-    <polygon points="60,36  94,56  60,76  26,56" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-  </g>
-
-  <!-- Top Layer (Layer 1) -->
-  <polygon points="60,17  106,44  60,71  14,44" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-  <polygon points="60,24  94,44  60,64  26,44" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Bottom layer -->
+  <polygon points="60,41  106,68  60,95  14,68"
+           fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Middle layer -->
+  <polygon points="60,29  106,56  60,83  14,56"
+           fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Front layer -->
+  <polygon points="60,17  106,44  60,71  14,44"
+           fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
 </svg>
