@@ -7,7 +7,7 @@
  */
 
 class IndexedDbStore {
-  private dbName = "smartprint-upload-store";
+  private dbName = "scan2paper-upload-store";
   private storeName = "files";
   private dbPromise: Promise<IDBDatabase> | null = null;
 

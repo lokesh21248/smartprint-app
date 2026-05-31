@@ -27,7 +27,7 @@ export class NotificationService {
     const supabase = createAdminClient();
     const { customerName, status, shortToken } = params;
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://smartprint.in";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
     const message = `Hi ${customerName}, your order #${shortToken} status is now: ${status}. Track here: ${appUrl}/order/${shortToken}`;
 
     console.log(`[Notification] Status update → ${status} for token ${shortToken}`);

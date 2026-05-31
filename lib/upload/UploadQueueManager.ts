@@ -536,7 +536,7 @@ export class UploadQueueManager {
     this._files.clear();
     this._activeFileIds.clear();
     clearAllTusFingerprints();
-    localStorage.removeItem("smartprint_upload_metadata");
+    localStorage.removeItem("scan2paper_upload_metadata");
     indexedDbStore.clear().catch(() => {});
     this._releaseWakeLockIfDone();
     this._emit({ type: "SESSION_CLEARED" });

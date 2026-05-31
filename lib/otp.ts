@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createHash } from "crypto";
 
 // A simple salt for OTP hashing (since they are only 6 digits)
-const OTP_SALT = process.env.OTP_SALT || "smartprint-default-salt";
+const OTP_SALT = process.env.OTP_SALT || "scan2paper-default-salt";
 
 function hashOtp(code: string): string {
   return createHash("sha256")

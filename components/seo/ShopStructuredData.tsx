@@ -13,7 +13,7 @@ interface ShopDisplayData {
 export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
   if (!shop || !shop.name) return null;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://smartprint.in";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
 
   const jsonLd = {
     "@context": "https://schema.org",

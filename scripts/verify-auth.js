@@ -1,5 +1,5 @@
 /**
- * SmartPrint Auth Verification Script
+ * Scan2Paper Auth Verification Script
  * Run: node scripts/verify-auth.js
  *
  * Checks:
@@ -26,7 +26,7 @@ if (fs.existsSync(envPath)) {
 const { createClient } = require("@supabase/supabase-js");
 
 async function verifyAuth() {
-  console.log("\n🔍 SmartPrint Auth Verification\n" + "=".repeat(40));
+  console.log("\n🔍 Scan2Paper Auth Verification\n" + "=".repeat(40));
 
   // ─── Step 1: Env Var Check ────────────────────────────────────────────────
   console.log("\n📋 Step 1: Environment Variables");

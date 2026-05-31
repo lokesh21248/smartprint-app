@@ -30,7 +30,7 @@ const ContentSecurityPolicy = `
     https://*.supabase.co
     https://*.supabase.in
     wss://*.supabase.co
-    https://monitoring.smartprint.app
+    https://monitoring.scan2paper.com
     https://static.cloudflareinsights.com
     https://cloudflareinsights.com
     https://vitals.vercel-insights.com

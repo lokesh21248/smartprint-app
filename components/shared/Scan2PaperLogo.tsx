@@ -44,40 +44,67 @@ export function Scan2PaperLogo({
       shapeRendering="geometricPrecision"
       overflow="visible"
     >
-      {/*
-       * Three diamond (rhombus) shapes drawn bottom → top so front
-       * layer sits on top. Each is a rotated square with white fill so
-       * the stacking depth is visible. Stroke = dark charcoal.
-       *
-       * Diamond geometry (cx, cy, half-width hw, half-height hh):
-       *   points = "cx,cy-hh  cx+hw,cy  cx,cy+hh  cx-hw,cy"
-       *
-       * hw=46 hh=27 gives the wide-flat diamond shape in the logo.
-       * Layer offsets (bottom→top):  cy = 68, 56, 44
-       */}
+      <defs>
+        {/* Mask for middle layer: hides anything under top layer's outer boundary */}
+        <mask id="mask-top-react">
+          <rect x="-10" y="-10" width="140" height="120" fill="white" />
+          <polygon points="60,17  106,44  60,71  14,44" fill="black" />
+        </mask>
+        {/* Mask for bottom layer: hides anything under top or middle layer's outer boundary */}
+        <mask id="mask-top-middle-react">
+          <rect x="-10" y="-10" width="140" height="120" fill="white" />
+          <polygon points="60,17  106,44  60,71  14,44" fill="black" />
+          <polygon points="60,29  106,56  60,83  14,56" fill="black" />
+        </mask>
+      </defs>
 
       {/* ── Layer 3 — back (bottommost, drawn first) ── */}
-      <polygon
-        points="60,41  106,68  60,95  14,68"
-        fill="white"
-        stroke={strokeColor}
-        strokeWidth="4"
-        strokeLinejoin="round"
-      />
+      <g mask="url(#mask-top-middle-react)">
+        <polygon
+          points="60,41  106,68  60,95  14,68"
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="4"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points="60,48  94,68  60,88  26,68"
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="4"
+          strokeLinejoin="round"
+        />
+      </g>
 
       {/* ── Layer 2 — middle ── */}
-      <polygon
-        points="60,29  106,56  60,83  14,56"
-        fill="white"
-        stroke={strokeColor}
-        strokeWidth="4"
-        strokeLinejoin="round"
-      />
+      <g mask="url(#mask-top-react)">
+        <polygon
+          points="60,29  106,56  60,83  14,56"
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="4"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points="60,36  94,56  60,76  26,56"
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="4"
+          strokeLinejoin="round"
+        />
+      </g>
 
       {/* ── Layer 1 — front (topmost) ── */}
       <polygon
         points="60,17  106,44  60,71  14,44"
-        fill="white"
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      <polygon
+        points="60,24  94,44  60,64  26,44"
+        fill="none"
         stroke={strokeColor}
         strokeWidth="4"
         strokeLinejoin="round"
@@ -127,7 +154,25 @@ export function Scan2PaperLogo({
  * Not a React component.
  */
 export const SCAN2PAPER_SVG_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" shape-rendering="geometricPrecision" overflow="visible">
-  <polygon points="60,41  106,68  60,95  14,68" fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-  <polygon points="60,29  106,56  60,83  14,56" fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
-  <polygon points="60,17  106,44  60,71  14,44" fill="white" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <defs>
+    <mask id="mask-top-svg">
+      <rect x="-10" y="-10" width="140" height="120" fill="white" />
+      <polygon points="60,17  106,44  60,71  14,44" fill="black" />
+    </mask>
+    <mask id="mask-top-middle-svg">
+      <rect x="-10" y="-10" width="140" height="120" fill="white" />
+      <polygon points="60,17  106,44  60,71  14,44" fill="black" />
+      <polygon points="60,29  106,56  60,83  14,56" fill="black" />
+    </mask>
+  </defs>
+  <g mask="url(#mask-top-middle-svg)">
+    <polygon points="60,41  106,68  60,95  14,68" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+    <polygon points="60,48  94,68  60,88  26,68" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+  <g mask="url(#mask-top-svg)">
+    <polygon points="60,29  106,56  60,83  14,56" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+    <polygon points="60,36  94,56  60,76  26,56" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+  <polygon points="60,17  106,44  60,71  14,44" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <polygon points="60,24  94,44  60,64  26,44" fill="none" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
 </svg>`;

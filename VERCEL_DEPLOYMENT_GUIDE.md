@@ -1,4 +1,4 @@
-# 🚀 Vercel Deployment Guide: SmartPrint SaaS
+# 🚀 Vercel Deployment Guide: Scan2Paper SaaS
 
 Your application is now fully optimized for Vercel. Follow these steps to launch.
 

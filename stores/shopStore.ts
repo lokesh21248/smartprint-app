@@ -48,7 +48,7 @@ export const useShopStore = create<ShopState>()(
       setAutoAcceptWindow: (minutes) => set({ autoAcceptWindow: minutes }),
     }),
     {
-      name: "smartprint-shop",
+      name: "scan2paper-shop",
       partialize: (state) => ({
         soundEnabled: state.soundEnabled,
         autoAccept: state.autoAccept,

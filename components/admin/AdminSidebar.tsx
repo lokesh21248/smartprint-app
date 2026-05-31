@@ -27,7 +27,7 @@ export function AdminSidebar() {
           <ShieldCheck className="h-6 w-6 text-white" />
         </div>
         <div>
-          <p className="font-black tracking-tight text-lg leading-tight">SMARTPRINT</p>
+          <p className="font-black tracking-tight text-lg leading-tight">SCAN2PAPER</p>
           <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Super Admin</p>
         </div>
       </div>
