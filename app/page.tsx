@@ -1,9 +1,16 @@
-import { redirect } from "next/navigation";
-import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
+import { HomeAuthRedirect } from "@/components/shared/HomeAuthRedirect";
+import FindShopPage from "@/app/find-shop/page";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
+// ─── Canonical app URL ────────────────────────────────────────────────────────
+// Hardcoded — NEXT_PUBLIC_APP_URL is not set in .env.local, so always use the
+// production origin directly. This guarantees the canonical is never undefined.
+const CANONICAL_HOME = "https://scan2paper.com";
 
+// ─── Metadata ────────────────────────────────────────────────────────────────
+// This metadata is now served to crawlers because the page renders real content
+// instead of immediately redirecting. Googlebot will see the find-shop UI at the
+// canonical domain root, which is the primary customer-facing entry point.
 export const metadata: Metadata = {
   title: "Scan2Paper - Online Printing Service",
   description:
@@ -16,13 +23,15 @@ export const metadata: Metadata = {
     "Scan2Paper",
   ],
   alternates: {
-    canonical: appUrl,
+    // Homepage canonical = the root URL. Must be the absolute URL, not /find-shop.
+    // This page renders content at https://scan2paper.com/ — not at /find-shop.
+    canonical: CANONICAL_HOME,
   },
   openGraph: {
     title: "Scan2Paper - Online Printing Service",
     description:
       "Upload documents and order printouts online with Scan2Paper. Fast, secure, and convenient printing for all your files.",
-    url: appUrl,
+    url: CANONICAL_HOME,
     type: "website",
     siteName: "Scan2Paper",
   },
@@ -42,14 +51,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function Home() {
-  const { userId } = await auth();
-  // Authenticated shop owners go to the dashboard.
-  // Unauthenticated visitors (customers & potential owners) go to the
-  // public find-shop page which IS indexed by search engines.
-  if (userId) {
-    redirect("/dashboard");
-  } else {
-    redirect("/find-shop");
-  }
+// ─── Page ────────────────────────────────────────────────────────────────────
+// Renders the find-shop UI directly at the domain root so Google can index it.
+// HomeAuthRedirect handles the client-side /dashboard navigation for signed-in
+// users — no server-side redirect means no "Redirect error" in Search Console.
+export default function Home() {
+  return (
+    <>
+      <HomeAuthRedirect />
+      <FindShopPage />
+    </>
+  );
 }

@@ -19,6 +19,10 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
+  // metadataBase resolves relative URLs in metadata across all pages.
+  // Do NOT set alternates.canonical here — it would be inherited by all routes
+  // as a fallback, causing /find-shop and other pages to output the root
+  // canonical even when they declare their own. Each page/layout sets its own.
   metadataBase: new URL("https://scan2paper.com"),
   title: {
     default: "Scan2Paper",
@@ -27,9 +31,6 @@ export const metadata: Metadata = {
   description:
     "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
   keywords: ["xerox shop", "print shop", "order management", "Scan2Paper"],
-  alternates: {
-    canonical: "https://scan2paper.com",
-  },
   icons: {
     icon: [
       { url: "/favicon.ico?v=2", sizes: "any" },
