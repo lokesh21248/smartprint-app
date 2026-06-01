@@ -16,7 +16,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 import { formatCurrency } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
@@ -114,7 +113,7 @@ export default function QRLandingPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-50/50 via-slate-50 to-white pb-24 font-sans antialiased font-medium">
-      <ShopStructuredData shop={shop} />
+      {/* Structured data is injected server-side by app/s/[slug]/layout.tsx */}
       
       {/* Sticky Premium Minimal Navbar */}
       <nav className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-100/80 px-6 py-4">

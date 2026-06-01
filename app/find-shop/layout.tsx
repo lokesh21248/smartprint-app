@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Find a Shop | Scan2Paper",
@@ -23,5 +24,14 @@ export default function FindShopLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {/* Server-rendered internal link — crawlable by Googlebot */}
+      <nav aria-label="Site links" className="sr-only">
+        <Link href="/">Scan2Paper Home</Link>
+        <Link href="/order-upload">Upload Documents for Printing</Link>
+      </nav>
+    </>
+  );
 }

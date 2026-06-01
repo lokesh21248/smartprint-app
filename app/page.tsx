@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { HomeAuthRedirect } from "@/components/shared/HomeAuthRedirect";
 import FindShopPage from "@/app/find-shop/page";
 
@@ -55,11 +56,27 @@ export const metadata: Metadata = {
 // Renders the find-shop UI directly at the domain root so Google can index it.
 // HomeAuthRedirect handles the client-side /dashboard navigation for signed-in
 // users — no server-side redirect means no "Redirect error" in Search Console.
+//
+// INTERNAL LINKING (SEO):
+// The footer below is a server-rendered <nav> with real <a> tags. This is
+// critical because FindShopPage is "use client" — Googlebot's first-pass HTML
+// only sees the client hydration boundary, not actual anchor elements.
+// These server-rendered links let Googlebot discover /find-shop and /order-upload
+// without executing JavaScript.
 export default function Home() {
   return (
     <>
       <HomeAuthRedirect />
       <FindShopPage />
+
+      {/* ── Server-rendered internal link footer ─────────────────────────────
+          These <Link> elements render as plain <a href="..."> in the SSR HTML.
+          Googlebot follows them to discover other public pages.
+          visually hidden with sr-only so they don't affect the UI layout.   */}
+      <nav aria-label="Site navigation" className="sr-only">
+        <Link href="/find-shop">Find a Print Shop</Link>
+        <Link href="/order-upload">Upload Documents for Printing</Link>
+      </nav>
     </>
   );
 }

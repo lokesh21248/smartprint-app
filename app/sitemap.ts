@@ -4,25 +4,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = "https://scan2paper.com";
 
-  // 1. Define base static pages
+  // 1. Public indexable static pages ONLY.
+  // RULE: Never include pages that have robots: { index: false } in the sitemap.
+  // /login and /signup are noindex (auth pages) — excluded intentionally.
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: `${baseUrl}/`,
       lastModified: new Date(),
       changeFrequency: "daily",
       priority: 1.0,
-    },
-    {
-      url: `${baseUrl}/login`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/signup`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.8,
     },
     {
       url: `${baseUrl}/find-shop`,

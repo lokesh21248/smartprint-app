@@ -1,4 +1,12 @@
-"use client";
+/**
+ * ShopStructuredData — Server Component (no "use client" directive).
+ *
+ * CRITICAL: This must remain a server component.
+ * "use client" would cause this script tag to be injected by JavaScript
+ * after page load, making it invisible to Googlebot on the initial HTML response.
+ * As a server component it is rendered into the static HTML payload,
+ * which is what Google's crawler actually reads.
+ */
 
 interface ShopDisplayData {
   name?: string;
@@ -25,12 +33,12 @@ export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
       "addressLocality": "City",
       "addressRegion": "State",
       "postalCode": "000000",
-      "addressCountry": "IN"
+      "addressCountry": "IN",
     },
     "telephone": shop.phone,
     "url": `${appUrl}/s/${shop.slug}`,
     "openingHours": `${shop.opening_time}-${shop.closing_time}`,
-    "priceRange": "₹"
+    "priceRange": "₹",
   };
 
   return (
