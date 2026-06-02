@@ -380,6 +380,7 @@ function OrderUploadPageInner() {
   useEffect(() => {
     if (!shopSlug) {
       toast.error("Invalid URL: Shop missing");
+      router.replace("/");
       return;
     }
 
@@ -388,7 +389,7 @@ function OrderUploadPageInner() {
         const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
         if (!res.ok) {
           toast.error("Shop not found or unavailable");
-          setIsLoadingShop(false);
+          router.replace("/");
           return;
         }
         const data = await res.json();
@@ -409,7 +410,7 @@ function OrderUploadPageInner() {
     };
 
     loadShop();
-  }, [shopSlug]);
+  }, [shopSlug, router]);
 
   // ── Aggregated Price and Volume Calculations ──────────────────────────────
   const totalAmount = useMemo(() => {

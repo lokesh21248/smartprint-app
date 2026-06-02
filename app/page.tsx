@@ -68,15 +68,6 @@ export default function Home() {
     <>
       <HomeAuthRedirect />
       <FindShopPage />
-
-      {/* ── Server-rendered internal link footer ─────────────────────────────
-          These <Link> elements render as plain <a href="..."> in the SSR HTML.
-          Googlebot follows them to discover other public pages.
-          visually hidden with sr-only so they don't affect the UI layout.   */}
-      <nav aria-label="Site navigation" className="sr-only">
-        <Link href="/find-shop">Find a Print Shop</Link>
-        <Link href="/order-upload">Upload Documents for Printing</Link>
-      </nav>
     </>
   );
 }

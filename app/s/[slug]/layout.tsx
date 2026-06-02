@@ -138,13 +138,8 @@ export default async function ShopLayout({ children, params }: LayoutProps) {
       )}
       {children}
 
-      {/* ── Server-rendered internal links ─────────────────────────────────────
-          Crawlable <a> tags so Googlebot can follow from /s/[slug] to
-          other public pages. sr-only hides them visually without display:none
-          (display:none blocks Googlebot; visibility:hidden/sr-only does not). */}
       <nav aria-label="Site links" className="sr-only">
         <Link href="/">Scan2Paper Home</Link>
-        <Link href="/find-shop">Find a Print Shop</Link>
       </nav>
     </>
   );

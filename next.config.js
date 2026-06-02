@@ -117,6 +117,16 @@ const nextConfig = {
 
   compress: true,
 
+  async redirects() {
+    return [
+      {
+        source: "/find-shop",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
+
   async headers() {
     return [
       {

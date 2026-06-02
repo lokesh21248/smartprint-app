@@ -1,6 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ShieldAlert, Home, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+export const metadata: Metadata = {
+  title: "Access Denied | Scan2Paper",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default function UnauthorizedPage() {
   return (
