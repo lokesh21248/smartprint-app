@@ -45,6 +45,10 @@ const ContentSecurityPolicy = `
 const isDev = process.env.NODE_ENV !== "production";
 
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/login",
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/signup",
+  },
   poweredByHeader: false,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },

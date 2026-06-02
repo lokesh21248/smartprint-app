@@ -56,7 +56,17 @@ const isProtectedRoute = createRouteMatcher([
 
 // ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
 export default clerkMiddleware(async (auth, req) => {
-  // 1. Public routes — skip Clerk entirely
+  // 1. WWW to non-WWW Redirect (Consolidate traffic, avoid search crawler loops)
+  const host = req.headers.get("host") || "";
+  if (host.startsWith("www.")) {
+    const newHost = host.replace(/^www\./, "");
+    return NextResponse.redirect(
+      `https://${newHost}${req.nextUrl.pathname}${req.nextUrl.search}`,
+      308
+    );
+  }
+
+  // 2. Public routes — skip Clerk entirely
   if (isPublicRoute(req)) {
     return NextResponse.next();
   }
