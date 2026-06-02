@@ -100,13 +100,13 @@ export function Sidebar() {
   const sidebarContent = (
     <aside
       className={cn(
-        "h-full bg-white border-r border-[#E5E7EB] z-40 flex flex-col transition-all duration-300",
+        "h-full bg-white border-r border-slate-100 z-40 flex flex-col transition-all duration-300",
         collapsed ? "w-[68px]" : "w-[256px]"
       )}
       aria-label="Dashboard navigation"
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 px-3 h-[64px] border-b border-[#E5E7EB] flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 h-[64px] border-b border-slate-100 flex-shrink-0">
         {collapsed ? (
           /* Collapsed: icon only */
           <Scan2PaperLogo variant="icon" size={34} color="color" className="mx-auto" />
@@ -115,8 +115,8 @@ export function Sidebar() {
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Scan2PaperLogo variant="icon" size={34} color="color" />
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-[15px] text-[#111827] truncate leading-tight">Scan2Paper</p>
-              <p className="text-[11px] text-[#6B7280] truncate">{shopName}</p>
+              <p className="font-extrabold text-sm text-slate-800 tracking-tight leading-tight">Scan2Paper</p>
+              <p className="text-[10px] text-slate-400 font-bold truncate leading-normal">{shopName}</p>
             </div>
           </div>
         )}
@@ -135,17 +135,18 @@ export function Sidebar() {
 
       {/* Open/Closed Toggle */}
       {!collapsed && (
-        <div className="mx-3 mt-3 p-3 rounded-xl bg-[#FAFAFA] border border-[#E5E7EB] flex-shrink-0">
+        <div className="mx-3 mt-3 p-3.5 rounded-xl bg-slate-50/50 border border-slate-100 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-semibold text-[#374151]">Shop Status</p>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Shop Status</p>
               <p
                 className={cn(
-                  "text-xs font-medium",
-                  shop?.is_open ? "text-[#2E8B57]" : "text-[#EF4444]"
+                  "text-xs font-extrabold mt-1.5 flex items-center gap-1.5",
+                  shop?.is_open ? "text-emerald-700" : "text-rose-600"
                 )}
               >
-                {shop?.is_open ? "🟢 Open" : "🔴 Closed"}
+                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", shop?.is_open ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
+                {shop?.is_open ? "Open Now" : "Closed"}
               </p>
             </div>
             <Switch

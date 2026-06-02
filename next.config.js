@@ -57,7 +57,8 @@ const nextConfig = {
   // In dev, standalone mode changes how Next.js traces modules and can cause
   // chunk manifest/factory mismatches after HMR updates.
   // Only enable for production where it optimises Vercel/Docker deployments.
-  ...(isDev ? {} : { output: "standalone" }),
+  // Disable on Windows to avoid filesystem path length/symlink creation bugs (e.g. OneDrive).
+  ...((isDev || process.platform === "win32") ? {} : { output: "standalone" }),
 
   // ── Webpack ────────────────────────────────────────────────────────────────
   webpack: (config, { dev, isServer }) => {
