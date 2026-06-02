@@ -122,13 +122,7 @@ const nextConfig = {
   compress: true,
 
   async redirects() {
-    return [
-      {
-        source: "/find-shop",
-        destination: "/",
-        permanent: true,
-      },
-    ];
+    return [];
   },
 
   async headers() {

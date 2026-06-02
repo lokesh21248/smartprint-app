@@ -113,13 +113,24 @@ export default async function ShopLayout({ children, params }: LayoutProps) {
     const supabase = createAdminClient();
     const { data } = await supabase
       .from("shops")
-      .select("name, address_line1, phone, slug, opening_time, closing_time")
+      .select("name, address_line1, owner_phone, slug, business_hours")
       .eq("slug", params.slug)
       .eq("is_approved", true)
       .maybeSingle();
-    shopData = data;
-  } catch {
-    // Structured data is non-critical — don't fail rendering if Supabase is down
+    
+    if (data) {
+      const bh = data.business_hours as Record<string, any> | null;
+      shopData = {
+        name: data.name,
+        address_line1: data.address_line1,
+        phone: data.owner_phone,
+        slug: data.slug,
+        opening_time: bh?.opening_time || "09:00",
+        closing_time: bh?.closing_time || "21:00",
+      };
+    }
+  } catch (err) {
+    console.error("[ShopLayout] Failed to query dynamic shop schema:", err);
   }
 
   return (

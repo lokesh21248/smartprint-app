@@ -10,12 +10,8 @@ export const metadata: Metadata = {
     canonical: "https://scan2paper.com/find-shop",
   },
   robots: {
-    index: true,
+    index: false,
     follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-    },
   },
 };
 

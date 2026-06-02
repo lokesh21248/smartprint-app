@@ -1,15 +1,35 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Scan2PaperLogo } from '@/components/shared/Scan2PaperLogo';
+import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 
 export default function FindShopPage() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [shops, setShops] = useState<any[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    const fetchShops = async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('shops')
+          .select('name, slug, address_line1, city')
+          .eq('is_approved', true)
+          .limit(10);
+        if (data) setShops(data);
+      } catch (err) {
+        console.error('Failed to fetch partner shops:', err);
+      }
+    };
+    fetchShops();
+  }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +69,7 @@ export default function FindShopPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-blue-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-blue-50 p-4 py-12">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
         <div className="text-center mb-6">
           <div className="flex justify-center mb-4">
@@ -90,6 +110,33 @@ export default function FindShopPage() {
             <span>You can also scan the shop&apos;s QR code with your camera to skip typing.</span>
           </p>
         </div>
+
+        {shops.length > 0 && (
+          <div className="mt-8 border-t border-gray-100 pt-6">
+            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest text-center mb-4">
+              Our Print Network
+            </h2>
+            <div className="space-y-2.5">
+              {shops.map((shop) => (
+                <Link
+                  key={shop.slug}
+                  href={`/s/${shop.slug}`}
+                  className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-100/50 rounded-xl hover:bg-slate-100 hover:border-slate-200 transition group"
+                >
+                  <div className="min-w-0">
+                    <h3 className="font-extrabold text-slate-800 text-xs truncate group-hover:text-emerald-700 transition">
+                      {shop.name}
+                    </h3>
+                    <p className="text-slate-400 text-[10px] truncate mt-0.5">
+                      {shop.address_line1}, {shop.city}
+                    </p>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-450 group-hover:text-emerald-600 transition group-hover:translate-x-0.5 shrink-0 ml-4" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

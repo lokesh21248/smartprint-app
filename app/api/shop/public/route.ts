@@ -62,6 +62,7 @@ export async function GET(request: Request) {
     }
 
     // Build a clean response — don't expose internal fields
+    const bh = data.business_hours as Record<string, any> | null;
     const shop = {
       id: data.id,
       name: data.name,
@@ -73,8 +74,10 @@ export async function GET(request: Request) {
       is_open: data.is_open,
       price_bw_per_page: Number(data.price_bw_per_page) || 0,
       price_color_per_page: Number(data.price_color_per_page) || 0,
-      opening_time: (data.business_hours as Record<string, string> | null)?.opening_time || "09:00",
-      closing_time: (data.business_hours as Record<string, string> | null)?.closing_time || "21:00",
+      opening_time: bh?.opening_time || "09:00",
+      closing_time: bh?.closing_time || "21:00",
+      services: bh?.services || [],
+      working_days: bh?.working_days || [],
     };
 
     // Cache for 30 seconds — short enough to reflect shop status changes

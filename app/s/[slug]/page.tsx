@@ -190,6 +190,62 @@ export default function QRLandingPage() {
           </div>
         </motion.div>
 
+        {/* Store Overview & Services Card */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.12 }}
+          className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 md:p-8 space-y-6"
+        >
+          <div>
+            <h2 className="text-lg font-black text-slate-900 tracking-tight mb-2">About Our Store</h2>
+            <p className="text-sm text-slate-505 leading-relaxed font-medium">
+              Welcome to {shop.name}, your trusted local document printing partner at {shop.address}. 
+              We offer instant cloud print services with counter pick-up. Enter your name, upload your files securely, 
+              and collect your prints whenever you are ready!
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t border-slate-50">
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Services Offered</h3>
+              <div className="flex flex-wrap gap-2">
+                {shop.services && (shop.services as string[]).length > 0 ? (
+                  (shop.services as string[]).map((service: string, idx: number) => (
+                    <span key={idx} className="px-3 py-1 bg-slate-50 border border-slate-100/50 text-slate-700 rounded-lg text-xs font-semibold">
+                      {service}
+                    </span>
+                  ))
+                ) : (
+                  <>
+                    <span className="px-3 py-1 bg-slate-50 border border-slate-100/50 text-slate-700 rounded-lg text-xs font-semibold">B&W Printing</span>
+                    <span className="px-3 py-1 bg-slate-50 border border-slate-100/50 text-slate-700 rounded-lg text-xs font-semibold">Color Printing</span>
+                    <span className="px-3 py-1 bg-slate-50 border border-slate-100/50 text-slate-700 rounded-lg text-xs font-semibold">Scanning</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Operating Hours</h3>
+              <div className="space-y-1.5 text-xs text-slate-600 font-semibold">
+                <p className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Timing:</span>
+                  <span>{shop.opening_time} - {shop.closing_time}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Working Days:</span>
+                  <span>
+                    {shop.working_days && (shop.working_days as string[]).length > 0 
+                      ? (shop.working_days as string[]).join(", ") 
+                      : "Monday - Saturday"}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Entry Form Card */}
         <motion.div 
           initial={{ opacity: 0, y: 25 }}
