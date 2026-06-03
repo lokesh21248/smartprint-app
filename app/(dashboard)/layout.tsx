@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  robots: { index: false, follow: false },
+  robots: { index: false, follow: true },
 };
 
 import { Sidebar } from "@/components/shared/Sidebar";

@@ -1,46 +1,70 @@
 import { MetadataRoute } from "next";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { blogPosts } from "@/app/blog/page";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 3600; // Cache sitemap for 1 hour in CDN
+// Static sitemap — only include pages that are:
+//   1. Publicly accessible (no auth required)
+//   2. Have unique, non-thin content
+//   3. Are NOT set to noindex in their page/layout metadata
+//
+// RULE: Never include noindex pages in the sitemap.
+// Mixing sitemap inclusion with noindex metadata sends Google conflicting signals
+// (Google Search Central anti-pattern).
+export const dynamic = "force-static";
+export const revalidate = 86400; // Rebuild at most once per day (CDN cache)
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = "https://scan2paper.com";
+const BASE_URL = "https://scan2paper.com";
 
-  // 1. Public indexable static pages ONLY.
-  // RULE: Never include pages that have robots: { index: false } in the sitemap.
-  // /login and /signup are noindex (auth pages) — excluded intentionally.
+export default function sitemap(): MetadataRoute.Sitemap {
+  // Static marketing pages
   const staticPages: MetadataRoute.Sitemap = [
     {
-      url: `${baseUrl}/`,
+      url: `${BASE_URL}/`,
       lastModified: new Date(),
-      changeFrequency: "daily",
+      changeFrequency: "weekly",
       priority: 1.0,
+    },
+    {
+      url: `${BASE_URL}/features`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/pricing`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/about`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/contact`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/blog`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.8,
     },
   ];
 
-  // 2. Fetch dynamically approved shops for SEO indexing
-  let dynamicShopPages: MetadataRoute.Sitemap = [];
-  try {
-    const supabase = createAdminClient();
-    const { data: shops } = await supabase
-      .from("shops")
-      .select("slug, updated_at")
-      .eq("is_approved", true)
-      .order("updated_at", { ascending: false });
+  // Blog post pages — sourced from the same list used by /blog and /blog/[slug]
+  // so the sitemap is always in sync with published content.
+  const blogPages: MetadataRoute.Sitemap = blogPosts.map((post) => ({
+    url: `${BASE_URL}/blog/${post.slug}`,
+    lastModified: new Date(post.date),
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
+  }));
 
-    if (shops && shops.length > 0) {
-      dynamicShopPages = shops.map((shop) => ({
-        url: `${baseUrl}/s/${shop.slug}`,
-        lastModified: shop.updated_at ? new Date(shop.updated_at) : new Date(),
-        changeFrequency: "weekly",
-        priority: 0.8,
-      }));
-    }
-  } catch (err) {
-    console.error("[Sitemap] Failed to fetch dynamic shop pages from Supabase:", err);
-    // Return at least the static pages if Supabase is down or service key is missing during build/compilation
-  }
-
-  return [...staticPages, ...dynamicShopPages];
+  return [...staticPages, ...blogPages];
 }
+
+

@@ -5,8 +5,9 @@ import { CreateShopForm } from "@/components/shop/CreateShopForm";
 
 export const metadata = {
   title: "Create your shop",
-  robots: { index: false, follow: false },
+  robots: { index: false, follow: true },
 };
+
 
 export default async function CreateShopPage() {
   const { userId } = await auth();

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     "Sign in to your Scan2Paper shop owner panel to manage orders, staff, and analytics.",
   robots: {
     index: false,
-    follow: false,
+    follow: true, // Allow Googlebot to follow outbound links on auth pages
   },
 };
 

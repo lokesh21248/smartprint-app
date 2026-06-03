@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "Upload your PDF documents, configure print settings, and place your order securely with Scan2Paper.",
   robots: {
     index: false,
-    follow: false,
+    follow: true,
   },
 };
 

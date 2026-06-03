@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
     return {
       title: "Shop Not Found | Scan2Paper",
       // Explicitly noindex missing shop pages so Google doesn't index 404-like pages.
-      robots: { index: false, follow: false },
+      robots: { index: false, follow: true },
     };
   }
 
@@ -65,12 +65,12 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
       canonical: canonicalUrl,
     },
     robots: {
-      index: true,
+      // Shop pages are transactional landing pages accessed via QR code or
+      // direct link — not marketing pages. Keeping them noindex prevents
+      // thin-content shop pages from diluting the site's SEO signal while
+      // still allowing Googlebot to follow links out of them.
+      index: false,
       follow: true,
-      googleBot: {
-        index: true,
-        follow: true,
-      },
     },
     openGraph: {
       title,
