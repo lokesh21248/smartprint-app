@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
-import { blogPosts } from "@/app/blog/page";
+import { allPosts } from "@/lib/blog/posts";
+
 
 // Static sitemap — only include pages that are:
 //   1. Publicly accessible (no auth required)
@@ -55,11 +56,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  // Blog post pages — sourced from the same list used by /blog and /blog/[slug]
+  // Blog post pages — sourced from lib/blog/posts (single source of truth)
   // so the sitemap is always in sync with published content.
-  const blogPages: MetadataRoute.Sitemap = blogPosts.map((post) => ({
+  const blogPages: MetadataRoute.Sitemap = allPosts.map((post) => ({
     url: `${BASE_URL}/blog/${post.slug}`,
-    lastModified: new Date(post.date),
+    lastModified: new Date(post.updatedDate ?? post.date),
     changeFrequency: "monthly" as const,
     priority: 0.7,
   }));

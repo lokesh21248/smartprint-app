@@ -1,30 +1,33 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { blogPosts } from "../page";
+import Image from "next/image";
+import {
+  allPosts,
+  getPostBySlug,
+  getRelatedPosts,
+  formatDate,
+} from "@/lib/blog/posts";
+import { ArticleRenderer } from "@/components/blog/ArticleRenderer";
 
 // ---------------------------------------------------------------------------
-// Static generation
-// Pre-render every known blog post at build time.
-// New posts added to `blogPosts` in page.tsx will be generated on the next
-// deployment (or on demand with ISR if you add `revalidate`).
+// Static generation — pre-render every blog post at build time
 // ---------------------------------------------------------------------------
 export function generateStaticParams() {
-  return blogPosts.map((p) => ({ slug: p.slug }));
+  return allPosts.map((p) => ({ slug: p.slug }));
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic SEO metadata per post
+// Per-article SEO metadata
 // ---------------------------------------------------------------------------
 export async function generateMetadata({
   params,
 }: {
   params: { slug: string };
 }): Promise<Metadata> {
-  const post = blogPosts.find((p) => p.slug === params.slug);
+  const post = getPostBySlug(params.slug);
 
   if (!post) {
-    // Unknown slug — tell Google not to index
     return {
       title: "Post Not Found | Scan2Paper Blog",
       robots: { index: false, follow: true },
@@ -34,187 +37,57 @@ export async function generateMetadata({
   const url = `https://scan2paper.com/blog/${post.slug}`;
 
   return {
-    title: `${post.title} | Scan2Paper Blog`,
-    description: post.description,
-    alternates: {
-      canonical: url,
-    },
-    robots: {
-      index: true,
-      follow: true,
-    },
+    title: post.metaTitle,
+    description: post.metaDescription,
+    alternates: { canonical: url },
+    robots: { index: true, follow: true },
     openGraph: {
-      title: post.title,
-      description: post.description,
+      title: post.metaTitle,
+      description: post.metaDescription,
       url,
       type: "article",
       publishedTime: post.date,
+      modifiedTime: post.updatedDate ?? post.date,
+      images: [
+        {
+          url: `https://scan2paper.com${post.coverImage}`,
+          width: 1200,
+          height: 630,
+          alt: post.coverImageAlt,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
-      title: post.title,
-      description: post.description,
+      title: post.metaTitle,
+      description: post.metaDescription,
+      images: [`https://scan2paper.com${post.coverImage}`],
     },
   };
 }
 
 // ---------------------------------------------------------------------------
-// Full article content map
-// In production, replace with a CMS/MDX fetch keyed by slug.
-// ---------------------------------------------------------------------------
-const articleContent: Record<string, React.ReactNode> = {
-  "how-to-manage-print-orders-online": (
-    <>
-      <p>
-        Managing print orders manually — with paper slips or WhatsApp messages
-        — is error-prone and slow. Scan2Paper replaces that workflow with a
-        real-time digital dashboard visible to you and your staff from any
-        device.
-      </p>
-      <h2>Step 1: Set up your shop</h2>
-      <p>
-        After signing up, create your shop profile. You'll get a unique 6-letter
-        code and a QR code customers can scan.
-      </p>
-      <h2>Step 2: Share your QR code</h2>
-      <p>
-        Print the QR code and display it at your counter. Customers scan it,
-        upload their PDF, configure print settings, and submit — all before
-        standing in a queue.
-      </p>
-      <h2>Step 3: Accept and process orders</h2>
-      <p>
-        Each new order appears instantly on your dashboard. Accept it with one
-        tap. When printing is done, mark it complete and the customer receives
-        a notification.
-      </p>
-    </>
-  ),
-  "upi-payments-for-xerox-shops": (
-    <>
-      <p>
-        Cash-only print shops lose customers who don't carry change. UPI
-        payments — via Scan2Paper — let customers pay before even arriving at
-        your counter.
-      </p>
-      <h2>How it works</h2>
-      <p>
-        After uploading their documents, customers see the total amount and a
-        UPI payment link. Payment is confirmed in seconds. You see the payment
-        status on your dashboard before printing a single page.
-      </p>
-      <h2>Benefits</h2>
-      <ul>
-        <li>No cash-handling errors</li>
-        <li>Faster counter checkout</li>
-        <li>Built-in payment record for every order</li>
-      </ul>
-    </>
-  ),
-  "qr-code-shop-discovery": (
-    <>
-      <p>
-        Instead of handing out business cards, give customers a QR code. One
-        scan takes them directly to your Scan2Paper shop page where they can
-        place an order.
-      </p>
-      <h2>Where to place your QR code</h2>
-      <ul>
-        <li>Counter display</li>
-        <li>Near college notice boards</li>
-        <li>On delivery packaging</li>
-        <li>In WhatsApp status / Instagram bio</li>
-      </ul>
-      <h2>What happens after the scan</h2>
-      <p>
-        The customer lands on your branded shop page, sees your location and
-        hours, uploads files, and pays — without ever speaking to anyone.
-      </p>
-    </>
-  ),
-  "staff-management-for-print-shops": (
-    <>
-      <p>
-        A busy print shop needs more than one person. Scan2Paper lets you add
-        staff members who can view and process orders without accessing your
-        account settings or revenue data.
-      </p>
-      <h2>Role-based access</h2>
-      <p>
-        Assign the <strong>Staff</strong> role to counter operators. They can
-        accept, process, and complete orders. Only the shop owner can see
-        revenue, edit shop settings, or manage staff.
-      </p>
-      <h2>Remote monitoring</h2>
-      <p>
-        Track how many orders each staff member processed today from the
-        Analytics tab — even if you're not at the shop.
-      </p>
-    </>
-  ),
-  "increase-revenue-print-shop": (
-    <>
-      <p>
-        Most print shops price identically to competitors. Here are five ways to
-        differentiate and earn more.
-      </p>
-      <h2>1. Offer colour printing prominently</h2>
-      <p>
-        Customers often don't ask for colour because they assume it's
-        unavailable. Display it as a clear option during upload.
-      </p>
-      <h2>2. Bundle copies at a discount</h2>
-      <p>
-        Charge ₹1.50/page for 1–10 pages, ₹1/page for 11+ pages. Customers
-        naturally order more.
-      </p>
-      <h2>3. Reduce wait time</h2>
-      <p>
-        Pre-received orders mean you can print in advance. Customers who
-        experience zero wait return every time.
-      </p>
-      <h2>4. Send notifications</h2>
-      <p>
-        The "Ready for pickup" notification creates a positive last impression
-        and reduces counter congestion.
-      </p>
-      <h2>5. Collect reviews</h2>
-      <p>
-        A Google Business listing with 20+ five-star reviews brings more walk-in
-        traffic than any flyer.
-      </p>
-    </>
-  ),
-};
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-IN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Page component
+// Article page
 // ---------------------------------------------------------------------------
 export default function BlogPostPage({
   params,
 }: {
   params: { slug: string };
 }) {
-  const post = blogPosts.find((p) => p.slug === params.slug);
+  const post = getPostBySlug(params.slug);
   if (!post) notFound();
 
-  const content = articleContent[post.slug];
+  const relatedPosts = getRelatedPosts(post.slug, post.category, 2);
 
-  // JSON-LD Article structured data — helps Google understand this is an article
+  // JSON-LD Article structured data
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: post.title,
-    description: post.description,
+    description: post.metaDescription,
     datePublished: post.date,
+    dateModified: post.updatedDate ?? post.date,
+    image: `https://scan2paper.com${post.coverImage}`,
     author: {
       "@type": "Organization",
       name: "Scan2Paper",
@@ -224,6 +97,10 @@ export default function BlogPostPage({
       "@type": "Organization",
       name: "Scan2Paper",
       url: "https://scan2paper.com",
+      logo: {
+        "@type": "ImageObject",
+        url: "https://scan2paper.com/logo.png",
+      },
     },
     mainEntityOfPage: {
       "@type": "WebPage",
@@ -231,80 +108,166 @@ export default function BlogPostPage({
     },
   };
 
+  // JSON-LD BreadcrumbList
+  const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: "https://scan2paper.com/",
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Blog",
+        item: "https://scan2paper.com/blog",
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: post.title,
+        item: `https://scan2paper.com/blog/${post.slug}`,
+      },
+    ],
+  };
+
   return (
     <>
-      {/* Article structured data */}
+      {/* Structured data */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
 
-      <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16">
-        <div className="max-w-2xl mx-auto">
-          {/* Breadcrumb */}
-          <nav aria-label="Breadcrumb" className="mb-8 text-sm text-gray-500">
-            <Link href="/" className="hover:text-emerald-700 transition">
-              Home
-            </Link>
-            <span className="mx-2">›</span>
-            <Link
-              href="/blog"
-              className="hover:text-emerald-700 transition"
-            >
-              Blog
-            </Link>
-            <span className="mx-2">›</span>
-            <span className="text-gray-700">{post.title}</span>
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50">
+        {/* Hero image */}
+        <div className="relative w-full h-56 sm:h-72 md:h-80">
+          <Image
+            src={post.coverImage}
+            alt={post.coverImageAlt}
+            fill
+            className="object-cover"
+            priority
+            sizes="100vw"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+          {/* Breadcrumb over image */}
+          <nav
+            aria-label="Breadcrumb"
+            className="absolute bottom-4 left-4 right-4 text-sm text-white/80 flex items-center gap-1.5"
+          >
+            <Link href="/" className="hover:text-white transition">Home</Link>
+            <span>›</span>
+            <Link href="/blog" className="hover:text-white transition">Blog</Link>
+            <span>›</span>
+            <span className="text-white truncate">{post.title}</span>
           </nav>
+        </div>
 
-          {/* Article header */}
-          <article>
+        <main className="px-4 py-10">
+          <div className="max-w-2xl mx-auto">
+            {/* Article header */}
             <header className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-3">
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 mb-4">
+                {post.category}
+              </span>
+              <h1 className="text-3xl font-bold text-gray-900 mb-4 leading-tight">
                 {post.title}
               </h1>
-              <div className="flex items-center gap-3 text-sm text-gray-400">
+              <p className="text-gray-600 text-base mb-4 leading-relaxed">
+                {post.description}
+              </p>
+              <div className="flex items-center gap-3 text-sm text-gray-400 border-t border-gray-100 pt-4">
                 <time dateTime={post.date}>{formatDate(post.date)}</time>
                 <span>·</span>
                 <span>{post.readingTime}</span>
+                <span>·</span>
+                <span>By Scan2Paper Team</span>
               </div>
             </header>
 
             {/* Article body */}
-            <div className="prose prose-emerald max-w-none text-gray-700 space-y-4">
-              {content ?? (
-                <p>
-                  This article is coming soon. Check back shortly for the full
-                  guide.
-                </p>
-              )}
+            <article>
+              <ArticleRenderer blocks={post.content} />
+            </article>
+
+            {/* CTA block */}
+            <div className="mt-12 p-6 bg-emerald-600 rounded-2xl text-white text-center">
+              <h2 className="text-xl font-bold mb-2">
+                Ready to digitalise your print shop?
+              </h2>
+              <p className="text-emerald-100 text-sm mb-4">
+                Join hundreds of xerox shops across India using Scan2Paper to
+                manage orders, accept UPI payments, and grow their business.
+              </p>
+              <div className="flex flex-wrap gap-3 justify-center">
+                <Link
+                  href="/login"
+                  className="px-6 py-2.5 bg-white text-emerald-700 rounded-xl font-semibold hover:bg-emerald-50 transition text-sm"
+                >
+                  Get Started Free
+                </Link>
+                <Link
+                  href="/features"
+                  className="px-6 py-2.5 border border-emerald-400 text-white rounded-xl font-semibold hover:bg-emerald-700 transition text-sm"
+                >
+                  See Features
+                </Link>
+              </div>
             </div>
-          </article>
 
-          {/* CTA */}
-          <div className="mt-12 p-6 bg-emerald-50 rounded-2xl border border-emerald-100 text-center">
-            <p className="text-gray-700 font-medium mb-3">
-              Ready to digitalise your print shop?
-            </p>
-            <Link
-              href="/login"
-              className="inline-block px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition text-sm"
-            >
-              Get Started Free
-            </Link>
-          </div>
+            {/* Related posts */}
+            {relatedPosts.length > 0 && (
+              <section className="mt-12" aria-labelledby="related-heading">
+                <h2
+                  id="related-heading"
+                  className="text-lg font-bold text-gray-900 mb-4"
+                >
+                  Related Articles
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {relatedPosts.map((related) => (
+                    <Link
+                      key={related.slug}
+                      href={`/blog/${related.slug}`}
+                      className="group block bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition"
+                    >
+                      <span className="text-xs text-emerald-600 font-medium">
+                        {related.category}
+                      </span>
+                      <h3 className="text-sm font-semibold text-gray-900 mt-1 group-hover:text-emerald-700 transition leading-snug">
+                        {related.title}
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {related.readingTime}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
 
-          {/* Back to blog */}
-          <div className="mt-8 text-center">
-            <Link
-              href="/blog"
-              className="text-sm text-emerald-600 hover:underline"
+            {/* Internal links footer */}
+            <nav
+              aria-label="Site links"
+              className="mt-10 pt-6 border-t border-gray-100 flex flex-wrap gap-4 text-sm text-gray-500"
             >
-              ← Back to Blog
-            </Link>
+              <Link href="/" className="hover:text-emerald-700 transition">Home</Link>
+              <Link href="/features" className="hover:text-emerald-700 transition">Features</Link>
+              <Link href="/pricing" className="hover:text-emerald-700 transition">Pricing</Link>
+              <Link href="/contact" className="hover:text-emerald-700 transition">Contact</Link>
+              <Link href="/blog" className="hover:text-emerald-700 transition">← All Articles</Link>
+            </nav>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </>
   );
 }
