@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Bell, Search, Menu } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { Bell, Search, Menu, User, Settings, LogOut, Loader2, ChevronDown } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
+import { useClerk } from "@clerk/nextjs";
+import { toast } from "sonner";
+import Link from "next/link";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -34,13 +37,20 @@ function openMobileSidebar() {
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const { shop, notificationCount } = useShopStore();
   const { pendingCount } = useOrderStore();
+  const { signOut } = useClerk();
   const title = getPageTitle(pathname);
   const shopName = shop?.name || "Shop Owner";
 
   const [greeting, setGreeting] = useState("Hello");
   const [mounted, setMounted] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const menuRef = useRef<HTMLDivElement>(null);
+  const avatarBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -49,6 +59,49 @@ export function Header() {
       hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
     );
   }, []);
+
+  // Close dropdown on outside click or Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleClick = (e: MouseEvent) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        avatarBtnRef.current &&
+        !avatarBtnRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  // Close menu on route change
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await signOut({ redirectUrl: "/login" });
+    } catch {
+      toast.error("Logout failed. Please try again.");
+      setLoggingOut(false);
+    }
+  };
+
+  const initials = shopName[0]?.toUpperCase() ?? "S";
 
   return (
     <header className="sticky top-0 z-30 h-[64px] bg-white/70 backdrop-blur-md border-b border-slate-100/80 flex items-center justify-between px-4 md:px-6 gap-4">
@@ -120,15 +173,88 @@ export function Header() {
           )}
         </button>
 
-        {/* Avatar — accessible button */}
-        <button
-          type="button"
-          className="h-9 w-9 rounded-full bg-gradient-to-br from-emerald-600 to-slate-800 flex items-center justify-center text-white font-bold text-xs tracking-wider shadow-sm cursor-pointer select-none hover:opacity-95 active:scale-95 transition-all duration-150 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 border border-emerald-500/20"
-          aria-label={`User menu — ${shopName}`}
-          aria-expanded="false"
-        >
-          {shopName[0]?.toUpperCase() ?? "S"}
-        </button>
+        {/* Avatar + Dropdown */}
+        <div className="relative">
+          <button
+            ref={avatarBtnRef}
+            type="button"
+            onClick={() => setMenuOpen((prev) => !prev)}
+            className="flex items-center gap-1.5 h-9 pl-0.5 pr-2 rounded-full bg-gradient-to-br from-emerald-600 to-slate-800 text-white font-bold shadow-sm cursor-pointer select-none hover:opacity-95 active:scale-95 transition-all duration-150 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 border border-emerald-500/20"
+            aria-label={`User menu — ${shopName}`}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            id="user-menu-button"
+          >
+            <span className="h-8 w-8 rounded-full flex items-center justify-center text-xs tracking-wider">
+              {initials}
+            </span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 opacity-70 transition-transform duration-200 ${menuOpen ? "rotate-180" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+
+          {/* Dropdown panel */}
+          {menuOpen && (
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-labelledby="user-menu-button"
+              className="absolute right-0 top-[calc(100%+8px)] w-52 bg-white rounded-2xl shadow-xl border border-slate-100/80 overflow-hidden z-50 animate-fade-in"
+            >
+              {/* User info header */}
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/60">
+                <p className="text-xs font-black text-slate-800 truncate">{shopName}</p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Shop Owner</p>
+              </div>
+
+              {/* Menu items */}
+              <div className="p-1.5 space-y-0.5">
+                <Link
+                  href="/profile"
+                  role="menuitem"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-all duration-150 group"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 group-hover:bg-emerald-100 transition-colors">
+                    <User className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  Profile
+                </Link>
+
+                <Link
+                  href="/settings"
+                  role="menuitem"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 group"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 group-hover:bg-slate-200 transition-colors">
+                    <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  Settings
+                </Link>
+              </div>
+
+              {/* Logout — visually separated */}
+              <div className="p-1.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 group-hover:bg-rose-100 transition-colors">
+                    {loggingOut ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                  </span>
+                  {loggingOut ? "Signing out…" : "Logout"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

@@ -4,7 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import type { DashboardStats, Order, Shop } from "@/types";
 import { User as UserIcon, Store, Mail } from "lucide-react";
-import { LogoutButton } from "@/components/auth/LogoutButton";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { getShopByUserId } from "@/lib/data/shop";
 
@@ -144,8 +143,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Requirement 7 & 9: User Info Header + Logout */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E5E7EB] shadow-sm flex flex-wrap gap-6 items-center justify-between">
+      {/* User Info Card */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E5E7EB] shadow-sm flex flex-wrap gap-6 items-center">
         <div className="flex gap-6">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] flex items-center justify-center">
@@ -174,10 +173,6 @@ export default async function DashboardPage() {
               <p className="text-sm font-semibold text-[#111827]">{emailDisplay}</p>
             </div>
           </div>
-        </div>
-        
-        <div className="w-full sm:w-auto">
-          <LogoutButton className="border border-red-100 py-2.5 px-4" />
         </div>
       </div>
 

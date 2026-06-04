@@ -22,7 +22,6 @@ import { useOrderStore } from "@/stores/orderStore";
 import { toast } from "sonner";
 import { useState, useEffect, useCallback } from "react";
 import { Switch } from "@/components/ui/switch";
-import { LogoutButton } from "@/components/auth/LogoutButton";
 
 const SIDEBAR_FULL_W = 256;
 const SIDEBAR_COLLAPSED_W = 68;
@@ -200,7 +199,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom: Notifications + Logout */}
+      {/* Bottom: Notifications */}
       <div className="p-3 space-y-1 border-t border-[#E5E7EB] flex-shrink-0">
         <Link
           href="/settings"
@@ -215,7 +214,6 @@ export function Sidebar() {
           </div>
           {!collapsed && <span>Notifications</span>}
         </Link>
-        <LogoutButton showText={!collapsed} />
       </div>
     </aside>
   );
@@ -318,7 +316,6 @@ export function Sidebar() {
                     <Bell className="h-5 w-5" aria-hidden="true" />
                     <span>Notifications</span>
                   </Link>
-                  <LogoutButton showText />
                 </div>
               </aside>
             </div>
