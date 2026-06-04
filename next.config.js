@@ -48,6 +48,9 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/login",
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/signup",
+    // Modern Clerk v6 env vars — replaces deprecated NEXT_PUBLIC_CLERK_AFTER_SIGN_IN/UP_URL
+    NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: "/dashboard",
+    NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: "/dashboard",
   },
   poweredByHeader: false,
   eslint: { ignoreDuringBuilds: true },
@@ -128,6 +131,15 @@ const nextConfig = {
 
   async headers() {
     return [
+      {
+        // Explicit MIME type for CSS static assets — must come before the
+        // wildcard rule so X-Content-Type-Options: nosniff doesn't reject them.
+        source: "/_next/static/css/(.*)",
+        headers: [
+          { key: "Content-Type", value: "text/css; charset=utf-8" },
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
       {
         source: "/(.*)",
         headers: [
