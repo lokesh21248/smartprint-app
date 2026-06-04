@@ -109,6 +109,9 @@ export interface OrderFileRecord {
   file_size: number;
   page_count: number;
   mime_type: string;
+  scan_status?: "pending" | "scanning" | "clean" | "infected" | "failed";
+  infected?: boolean;
+  scanned_at?: string;
   created_at?: string;
   file_status?: "active" | "expired";
 }

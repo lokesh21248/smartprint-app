@@ -132,12 +132,21 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Explicit MIME type for CSS static assets — must come before the
-        // wildcard rule so X-Content-Type-Options: nosniff doesn't reject them.
+        // ── CSS files: explicit MIME type + immutable cache ─────────────────
+        // This rule MUST come before the wildcard /_next/static rule below.
+        // Cloudflare (and other CDNs) can strip or ignore Content-Type if
+        // not explicitly set on the resource path. The Vary header forces
+        // the CDN to re-validate instead of serving a stale wrong-type entry.
         source: "/_next/static/css/(.*)",
         headers: [
           { key: "Content-Type", value: "text/css; charset=utf-8" },
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+          // Forces CDN (Cloudflare) to store separate cache entries per encoding,
+          // preventing a text/plain-typed gzip response being served as text/css.
+          { key: "Vary", value: "Accept-Encoding" },
+          // Belt-and-suspenders: nosniff is already on the global rule but repeating
+          // it here ensures this specific rule always wins for CSS paths.
+          { key: "X-Content-Type-Options", value: "nosniff" },
         ],
       },
       {

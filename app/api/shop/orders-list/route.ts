@@ -41,7 +41,10 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    // 3. Build query — only the fields the client actually needs
+    // 3. Build query — only the fields the client actually needs.
+    //    order_files is a left join: orders with no file rows still appear.
+    //    We pull scan_status so the dashboard can show security badges without
+    //    a separate round-trip.
     let query = supabase
       .from("orders")
       .select(
@@ -62,6 +65,8 @@ export async function GET(request: Request) {
           "created_at",
           "updated_at",
           "shops!inner(clerk_owner_id)",
+          // Pull scan_status from order_files (left join — may be empty array)
+          "order_files(id, scan_status, infected)",
         ].join(", "),
         { count: "estimated" }
       )
@@ -104,6 +109,12 @@ export async function GET(request: Request) {
     // 4. Map DB column names → client field names
     // Cast through unknown[] to bypass Supabase's GenericStringError union
     // (occurs when select() includes a !inner join — the TS type is overly broad).
+    type OrderFileRow = {
+      id: string;
+      scan_status: string | null;
+      infected: boolean | null;
+    };
+
     type OrderRow = {
       id: string;
       short_token: string;
@@ -120,6 +131,21 @@ export async function GET(request: Request) {
       status: string;
       created_at: string;
       updated_at: string;
+      order_files?: OrderFileRow[];
+    };
+
+    // Derive the worst file_scan_status across all files in the order.
+    // Priority: infected > scanning > failed > pending > clean
+    const worstScanStatus = (
+      files: OrderFileRow[] | undefined
+    ): string | null => {
+      if (!files || files.length === 0) return null;
+      const statuses = files.map((f) => f.scan_status ?? "pending");
+      if (statuses.includes("infected")) return "infected";
+      if (statuses.includes("scanning")) return "scanning";
+      if (statuses.includes("failed")) return "failed";
+      if (statuses.includes("pending")) return "pending";
+      return "clean";
     };
 
     const rows = (data ?? []) as unknown as OrderRow[];
@@ -132,13 +158,15 @@ export async function GET(request: Request) {
       file_name: ord.file_name,
       page_count: ord.page_count,
       copies: ord.copies,
-      color: ord.is_color,          // DB: is_color      → client: color
+      color: ord.is_color,              // DB: is_color      → client: color
       double_sided: ord.is_double_sided, // DB: is_double_sided → client: double_sided
-      order_status: ord.status,     // DB: status        → client: order_status
+      order_status: ord.status,          // DB: status        → client: order_status
       notes: ord.notes ?? "",
       total_amount: ord.total_amount,
       created_at: ord.created_at,
       updated_at: ord.updated_at,
+      // Aggregated security status — null means no files linked yet
+      file_scan_status: worstScanStatus(ord.order_files),
     }));
 
     return NextResponse.json({

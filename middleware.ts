@@ -117,9 +117,21 @@ export default clerkMiddleware(async (auth, req) => {
 // is evaluated.
 export const config = {
   matcher: [
-    // Skip all internal Next.js paths (_next) and all static files
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|otf|eot|map)$).*)",
-    // Always run for API routes
+    /*
+     * Match all request paths EXCEPT:
+     *  - _next/static  (Next.js static chunks — CSS, JS, fonts, images)
+     *  - _next/image   (Next.js image optimisation endpoint)
+     *  - favicon.ico   (browser tab icon)
+     *  - Any path whose last segment contains a dot + common static extension.
+     *    The `[^?]*` prefix stops at query strings, so `/page?v=1.0` is NOT
+     *    excluded but `/file.css` IS. This is the Clerk v6 recommended pattern.
+     *
+     * ⚠️  DO NOT use the old `/((?!_next|.*\\..*).*)` pattern — the dot-exclusion
+     *     is unanchored and can miss sub-paths inside _next/ when Cloudflare or a
+     *     CDN rewrites the Host header before the regex is evaluated.
+     */
+    "/((?!_next/static|_next/image|favicon\\.ico|[^?]*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js(?!on)|woff|woff2|ttf|otf|eot|map)).*)",
+    // Always run for API routes regardless of extension
     "/(api|trpc)(.*)",
   ],
 };

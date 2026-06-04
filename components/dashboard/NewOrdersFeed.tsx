@@ -9,9 +9,57 @@ import { OrderCardSkeleton } from "@/components/ui/skeleton";
 import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
 import { toast } from "sonner";
 import { TimeAgo } from "./TimeAgo";
-import { FileText, Phone, Check, X, Printer } from "lucide-react";
+import { FileText, Phone, Check, X, Printer, ShieldAlert, ShieldCheck, Clock } from "lucide-react";
 import Link from "next/link";
 import type { Order } from "@/types";
+
+// ─── Scan Status Badge ────────────────────────────────────────────────────────
+// Shown on order cards to surface file security state.
+// Clean files show nothing — noise reduction for normal operations.
+
+type ScanStatus = "pending" | "scanning" | "clean" | "infected" | "failed" | null;
+
+function ScanStatusBadge({ status }: { status: ScanStatus }) {
+  if (!status || status === "clean") return null;
+
+  if (status === "infected") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-600 text-xs font-semibold mt-1.5">
+        <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+        <span>⚠️ File Quarantined — Malicious content detected</span>
+      </div>
+    );
+  }
+
+  if (status === "scanning") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mt-1.5">
+        <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 animate-pulse" aria-hidden="true" />
+        <span>Scanning file…</span>
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-500 text-xs font-medium mt-1.5">
+        <Clock className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+        <span>Scan pending</span>
+      </div>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 border border-orange-200 text-orange-600 text-xs font-medium mt-1.5">
+        <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+        <span>Scan failed — will retry</span>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 /**
  * Fetches new orders via the authenticated server API route.
@@ -146,12 +194,17 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   </p>
 
                   {/* Config */}
-                  <p className="text-xs text-[#6B7280] mb-2">
+                  <p className="text-xs text-[#6B7280] mb-1">
                     <FileText className="h-3 w-3 inline mr-1" />
-                    {order.files && order.files.length > 0 
+                    {order.files && order.files.length > 0
                       ? `${order.files.length} file${order.files.length > 1 ? "s" : ""} · mixed config`
                       : `1 file · ${order.page_count}pg x ${order.copies} copies (${order.color ? "Color" : "B&W"})`}
                   </p>
+
+                  {/* Scan status badge */}
+                  <ScanStatusBadge
+                    status={(order as Order & { file_scan_status?: ScanStatus }).file_scan_status ?? null}
+                  />
 
                   {/* Special instructions */}
                   {order.notes && (
@@ -178,16 +231,19 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
 
               {/* Action buttons */}
               <div className="flex gap-2 mt-3">
-                <Button
-                  id={`accept-${order.id}`}
-                  size="sm"
-                  className="flex-1"
-                  loading={processing[order.id]}
-                  onClick={() => handleAction(order.id, "ACCEPTED")}
-                >
-                  <Check className="h-4 w-4" />
-                  Accept
-                </Button>
+                {/* Hide Accept for infected files — shop owner must not process quarantined orders */}
+                {(order as Order & { file_scan_status?: ScanStatus }).file_scan_status !== "infected" && (
+                  <Button
+                    id={`accept-${order.id}`}
+                    size="sm"
+                    className="flex-1"
+                    loading={processing[order.id]}
+                    onClick={() => handleAction(order.id, "ACCEPTED")}
+                  >
+                    <Check className="h-4 w-4" />
+                    Accept
+                  </Button>
+                )}
                 <Button
                   id={`reject-${order.id}`}
                   size="sm"
@@ -197,7 +253,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   onClick={() => handleAction(order.id, "CANCELLED")}
                 >
                   <X className="h-4 w-4" />
-                  Reject
+                  {(order as Order & { file_scan_status?: ScanStatus }).file_scan_status === "infected" ? "Dismiss" : "Reject"}
                 </Button>
                 <Link href={`/dashboard/orders/${order.id}`}>
                   <Button size="sm" variant="ghost" className="px-3">
