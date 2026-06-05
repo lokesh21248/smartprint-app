@@ -54,34 +54,36 @@ const isProtectedRoute = createRouteMatcher([
   "/api/staff(.*)",
 ]);
 
-// ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
+// ─── STATIC-BYPASS ROUTES ─────────────────────────────────────────────────────
+// Routes that must be fully CDN-cacheable. clerkMiddleware injects
+// X-Clerk-Auth-* response headers even on public routes, which Next.js
+// treats as per-request data → Cache-Control: no-store.
+// By short-circuiting with a plain NextResponse.next() BEFORE the Clerk
+// wrapper runs, we keep these responses clean and cacheable.
+const isStaticPublicRoute = createRouteMatcher([
+  "/",
+  "/features(.*)",
+  "/pricing(.*)",
+  "/about(.*)",
+  "/contact(.*)",
+  "/blog(.*)",
+]);
+
+// ─── CLERK MIDDLEWARE ─────────────────────────────────────────────────────────
 //
 // NOTE: www → non-www redirect is handled by vercel.json at the Vercel edge
 // (before this middleware runs). The duplicate redirect that used to live here
 // has been removed to avoid dead code and an extra middleware evaluation.
-export default clerkMiddleware(async (auth, req) => {
-  // 1. Homepage fast-path: if the user is already authenticated, bounce them
-  //    straight to /dashboard at the edge — no origin SSR needed.
-  //    We call auth() only on the exact root path to keep all other public
-  //    routes completely free of Clerk session resolution.
-  if (req.nextUrl.pathname === "/") {
-    const { userId } = await auth();
-    if (userId) {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
-    }
-    // Not authenticated — let the static homepage render.
-    return NextResponse.next();
-  }
-
-  // 2. All other public routes — skip Clerk entirely
+const clerkHandler = clerkMiddleware(async (auth, req) => {
+  // 1. All public routes — skip Clerk session resolution entirely
   if (isPublicRoute(req)) {
     return NextResponse.next();
   }
 
-  // 3. Resolve Clerk session for protected/admin routes
+  // 2. Resolve Clerk session for protected/admin routes
   const { userId, sessionClaims, redirectToSignIn } = await auth();
 
-  // 4. Admin routes — fast claims check, no DB
+  // 3. Admin routes — fast claims check, no DB
   if (isAdminRoute(req)) {
     if (!userId) {
       return redirectToSignIn();
@@ -98,7 +100,7 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  // 5. Protected routes — require sign-in only
+  // 4. Protected routes — require sign-in only
   if (isProtectedRoute(req)) {
     if (!userId) {
       return redirectToSignIn();
@@ -106,9 +108,24 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  // 6. All other routes — allow
+  // 5. All other routes — allow
   return NextResponse.next();
 });
+
+// ─── EXPORTED MIDDLEWARE ──────────────────────────────────────────────────────
+// Static public routes (homepage, marketing pages) bypass Clerk entirely so
+// their responses remain Cache-Control-clean and CDN-cacheable.
+// All other routes (auth, dashboard, API) go through the full Clerk handler.
+export default function middleware(
+  req: import("next/server").NextRequest,
+  event: import("next/server").NextFetchEvent
+) {
+  if (isStaticPublicRoute(req)) {
+    return NextResponse.next();
+  }
+  return clerkHandler(req, event);
+}
+
 
 // ─── MATCHER ──────────────────────────────────────────────────────────────────
 // Uses the Next.js recommended pattern (https://clerk.com/docs/references/nextjs/clerk-middleware#protect-all-routes).

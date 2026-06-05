@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { HomeAuthRedirect } from "@/components/shared/HomeAuthRedirect";
 
 // Static page rendered at build time, revalidated every hour (ISR).
 // Authenticated-user → /dashboard redirect happens in middleware at the
@@ -25,6 +26,8 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16 text-center">
+      {/* Client-side redirect for authenticated users — keeps this page static/CDN-cacheable */}
+      <HomeAuthRedirect />
       <h1 className="text-4xl font-bold text-gray-900 mb-4">
         Digital Print Shop Management
       </h1>
