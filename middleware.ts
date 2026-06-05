@@ -116,16 +116,30 @@ const clerkHandler = clerkMiddleware(async (auth, req) => {
 // Static public routes (homepage, marketing pages) bypass Clerk entirely so
 // their responses remain Cache-Control-clean and CDN-cacheable.
 // All other routes (auth, dashboard, API) go through the full Clerk handler.
+//
+// We also explicitly delete any X-Clerk-Auth-* headers and force a public
+// Cache-Control, because Vercel's infrastructure may inject Clerk headers
+// independently of our handler — which would otherwise keep causing no-store.
 export default function middleware(
   req: import("next/server").NextRequest,
   event: import("next/server").NextFetchEvent
 ) {
   if (isStaticPublicRoute(req)) {
-    return NextResponse.next();
+    const res = NextResponse.next();
+    // Strip any Clerk-injected headers that would prevent CDN caching
+    res.headers.delete("x-clerk-auth-status");
+    res.headers.delete("x-clerk-auth-reason");
+    res.headers.delete("x-clerk-auth-message");
+    // Tell Vercel Edge + Cloudflare this page is publicly cacheable for 1 hour
+    // stale-while-revalidate lets CDN serve stale while Next.js ISR runs in bg
+    res.headers.set(
+      "Cache-Control",
+      "public, s-maxage=3600, stale-while-revalidate=86400"
+    );
+    return res;
   }
   return clerkHandler(req, event);
 }
-
 
 // ─── MATCHER ──────────────────────────────────────────────────────────────────
 // Uses the Next.js recommended pattern (https://clerk.com/docs/references/nextjs/clerk-middleware#protect-all-routes).
