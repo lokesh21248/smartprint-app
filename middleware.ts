@@ -55,26 +55,33 @@ const isProtectedRoute = createRouteMatcher([
 ]);
 
 // ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
+//
+// NOTE: www → non-www redirect is handled by vercel.json at the Vercel edge
+// (before this middleware runs). The duplicate redirect that used to live here
+// has been removed to avoid dead code and an extra middleware evaluation.
 export default clerkMiddleware(async (auth, req) => {
-  // 1. WWW to non-WWW Redirect (Consolidate traffic, avoid search crawler loops)
-  const host = req.headers.get("host") || "";
-  if (host.startsWith("www.")) {
-    const newHost = host.replace(/^www\./, "");
-    return NextResponse.redirect(
-      `https://${newHost}${req.nextUrl.pathname}${req.nextUrl.search}`,
-      308
-    );
+  // 1. Homepage fast-path: if the user is already authenticated, bounce them
+  //    straight to /dashboard at the edge — no origin SSR needed.
+  //    We call auth() only on the exact root path to keep all other public
+  //    routes completely free of Clerk session resolution.
+  if (req.nextUrl.pathname === "/") {
+    const { userId } = await auth();
+    if (userId) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+    // Not authenticated — let the static homepage render.
+    return NextResponse.next();
   }
 
-  // 2. Public routes — skip Clerk entirely
+  // 2. All other public routes — skip Clerk entirely
   if (isPublicRoute(req)) {
     return NextResponse.next();
   }
 
-  // 2. Resolve Clerk session
+  // 3. Resolve Clerk session for protected/admin routes
   const { userId, sessionClaims, redirectToSignIn } = await auth();
 
-  // 3. Admin routes — fast claims check, no DB
+  // 4. Admin routes — fast claims check, no DB
   if (isAdminRoute(req)) {
     if (!userId) {
       return redirectToSignIn();
@@ -91,7 +98,7 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  // 4. Protected routes — require sign-in only
+  // 5. Protected routes — require sign-in only
   if (isProtectedRoute(req)) {
     if (!userId) {
       return redirectToSignIn();
@@ -99,7 +106,7 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  // 5. All other routes — allow
+  // 6. All other routes — allow
   return NextResponse.next();
 });
 

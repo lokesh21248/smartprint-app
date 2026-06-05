@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
+// Static page rendered at build time, revalidated every hour (ISR).
+// Authenticated-user → /dashboard redirect happens in middleware at the
+// Vercel edge, so this page never needs to call auth() or force SSR.
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Scan2Paper – Digital Print Shop Management",
@@ -21,12 +22,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function Home() {
-  const { userId } = await auth();
-  if (userId) {
-    redirect("/dashboard");
-  }
-
+export default function Home() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16 text-center">
       <h1 className="text-4xl font-bold text-gray-900 mb-4">

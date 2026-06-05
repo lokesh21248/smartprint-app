@@ -4,17 +4,30 @@
 
 import * as Sentry from "@sentry/nextjs";
 
+// Only load Sentry Replay on authenticated/dashboard pages.
+// The Replay integration adds ~60 KB (gzip) to the client bundle and starts
+// observing the DOM immediately — unnecessary on the public marketing pages
+// where there is no user session to replay anyway.
+const isAuthenticatedRoute =
+  typeof window !== "undefined" &&
+  /^\/(dashboard|admin|analytics|settings|profile|staff|shop-profile|my-shop|create-shop)/.test(
+    window.location.pathname
+  );
+
 Sentry.init({
   dsn: "https://9f2ddc0b8fa48768054c21450b52ee90@o4511199536021504.ingest.de.sentry.io/4511199543820368",
 
   // ── Integrations ──────────────────────────────────────────────────────────
-  integrations: [
-    Sentry.replayIntegration({
-      // Mask all text and block all media to protect customer PII in replays
-      maskAllText: true,
-      blockAllMedia: true,
-    }),
-  ],
+  // Replay is scoped to authenticated routes only (saves ~60 KB on public pages)
+  integrations: isAuthenticatedRoute
+    ? [
+        Sentry.replayIntegration({
+          // Mask all text and block all media to protect customer PII in replays
+          maskAllText: true,
+          blockAllMedia: true,
+        }),
+      ]
+    : [],
 
   // ── Sampling ──────────────────────────────────────────────────────────────
   // 10% of traces in production, 100% in dev
