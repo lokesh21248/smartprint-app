@@ -114,11 +114,12 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
                 labelLine={false}
                 label={({ cx, cy, midAngle, outerRadius, name, value }) => {
                   const RADIAN = Math.PI / 180;
-                  const radius = Number(outerRadius) + 12;
-                  const centerX = typeof cx === "number" ? cx : parseFloat(cx);
-                  const centerY = typeof cy === "number" ? cy : parseFloat(cy);
-                  const x = centerX + radius * Math.cos(-midAngle * RADIAN);
-                  const y = centerY + radius * Math.sin(-midAngle * RADIAN);
+                  const radius = Number(outerRadius ?? 90) + 12;
+                  const centerX = typeof cx === "number" ? cx : parseFloat(cx ?? "0");
+                  const centerY = typeof cy === "number" ? cy : parseFloat(cy ?? "0");
+                  const angle = midAngle ?? 0;
+                  const x = centerX + radius * Math.cos(-angle * RADIAN);
+                  const y = centerY + radius * Math.sin(-angle * RADIAN);
                   return (
                     <text
                       x={x}
