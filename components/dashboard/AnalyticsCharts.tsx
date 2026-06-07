@@ -99,10 +99,10 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Orders by status pie */}
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
+        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 overflow-visible">
           <h2 className="text-lg font-bold text-[#111827] mb-4">Orders by Status</h2>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
+          <ResponsiveContainer width="100%" height={280} style={{ overflow: "visible" }}>
+            <PieChart style={{ overflow: "visible" }} margin={{ top: 24, bottom: 24, left: 10, right: 10 }}>
               <Pie
                 data={analyticsData.statusBreakdown}
                 cx="50%"
@@ -111,8 +111,27 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
                 outerRadius={90}
                 paddingAngle={4}
                 dataKey="value"
-                label={({ name, value }) => `${name} ${value}%`}
                 labelLine={false}
+                label={({ cx, cy, midAngle, outerRadius, name, value }) => {
+                  const RADIAN = Math.PI / 180;
+                  const radius = Number(outerRadius) + 12;
+                  const centerX = typeof cx === "number" ? cx : parseFloat(cx);
+                  const centerY = typeof cy === "number" ? cy : parseFloat(cy);
+                  const x = centerX + radius * Math.cos(-midAngle * RADIAN);
+                  const y = centerY + radius * Math.sin(-midAngle * RADIAN);
+                  return (
+                    <text
+                      x={x}
+                      y={y}
+                      fill="#374151"
+                      textAnchor={x > centerX ? "start" : "end"}
+                      dominantBaseline="central"
+                      className="text-xs font-semibold select-none"
+                    >
+                      {`${name} ${value}%`}
+                    </text>
+                  );
+                }}
               >
                 {analyticsData.statusBreakdown.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
@@ -126,7 +145,7 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
         {/* Peak hours */}
         <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
           <h2 className="text-lg font-bold text-[#111827] mb-4">Peak Hours</h2>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={280}>
             <BarChart data={analyticsData.peakHours} barSize={16}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "#9CA3AF" }} />
