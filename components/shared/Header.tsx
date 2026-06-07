@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Bell, Search, Menu, User, Settings, LogOut, Loader2, ChevronDown } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { Bell, Menu, User, Settings, LogOut, Loader2, ChevronDown } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
 import { useClerk } from "@clerk/nextjs";
@@ -37,7 +37,6 @@ function openMobileSidebar() {
 
 export function Header() {
   const pathname = usePathname();
-  const router = useRouter();
   const { shop, notificationCount } = useShopStore();
   const { pendingCount } = useOrderStore();
   const { signOut } = useClerk();
@@ -138,20 +137,6 @@ export function Header() {
 
       {/* Right: Search hint + Notification Bell + Avatar */}
       <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-        {/* Quick search hint — hidden on small screens */}
-        <div
-          className="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-pointer hover:bg-slate-100/80 transition-all duration-200"
-          role="button"
-          tabIndex={0}
-          aria-label="Search orders"
-        >
-          <Search className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-          <span>Search orders…</span>
-          <kbd className="ml-2 rounded bg-white border border-slate-200/60 shadow-[0_1px_1px_rgba(0,0,0,0.03)] px-1.5 py-0.5 text-[9px] font-mono text-slate-400">
-            ⌘K
-          </kbd>
-        </div>
-
         {/* Notification Bell */}
         <button
           type="button"
