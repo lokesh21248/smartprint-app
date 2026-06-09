@@ -126,6 +126,7 @@ export async function GET(request: Request) {
     type OrderFileRow = {
       id: string;
       scan_status: string | null;
+      infected?: boolean | null;
     };
 
     type OrderRow = {

@@ -587,7 +587,6 @@ function OrderUploadPageInner() {
           signal: controller.signal,
           onRetry: (attempt) => {
             tracker.incrementRetry();
-            toast.info(`Retrying… (attempt ${attempt + 1})`);
           },
         }
       );
