@@ -6,18 +6,19 @@ import {
   PieChart, Pie, Cell, BarChart, Bar,
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
-import type { DashboardStats } from "@/types";
 
-export interface AnalyticsData {
-  revenue: { date: string; revenue: number; orders: number }[];
-  statusBreakdown: { name: string; value: number; color: string }[];
-  peakHours: { hour: string; orders: number }[];
-  services: { name: string; count: number }[];
+export interface RawOrder {
+  total_amount: number | string | null;
+  status: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  customer_phone: string | null;
+  is_color: boolean | null;
 }
 
 interface AnalyticsChartsProps {
-  analyticsData: AnalyticsData;
-  stats: DashboardStats;
+  orders: RawOrder[];
 }
 
 const DATE_RANGES = [
@@ -26,11 +27,163 @@ const DATE_RANGES = [
   { label: "This Month", value: "month" },
 ];
 
-export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChartsProps) {
+const toLocalDateString = (date: Date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const formatChartDate = (dateStr: string) => {
+  try {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    return dateObj.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
+  }
+};
+
+export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
   const [dateRange, setDateRange] = useState("7d");
 
-  const totalRevenue = analyticsData.revenue.reduce((s, r) => s + r.revenue, 0);
-  const totalOrders = analyticsData.revenue.reduce((s, r) => s + r.orders, 0);
+  // Determine local date range boundaries
+  const now = new Date();
+  let startDate = new Date();
+
+  if (dateRange === "7d") {
+    startDate.setDate(now.getDate() - 6); // Last 7 days, including today
+    startDate.setHours(0, 0, 0, 0);
+  } else if (dateRange === "30d") {
+    startDate.setDate(now.getDate() - 29); // Last 30 days, including today
+    startDate.setHours(0, 0, 0, 0);
+  } else if (dateRange === "month") {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0); // Start of current month
+  }
+
+  // Filter orders by local creation date
+  const filteredOrders = orders.filter((o) => {
+    const createdDate = new Date(o.created_at);
+    return createdDate >= startDate;
+  });
+
+  const completedOrders = filteredOrders.filter((o) => {
+    const s = o.status?.toUpperCase();
+    return s === "COMPLETED" || s === "SUCCESS";
+  });
+
+  const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+  const totalOrders = filteredOrders.length;
+  
+  // Corrected AOV formula: Completed Revenue / Completed Orders Count
+  const avgOrderValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
+
+  // Average completion time calculation (only for completed orders)
+  let totalCompletionMins = 0;
+  let completionCount = 0;
+  for (const o of completedOrders) {
+    const createdTime = new Date(o.created_at).getTime();
+    const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
+    const diff = (completedTime - createdTime) / 60000;
+    if (diff >= 0) {
+      totalCompletionMins += diff;
+      completionCount++;
+    }
+  }
+  const avgCompletionMins = completionCount > 0 ? Math.round(totalCompletionMins / completionCount) : 0;
+
+  // Generate calendar days for gap-filling
+  const datesList: string[] = [];
+  const tempDate = new Date(startDate);
+  const todayStr = toLocalDateString(now);
+  while (toLocalDateString(tempDate) <= todayStr) {
+    datesList.push(toLocalDateString(tempDate));
+    tempDate.setDate(tempDate.getDate() + 1);
+    if (datesList.length > 100) break; // safeguard
+  }
+
+  // Group revenue and order count by local creation date
+  const revenueByDate: Record<string, { revenue: number; orders: number }> = {};
+  for (const dateStr of datesList) {
+    revenueByDate[dateStr] = { revenue: 0, orders: 0 };
+  }
+
+  for (const o of filteredOrders) {
+    const createdDateStr = toLocalDateString(new Date(o.created_at));
+    if (revenueByDate[createdDateStr]) {
+      revenueByDate[createdDateStr].orders++;
+      const s = o.status?.toUpperCase();
+      if (s === "COMPLETED" || s === "SUCCESS") {
+        revenueByDate[createdDateStr].revenue += Number(o.total_amount) || 0;
+      }
+    }
+  }
+
+  const revenueTrend = Object.entries(revenueByDate)
+    .map(([dateStr, data]) => ({
+      date: formatChartDate(dateStr),
+      revenue: data.revenue,
+      orders: data.orders,
+      rawDate: dateStr,
+    }))
+    .sort((a, b) => a.rawDate.localeCompare(b.rawDate));
+
+  // Status Breakdown
+  const STATUS_COLORS: Record<string, string> = {
+    PLACED: "#3B82F6",
+    ACCEPTED: "#8B5CF6",
+    PRINTING: "#F59E0B",
+    READY: "#10B981",
+    COMPLETED: "#059669",
+    CANCELLED: "#EF4444",
+  };
+  const statusCount: Record<string, number> = {
+    PLACED: 0,
+    ACCEPTED: 0,
+    PRINTING: 0,
+    READY: 0,
+    COMPLETED: 0,
+    CANCELLED: 0,
+  };
+  for (const o of filteredOrders) {
+    const status = (o.status || "PLACED").toUpperCase();
+    const chartStatus = status === "NEW" ? "PLACED" : status;
+    if (statusCount[chartStatus] !== undefined) {
+      statusCount[chartStatus]++;
+    }
+  }
+  const statusBreakdown = Object.entries(statusCount)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => ({
+      name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
+      value: count,
+      color: STATUS_COLORS[status] || "#9CA3AF",
+    }));
+
+  // Peak Hours
+  const peakHoursCount: Record<string, number> = {};
+  for (const o of filteredOrders) {
+    const hour = new Date(o.created_at).getHours();
+    const hourStr = `${hour.toString().padStart(2, "0")}:00`;
+    peakHoursCount[hourStr] = (peakHoursCount[hourStr] || 0) + 1;
+  }
+  const peakHours = Object.entries(peakHoursCount)
+    .map(([hour, count]) => ({ hour, orders: count }))
+    .sort((a, b) => a.hour.localeCompare(b.hour));
+
+  // Top Services
+  let bwCount = 0;
+  let colorCount = 0;
+  for (const o of filteredOrders) {
+    if (o.is_color) colorCount++;
+    else bwCount++;
+  }
+  const services = [
+    { name: "B&W Printing", count: bwCount },
+    { name: "Color Printing", count: colorCount },
+  ]
+    .filter((s) => s.count > 0)
+    .sort((a, b) => b.count - a.count);
 
   return (
     <div className="space-y-6">
@@ -62,8 +215,8 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
         {[
           { label: "Total Revenue", value: formatCurrency(totalRevenue), emoji: "💰" },
           { label: "Total Orders", value: totalOrders.toString(), emoji: "📦" },
-          { label: "Avg per Order", value: formatCurrency(totalRevenue / Math.max(totalOrders, 1)), emoji: "📊" },
-          { label: "Avg Completion", value: `${stats.avgCompletionMins} min`, emoji: "⏱️" },
+          { label: "Avg per Order", value: formatCurrency(avgOrderValue), emoji: "📊" },
+          { label: "Avg Completion", value: `${avgCompletionMins} min`, emoji: "⏱️" },
         ].map((card) => (
           <div key={card.label} className="bg-white rounded-2xl border border-[#E5E7EB] p-5">
             <p className="text-2xl mb-1">{card.emoji}</p>
@@ -77,7 +230,7 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
       <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
         <h2 className="text-lg font-bold text-[#111827] mb-4">Revenue Trend</h2>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={analyticsData.revenue}>
+          <LineChart data={revenueTrend}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
             <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#9CA3AF" }} />
             <YAxis tick={{ fontSize: 12, fill: "#9CA3AF" }} tickFormatter={(v) => `₹${v}`} />
@@ -104,7 +257,7 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
           <ResponsiveContainer width="100%" height={280} style={{ overflow: "visible" }}>
             <PieChart style={{ overflow: "visible" }} margin={{ top: 24, bottom: 24, left: 10, right: 10 }}>
               <Pie
-                data={analyticsData.statusBreakdown}
+                data={statusBreakdown}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -122,19 +275,19 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
                   const y = centerY + radius * Math.sin(-angle * RADIAN);
                   return (
                     <text
-                      x={x}
-                      y={y}
-                      fill="#374151"
-                      textAnchor={x > centerX ? "start" : "end"}
-                      dominantBaseline="central"
-                      className="text-xs font-semibold select-none"
+                       x={x}
+                       y={y}
+                       fill="#374151"
+                       textAnchor={x > centerX ? "start" : "end"}
+                       dominantBaseline="central"
+                       className="text-xs font-semibold select-none"
                     >
-                      {`${name} ${value}%`}
+                      {`${name} (${value})`}
                     </text>
                   );
                 }}
               >
-                {analyticsData.statusBreakdown.map((entry, i) => (
+                {statusBreakdown.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
               </Pie>
@@ -147,7 +300,7 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
         <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
           <h2 className="text-lg font-bold text-[#111827] mb-4">Peak Hours</h2>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={analyticsData.peakHours} barSize={16}>
+            <BarChart data={peakHours} barSize={16}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "#9CA3AF" }} />
               <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} />
@@ -165,7 +318,7 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
           <button 
             onClick={() => {
               const headers = ["Date", "Orders", "Revenue"];
-              const rows = analyticsData.revenue.map(r => [r.date, r.orders, r.revenue]);
+              const rows = revenueTrend.map(r => [r.rawDate, r.orders, r.revenue]);
               const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
               const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
               const link = document.createElement("a");
@@ -183,8 +336,8 @@ export default function AnalyticsCharts({ analyticsData, stats }: AnalyticsChart
           </button>
         </div>
         <div className="space-y-3">
-          {analyticsData.services.map((svc, i) => {
-            const max = Math.max(...analyticsData.services.map((s) => s.count));
+          {services.map((svc, i) => {
+            const max = Math.max(...services.map((s) => s.count));
             const pct = (svc.count / max) * 100;
             return (
               <div key={svc.name} className="flex items-center gap-3">

@@ -5,8 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 
-import type { DashboardStats } from "@/types";
-
 export const metadata: Metadata = {
   title: "Analytics",
   description: "View revenue trends, order status breakdowns, peak hours, and service analytics for your print shop.",
@@ -24,164 +22,30 @@ export default async function AnalyticsPage() {
   const { data: shop } = await supabase
     .from("shops")
     .select("id")
-    .eq("clerk_owner_id", userId)  // ← correct column
+    .eq("clerk_owner_id", userId)
     .limit(1)
     .maybeSingle();
 
   if (!shop) {
-    return <AnalyticsCharts analyticsData={{ revenue: [], statusBreakdown: [], peakHours: [], services: [] }} stats={{ pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }} />;
+    return <AnalyticsCharts orders={[]} />;
   }
 
-  // Fetch last 30 days of orders — bounded query, uses idx_orders_shop_status_created
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  // Fetch orders — either 30 days ago or start of current month, whichever is earlier
+  const now = new Date();
+  const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const earliestDate = startOfCurrentMonth < thirtyDaysAgo ? startOfCurrentMonth : thirtyDaysAgo;
+  const rangeStartIso = earliestDate.toISOString();
+
   const { data: ordersData } = await supabase
     .from("orders")
     .select("total_amount, status, created_at, updated_at, completed_at, customer_phone, is_color")
     .eq("shop_id", shop.id)
-    .gte("created_at", thirtyDaysAgo)
+    .gte("created_at", rangeStartIso)
     .order("created_at", { ascending: false })
-    .limit(1000); // hard cap: no shop has > 1000 orders in 30 days at launch
+    .limit(1500); // slightly increased cap to accommodate up to 1500 orders
 
-  const rawOrders = (ordersData ?? []);
+  const rawOrders = (ordersData ?? []) as any[];
 
-  // ─── Calculate Stats ────────────────────────────────────────────────────────
-  const todayStr = new Date().toISOString().split("T")[0];
-  let pendingOrdersCount = 0;
-  let ordersTodayCount = 0;
-  let revenueTodayCount = 0;
-  let completedTodayCount = 0;
-  const activeCustomersSet = new Set<string>();
-
-  const statusCount: Record<string, number> = {
-    PLACED: 0,
-    ACCEPTED: 0,
-    PRINTING: 0,
-    READY: 0,
-    COMPLETED: 0,
-    CANCELLED: 0,
-  };
-
-  const revenueByDate: Record<string, { revenue: number; orders: number }> = {};
-  const peakHoursCount: Record<string, number> = {};
-  
-  let bwCount = 0;
-  let colorCount = 0;
-
-  let totalCompletionMins = 0;
-  let completionCount = 0;
-
-  for (const o of rawOrders) {
-    const status = (o.status || "PLACED").toUpperCase();
-    
-    // Stats
-    if (status !== "COMPLETED" && status !== "CANCELLED" && status !== "SUCCESS" && status !== "REJECTED") {
-      pendingOrdersCount++;
-    }
-    
-    const createdDate = new Date(o.created_at).toISOString().split("T")[0];
-    if (createdDate === todayStr) {
-      ordersTodayCount++;
-    }
-
-    const isCompleted = status === "COMPLETED" || status === "SUCCESS";
-    let compDateStr = "";
-    if (isCompleted) {
-      const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
-      compDateStr = new Date(completedTime).toISOString().split("T")[0];
-      
-      if (compDateStr === todayStr) {
-        revenueTodayCount += Number(o.total_amount) || 0;
-        completedTodayCount++;
-      }
-
-      const diffMins = (completedTime - new Date(o.created_at).getTime()) / 60000;
-      totalCompletionMins += diffMins;
-      completionCount++;
-    }
-
-    if (o.customer_phone) activeCustomersSet.add(o.customer_phone);
-
-    // Status Breakdown (normalize legacy NEW to PLACED for chart grouping)
-    const chartStatus = status === "NEW" ? "PLACED" : status;
-    if (statusCount[chartStatus] !== undefined) {
-      statusCount[chartStatus]++;
-    }
-
-    // Revenue Trend (group by YYYY-MM-DD, only COMPLETED)
-    const trendDateStr = isCompleted && compDateStr ? compDateStr : createdDate;
-    if (!revenueByDate[trendDateStr]) {
-      revenueByDate[trendDateStr] = { revenue: 0, orders: 0 };
-    }
-    if (isCompleted) {
-      revenueByDate[trendDateStr].revenue += Number(o.total_amount) || 0;
-    }
-    // Track order creation counts by creation date
-    if (!revenueByDate[createdDate]) {
-      revenueByDate[createdDate] = { revenue: 0, orders: 0 };
-    }
-    revenueByDate[createdDate].orders++;
-
-    // Peak Hours
-    const hour = new Date(o.created_at).getHours();
-    const hourStr = `${hour.toString().padStart(2, "0")}:00`;
-    peakHoursCount[hourStr] = (peakHoursCount[hourStr] || 0) + 1;
-
-    // Services (use `is_color` column — matches our select)
-    if (o.is_color) colorCount++;
-    else bwCount++;
-  }
-
-  const avgCompletionMins = completionCount > 0 ? Math.round(totalCompletionMins / completionCount) : 0;
-
-  const stats: DashboardStats = {
-    pendingOrders: pendingOrdersCount,
-    ordersToday: ordersTodayCount,
-    revenueToday: revenueTodayCount,
-    completedToday: completedTodayCount,
-    activeCustomers: activeCustomersSet.size,
-    avgCompletionMins: avgCompletionMins,
-  };
-
-  // ─── Format Analytics Data ────────────────────────────────────────────────
-  const STATUS_COLORS: Record<string, string> = {
-    PLACED: "#3B82F6",
-    ACCEPTED: "#8B5CF6",
-    PRINTING: "#F59E0B",
-    READY: "#10B981",
-    COMPLETED: "#059669",
-    CANCELLED: "#EF4444",
-  };
-
-  const statusBreakdown = Object.entries(statusCount)
-    .filter(([, count]) => count > 0)
-    .map(([status, count]) => ({
-      name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
-      value: count,
-      color: STATUS_COLORS[status] || "#9CA3AF",
-    }));
-
-  const revenueTrend = Object.entries(revenueByDate)
-    .map(([date, data]) => ({ date, ...data }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-7); // Last 7 days
-
-  const peakHours = Object.entries(peakHoursCount)
-    .map(([hour, count]) => ({ hour, orders: count }))
-    .sort((a, b) => a.hour.localeCompare(b.hour));
-
-  const services = [
-    { name: "B&W Printing", count: bwCount },
-    { name: "Color Printing", count: colorCount },
-  ]
-    .filter((s) => s.count > 0)
-    .sort((a, b) => b.count - a.count);
-
-  const analyticsData = {
-    revenue: revenueTrend,
-    statusBreakdown: statusBreakdown,
-    peakHours: peakHours,
-    services: services,
-  };
-
-  return <AnalyticsCharts analyticsData={analyticsData} stats={stats} />;
+  return <AnalyticsCharts orders={rawOrders} />;
 }
