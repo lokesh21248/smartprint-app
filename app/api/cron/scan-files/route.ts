@@ -158,6 +158,7 @@ function analyzePdfContent(buffer: ArrayBuffer): AnalysisResult {
 // ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
   // Vercel cron sends Authorization: Bearer <CRON_SECRET>.
   // Manual calls during testing must include the same header.
   const authHeader = request.headers.get("authorization");
@@ -213,9 +214,23 @@ export async function GET(request: Request) {
   let cleanCount = 0;
   let infectedCount = 0;
   let failedCount = 0;
+  const processedIds: string[] = [];
 
   // ── 3. Scan each file ───────────────────────────────────────────────────────
   for (const file of filesToScan) {
+    // 10s Hobby timeout guard: stop batch early with safety buffer
+    if (Date.now() - startTime > 8000) {
+      console.log(`[scan-files] Approaching execution limit (8s). Stopping batch early.`);
+      const unprocessedIds = filesToScan.map(f => f.id).filter(id => !processedIds.includes(id));
+      if (unprocessedIds.length > 0) {
+        await supabase
+          .from("order_files")
+          .update({ scan_status: "pending" })
+          .in("id", unprocessedIds);
+      }
+      break;
+    }
+    processedIds.push(file.id);
     const attempts = (file.scan_attempts ?? 0) + 1;
 
     try {
@@ -413,7 +428,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     success: true,
-    scanned: filesToScan.length,
+    scanned: cleanCount + infectedCount + failedCount,
     clean: cleanCount,
     infected: infectedCount,
     failed: failedCount,
