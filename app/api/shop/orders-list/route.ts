@@ -9,6 +9,23 @@ const PAGE_SIZE = 70;
 
 export async function GET(request: Request) {
   try {
+    // 0. Verify required environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+      console.error("Orders API Error: Missing database environment variables.");
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database environment variables are not configured.",
+          details: { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey, serviceRoleKey: !!serviceRoleKey }
+        },
+        { status: 500 }
+      );
+    }
+
     // 1. Auth + role guard
     const { authorized, response, userId } = await validateApiAccess([
       "admin",
@@ -42,9 +59,8 @@ export async function GET(request: Request) {
     const supabase = createAdminClient();
 
     // 3. Build query — only the fields the client actually needs.
-    //    order_files is a left join: orders with no file rows still appear.
-    //    We pull scan_status so the dashboard can show security badges without
-    //    a separate round-trip.
+    //    We do NOT join order_files here because there is no foreign key relation
+    //    defined in PostgREST's schema cache. Instead, we query it separately in memory.
     let query = supabase
       .from("orders")
       .select(
@@ -65,8 +81,6 @@ export async function GET(request: Request) {
           "created_at",
           "updated_at",
           "shops!inner(clerk_owner_id)",
-          // Pull scan_status from order_files (left join — may be empty array)
-          "order_files(id, scan_status, infected)",
         ].join(", "),
         { count: "estimated" }
       )
@@ -95,24 +109,23 @@ export async function GET(request: Request) {
     const { data, error, count } = await query;
 
     if (error) {
-      console.error(
-        "[GET /api/shop/orders-list] DB error:",
-        error.message,
-        error.code
-      );
+      console.error("Orders API Error:", error);
+      console.error("Request Params:", { status, page });
+      console.error("Shop ID:", shopId);
       return NextResponse.json(
-        { error: "Failed to fetch orders" },
+        {
+          success: false,
+          error: error.message,
+          details: error
+        },
         { status: 500 }
       );
     }
 
     // 4. Map DB column names → client field names
-    // Cast through unknown[] to bypass Supabase's GenericStringError union
-    // (occurs when select() includes a !inner join — the TS type is overly broad).
     type OrderFileRow = {
       id: string;
       scan_status: string | null;
-      infected: boolean | null;
     };
 
     type OrderRow = {
@@ -131,8 +144,34 @@ export async function GET(request: Request) {
       status: string;
       created_at: string;
       updated_at: string;
-      order_files?: OrderFileRow[];
     };
+
+    // Query order_files separately in memory using fetched order IDs
+    const rows = (data ?? []) as unknown as OrderRow[];
+    const orderIds = rows.map((o) => o.id);
+    const orderFilesMap: Record<string, OrderFileRow[]> = {};
+
+    if (orderIds.length > 0) {
+      const { data: filesData, error: filesError } = await supabase
+        .from("order_files")
+        .select("id, order_id, scan_status")
+        .in("order_id", orderIds);
+
+      if (filesError) {
+        console.error("Orders API Error: Failed to fetch related order files", filesError);
+      } else if (filesData) {
+        filesData.forEach((file: any) => {
+          if (!orderFilesMap[file.order_id]) {
+            orderFilesMap[file.order_id] = [];
+          }
+          orderFilesMap[file.order_id].push({
+            id: file.id,
+            scan_status: file.scan_status,
+            infected: file.infected,
+          });
+        });
+      }
+    }
 
     // Derive the worst file_scan_status across all files in the order.
     // Priority: infected > scanning > failed > pending > clean
@@ -148,7 +187,6 @@ export async function GET(request: Request) {
       return "clean";
     };
 
-    const rows = (data ?? []) as unknown as OrderRow[];
     const orders = rows.map((ord) => ({
       id: ord.id,
       short_token: ord.short_token,
@@ -166,10 +204,11 @@ export async function GET(request: Request) {
       created_at: ord.created_at,
       updated_at: ord.updated_at,
       // Aggregated security status — null means no files linked yet
-      file_scan_status: worstScanStatus(ord.order_files),
+      file_scan_status: worstScanStatus(orderFilesMap[ord.id]),
     }));
 
     return NextResponse.json({
+      success: true,
       orders,
       pagination: {
         page,
@@ -179,9 +218,14 @@ export async function GET(request: Request) {
       },
     });
   } catch (err) {
-    console.error("[GET /api/shop/orders-list] Unexpected error:", err);
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error("Orders API Error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      {
+        success: false,
+        error: error.message,
+        details: error
+      },
       { status: 500 }
     );
   }
