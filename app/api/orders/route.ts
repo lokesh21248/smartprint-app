@@ -11,7 +11,7 @@ import { moveFileAcrossBuckets } from "@/lib/storage";
 // maxDuration 30s: orders should never need more. If they do, the bottleneck
 // is in the DB, not the application — investigate indexes first.
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 10; // 10 seconds (max allowed on Vercel Hobby plan)
 export const dynamic = "force-dynamic";
 
 // ─── In-memory Idempotency Cache ─────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 10; // 10 seconds (max allowed on Vercel Hobby plan)
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");

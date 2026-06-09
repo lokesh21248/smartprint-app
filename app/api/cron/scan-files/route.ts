@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 minutes
+export const maxDuration = 10; // 10 seconds (max allowed on Vercel Hobby plan)
 
 const MAX_SCAN_ATTEMPTS = 3;
 
