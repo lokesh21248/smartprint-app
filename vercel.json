@@ -9,7 +9,7 @@
     },
     {
       "path": "/api/cron/scan-files",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 0 * * *"
     }
   ],
   "redirects": [
