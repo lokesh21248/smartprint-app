@@ -189,16 +189,24 @@ const nextConfig = {
 // ─────────────────────────────────────────────────────────────────────────────
 if (!isDev) {
   const { withSentryConfig } = require("@sentry/nextjs");
-  module.exports = withSentryConfig(nextConfig, {
-    org: "new-startup-bi",
-    project: "react-native",
-    silent: !process.env.CI,
-    widenClientFileUpload: true,
-    tunnelRoute: "/monitoring",
-    webpack: {
-      treeshake: { removeDebugLogging: true },
+  module.exports = withSentryConfig(
+    nextConfig,
+    {
+      org: "new-startup-bi",
+      project: "react-native",
+      silent: !process.env.CI,
+      widenClientFileUpload: true,
+      tunnelRoute: "/monitoring",
+      webpack: {
+        treeshake: { removeDebugLogging: true },
+      },
     },
-  });
+    {
+      hideSourceMaps: true,
+      disableServerWebpackPlugin: !process.env.SENTRY_AUTH_TOKEN,
+      disableClientWebpackPlugin: !process.env.SENTRY_AUTH_TOKEN,
+    }
+  );
 } else {
   module.exports = nextConfig;
 }

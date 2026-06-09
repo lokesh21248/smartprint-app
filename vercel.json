@@ -1,7 +1,6 @@
 {
   "version": 2,
   "framework": "nextjs",
-  "regions": ["sin1", "bom1"],
   "crons": [
     {
       "path": "/api/cron/cleanup",
