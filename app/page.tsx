@@ -10,7 +10,7 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "Scan2Paper – Digital Print Shop Management",
   description:
-    "Scan2Paper helps print shop owners manage orders, staff, and revenue from one powerful dashboard. Customers upload documents, pay via UPI, and pick up prints — seamlessly.",
+    "Scan2Paper helps print shop owners manage orders, documents, staff, and revenue from one powerful dashboard. Customers can upload documents online and collect their prints quickly and efficiently.",
   alternates: {
     canonical: "https://scan2paper.com/",
   },
@@ -32,9 +32,9 @@ export default function Home() {
         Digital Print Shop Management
       </h1>
       <p className="text-lg text-gray-600 max-w-xl mb-8">
-        Scan2Paper helps print shop owners manage orders, staff, and revenue
-        from one powerful dashboard. Customers upload documents, pay via UPI,
-        and pick up prints — seamlessly.
+        Scan2Paper helps print shop owners manage orders, documents, staff, and
+        revenue from one powerful dashboard. Customers can upload documents
+        online and collect their prints quickly and efficiently.
       </p>
       <div className="flex flex-wrap gap-4 justify-center">
         <Link

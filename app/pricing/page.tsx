@@ -42,7 +42,7 @@ export default function PricingPage() {
             <ul className="space-y-2 text-sm text-gray-600 mb-6">
               <li>✓ Unlimited orders</li>
               <li>✓ QR code & shop page</li>
-              <li>✓ UPI payment collection</li>
+              <li>✓ Document upload by customers</li>
               <li>✓ PDF upload by customers</li>
               <li>✓ Basic dashboard</li>
             </ul>

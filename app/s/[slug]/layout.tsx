@@ -52,7 +52,7 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   }
 
   const title = `${shop.name} | Print Online at Scan2Paper`;
-  const description = `Order high-quality prints from ${shop.name} at ${shop.address_line1}. Upload PDF, pay via UPI, and pick up when ready.`;
+  const description = `Order high-quality prints from ${shop.name} at ${shop.address_line1}. Upload your documents online and collect your prints when ready.`;
 
   // Use absolute canonical URL — more robust than relative path.
   // metadataBase resolves relative URLs, but absolute is unambiguous.

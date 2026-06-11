@@ -38,10 +38,10 @@ export default function AboutPage() {
           </p>
           <p>
             With Scan2Paper, customers can upload their documents online, choose
-            their print settings, pay via UPI, and receive real-time status
-            updates — all before they walk into the shop. Shop owners get
-            instant order notifications, a live dashboard, and the ability to
-            manage staff from anywhere.
+            their print settings, and receive real-time status updates — all
+            before they walk into the shop. Shop owners get instant order
+            notifications, a live dashboard, and the ability to manage staff
+            from anywhere.
           </p>
           <p>
             Our mission is to make every print shop in India as easy to use as

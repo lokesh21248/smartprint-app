@@ -16,7 +16,6 @@ export default function SignupPage() {
   const { user, isLoaded: userLoaded } = useUser();
   const router = useRouter();
 
-  const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -33,15 +32,30 @@ export default function SignupPage() {
     confirmPassword: "",
   });
 
-  useEffect(() => { setIsMounted(true); }, []);
+  // ── Timing instrumentation ───────────────────────────────────────────
+  useEffect(() => {
+    console.time("signup-page:clerk-session-resolve");
+    return () => { console.timeEnd("signup-page:clerk-session-resolve"); };
+  }, []);
+
+  useEffect(() => {
+    if (userLoaded) {
+      console.timeEnd("signup-page:clerk-session-resolve");
+      console.log(`[signup-page] Clerk resolved. isSignedIn=${!!user}`);
+    }
+  }, [userLoaded, user]);
+
+  // ── Redirect already-signed-in users without blocking the form ───────
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     if (userLoaded && user) {
+      setIsRedirecting(true);
       window.location.assign("/dashboard");
     }
   }, [user, userLoaded]);
 
-  if (!isMounted || !userLoaded || user) {
+  if (isRedirecting) {
     return <AuthLoader />;
   }
 

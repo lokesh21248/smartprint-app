@@ -205,7 +205,7 @@ export default function BlogPostPage({
               </h2>
               <p className="text-emerald-100 text-sm mb-4">
                 Join hundreds of xerox shops across India using Scan2Paper to
-                manage orders, accept UPI payments, and grow their business.
+                manage orders, streamline print workflows, and grow their business.
               </p>
               <div className="flex flex-wrap gap-3 justify-center">
                 <Link

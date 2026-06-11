@@ -6,7 +6,7 @@ import { BlogClientPage } from "@/components/blog/BlogClientPage";
 export const metadata: Metadata = {
   title: "Blog – Print Shop Management Tips & Guides | Scan2Paper",
   description:
-    "Tips, guides, and insights for xerox shop owners and print shop businesses in India. Learn about online ordering, UPI payments, QR codes, and shop management.",
+    "Tips, guides, and insights for xerox shop owners and print shop businesses in India. Learn about online ordering, QR codes, document uploads, and shop management.",
   alternates: {
     canonical: "https://scan2paper.com/blog",
   },
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Blog – Print Shop Management Tips & Guides | Scan2Paper",
     description:
-      "Practical guides for Indian xerox shop owners — online ordering, UPI payments, QR code ordering, and revenue growth strategies.",
+      "Practical guides for Indian xerox shop owners — online ordering, QR code ordering, document management, and revenue growth strategies.",
     url: "https://scan2paper.com/blog",
     type: "website",
   },

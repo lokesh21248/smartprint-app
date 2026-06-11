@@ -24,21 +24,44 @@ function LoginForm() {
     redirectTo = "/dashboard";
   }
 
-  const [isMounted, setIsMounted] = useState(false);
+  // ── Timing instrumentation ─────────────────────────────────────────────
+  // Measures how long Clerk takes to resolve the session on this page.
+  useEffect(() => {
+    console.time("login-page:clerk-session-resolve");
+    return () => {
+      // Cleanup fires on unmount (after redirect or navigation away)
+      console.timeEnd("login-page:clerk-session-resolve");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (userLoaded) {
+      console.timeEnd("login-page:clerk-session-resolve");
+      console.log(
+        `[login-page] Clerk session resolved. isSignedIn=${!!user}, willRedirect=${!!user}`
+      );
+    }
+  }, [userLoaded, user]);
+
+  // ── isRedirecting: shown ONLY when a live session is found ─────────────
+  // This prevents the spinner from blocking the form on every cold visit.
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
+  // ── Form state (declared unconditionally — no hooks after early return) ──
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
 
-  useEffect(() => { setIsMounted(true); }, []);
-
   useEffect(() => {
     if (userLoaded && user) {
+      setIsRedirecting(true);
       window.location.assign(redirectTo);
     }
   }, [user, userLoaded, redirectTo]);
 
-  if (!isMounted || !userLoaded || user) {
+  // Show spinner only while a confirmed redirect is in flight
+  if (isRedirecting) {
     return <AuthLoader />;
   }
 

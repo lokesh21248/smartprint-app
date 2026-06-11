@@ -4,7 +4,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Features – Scan2Paper",
   description:
-    "Explore Scan2Paper's features: real-time order management, UPI payments, PDF upload, QR code shop discovery, staff management, and live analytics for print shop owners.",
+    "Explore Scan2Paper's features: real-time order management, PDF upload, QR code shop discovery, staff management, and live analytics for print shop owners.",
   alternates: {
     canonical: "https://scan2paper.com/features",
   },
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Features – Scan2Paper",
     description:
-      "Everything you need to run a modern print shop: orders, payments, staff, and analytics — in one dashboard.",
+      "Everything you need to run a modern print shop: orders, staff, and analytics — all in one dashboard.",
     url: "https://scan2paper.com/features",
     type: "website",
   },
@@ -28,9 +28,9 @@ const features = [
       "Get instant notifications for new print orders. Accept, process, and mark orders complete from one screen.",
   },
   {
-    title: "UPI Payments",
+    title: "Flexible Payment Collection",
     description:
-      "Customers pay via UPI directly on the order page. Funds settle to your account — no middleman.",
+      "Collect payments your way — cash, UPI QR at pickup, or any method you prefer. No online payment gateway required.",
   },
   {
     title: "PDF Upload & Print Settings",
@@ -64,7 +64,7 @@ export default function FeaturesPage() {
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Scan2Paper replaces manual paperwork with a fully digital workflow —
-            from order intake to payment collection to analytics.
+            from order intake to completion — all in one dashboard.
           </p>
         </div>
 

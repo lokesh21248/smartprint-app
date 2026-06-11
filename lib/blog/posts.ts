@@ -141,14 +141,13 @@ const acceptOrdersOnlineContent: BlockType[] = [
       "They upload their PDF document directly from their phone storage or cloud (Google Drive, WhatsApp downloads)",
       "They select print settings: colour or B&W, single-sided or duplex, number of copies",
       "The system shows the calculated total (e.g., 12 pages × ₹1.50 = ₹18.00)",
-      "They pay via UPI (GPay, PhonePe, Paytm) — no cash needed",
-      "They receive a digital order slip with an order number",
+      "They submit the order and receive a digital order slip with an order number",
       "They arrive at your shop, show the order slip, and collect their printout — no queue, no negotiation",
     ],
   },
   {
     type: "callout",
-    text: "Real-world example: A student at a college near Pune uploads their 40-page project report at 11 PM. By 8 AM the next morning when they head to your shop, the job is already printed and waiting. They pay ₹60 via UPI, collect the report, and leave in 30 seconds.",
+    text: "Real-world example: A student at a college near Pune uploads their 40-page project report at 11 PM. By 8 AM the next morning when they head to your shop, the job is already printed and waiting. They collect the report and leave in 30 seconds.",
   },
   {
     type: "h2",
@@ -176,7 +175,7 @@ const acceptOrdersOnlineContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Customers pay directly to your UPI ID. There's no payment gateway or intermediary holding your money. The payment confirmation appears on the order dashboard so you can verify before printing. Refunds, if ever needed, are handled directly between you and the customer.",
+    text: "Payment is collected directly by the shop owner — either in person at pickup or via any method the shop accepts. Refunds, if ever needed, are handled directly between you and the customer.",
   },
   {
     type: "h2",
@@ -385,11 +384,9 @@ const qrOrderingContent: BlockType[] = [
       "Customer opens their phone camera and points it at your QR code",
       "A notification appears — they tap it to open your shop page",
       "They see your shop name, address, hours, and current pricing",
-      "They tap 'Place Order' and upload their PDF from their phone",
       "They select print settings (B&W/colour, copies, duplex)",
       "The system shows the total price based on your configured rates",
-      "They pay via UPI (GPay, PhonePe, Paytm) — payment goes directly to your account",
-      "They receive a digital order confirmation with a unique order number",
+      "They submit the order and receive a digital order confirmation with a unique order number",
       "They show the order number at your counter to collect — the order is already prepared",
     ],
   },
@@ -427,7 +424,7 @@ const qrOrderingContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Add your UPI ID (the one linked to your business bank account or your personal account if you're a sole proprietor). Customer payments go directly to this UPI ID — Scan2Paper doesn't hold or process payments.",
+    text: "You can optionally add your UPI ID to your shop profile if you collect payments via UPI at pickup. Scan2Paper does not process payments — all transactions happen directly between you and the customer.",
   },
   {
     type: "h3",
@@ -536,7 +533,7 @@ const qrOrderingContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Orders can be cancelled before printing begins. Refunds are handled directly between the customer and the shop owner via UPI — the same way you'd handle a refund for any other service. Most cancellations happen when customers submit the wrong file, which is rare.",
+    text: "Orders can be cancelled before printing begins. Refunds are handled directly between the customer and the shop owner — the same way you'd handle a refund for any other service. Most cancellations happen when customers submit the wrong file, which is rare.",
   },
   {
     type: "h2",
@@ -638,11 +635,11 @@ const documentUploadContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "The UPI payment step in Scan2Paper's workflow offers benefits that go beyond convenience. Every payment creates an automatic digital record in the customer's UPI app and your bank statement. There's no question about whether a payment was made, how much it was for, or when it happened.",
+    text: "Scan2Paper keeps a complete digital record of every order — customer name, file, settings, and order total. There's no question about what was ordered, how much it cost, or when it happened.",
   },
   {
     type: "p",
-    text: "For customers who need payment receipts for reimbursement (employees who need to submit expense claims, students whose institutions cover printing costs), the UPI transaction history serves as a verifiable receipt. This is something a cash transaction can't provide.",
+    text: "For customers who need receipts for reimbursement (employees submitting expense claims, students whose institutions cover printing costs), the digital order history serves as a verifiable record. This is something a manual cash transaction can't provide.",
   },
   {
     type: "h2",
@@ -879,9 +876,9 @@ export const allPosts: BlogPost[] = [
     title: "How Xerox Shops Can Accept Print Orders Online",
     metaTitle: "How Xerox Shops Can Accept Print Orders Online | Scan2Paper",
     metaDescription:
-      "Learn how xerox shops in India can receive print orders online, reduce waiting time, accept UPI payments, and increase revenue using Scan2Paper.",
+      "Learn how xerox shops in India can receive print orders online, reduce waiting time, and increase revenue using Scan2Paper.",
     description:
-      "A complete guide to setting up online print order acceptance for your xerox shop — from QR code display to UPI payment to dashboard management.",
+      "A complete guide to setting up online print order acceptance for your xerox shop — from QR code display to dashboard management.",
     date: "2025-06-01",
     readingTime: "9 min read",
     category: "Online Printing",
@@ -895,7 +892,7 @@ export const allPosts: BlogPost[] = [
     title: "7 Ways to Increase Revenue for Your Print Shop",
     metaTitle: "7 Ways to Increase Revenue for Your Print Shop | Scan2Paper",
     metaDescription:
-      "Practical, proven strategies for Indian xerox shop owners to grow revenue through online ordering, UPI payments, colour printing, bulk discounts, and analytics.",
+      "Practical, proven strategies for Indian xerox shop owners to grow revenue through online ordering, colour printing, bulk discounts, and analytics.",
     description:
       "Beyond competitive pricing — seven strategies that xerox shop owners across India use to grow revenue by 25–40% without changing their core service.",
     date: "2025-05-20",
@@ -925,7 +922,7 @@ export const allPosts: BlogPost[] = [
     title: "Benefits of Online Document Upload for Print Shop Customers",
     metaTitle: "Benefits of Online Document Upload for Print Shop Customers | Scan2Paper",
     metaDescription:
-      "Why online document upload is better than pen drives and WhatsApp for print shop customers — no queues, transparent pricing, UPI payment, and order tracking.",
+      "Why online document upload is better than pen drives and WhatsApp for print shop customers — no queues, transparent pricing, and order tracking.",
     description:
       "Seven concrete benefits of online document upload for xerox shop customers — from eliminating pen drive problems to transparent pricing and real-time order tracking.",
     date: "2025-04-28",
