@@ -128,24 +128,19 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   useRealtimeOrders(shopId);
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  const tabCounts = useMemo(() => {
-    return TABS.reduce(
-      (acc, tab) => {
-        acc[tab.value] =
-          tab.value === "ALL"
-            ? allOrders.length
-            : allOrders.filter((o) => o.order_status === tab.value).length;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-  }, [allOrders]);
+  // Step 1: Apply date + search filters FIRST to get the base dataset.
+  // Tab counts are derived from this so they always reflect the active date range.
+  const dateFilteredOrders = useMemo(() => {
+    let orders = allOrders;
 
-  const filteredOrders = useMemo(() => {
-    let orders =
-      activeTab === "ALL"
-        ? allOrders
-        : allOrders.filter((o) => o.order_status === activeTab);
+    // Date filter
+    if (dateFilter !== "all") {
+      const compareDate = new Date();
+      if (dateFilter === "today") compareDate.setHours(0, 0, 0, 0);
+      else if (dateFilter === "week") compareDate.setDate(compareDate.getDate() - 7);
+      else if (dateFilter === "month") compareDate.setMonth(compareDate.getMonth() - 1);
+      orders = orders.filter((o) => new Date(o.created_at) >= compareDate);
+    }
 
     // Search filter
     if (search.trim()) {
@@ -158,21 +153,35 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
       );
     }
 
-    // Date filter
-    if (dateFilter !== "all") {
-      const compareDate = new Date();
-      if (dateFilter === "today") compareDate.setHours(0, 0, 0, 0);
-      else if (dateFilter === "week") compareDate.setDate(compareDate.getDate() - 7);
-      else if (dateFilter === "month") compareDate.setMonth(compareDate.getMonth() - 1);
-      orders = orders.filter((o) => new Date(o.created_at) >= compareDate);
-    }
+    return orders;
+  }, [allOrders, dateFilter, search]);
 
-    // Sort
+  // Step 2: Count per-status from the date-filtered set — NOT from allOrders.
+  const tabCounts = useMemo(() => {
+    return TABS.reduce(
+      (acc, tab) => {
+        acc[tab.value] =
+          tab.value === "ALL"
+            ? dateFilteredOrders.length
+            : dateFilteredOrders.filter((o) => o.order_status === tab.value).length;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+  }, [dateFilteredOrders]);
+
+  // Step 3: Apply tab (status) filter and sort on top of the date-filtered set.
+  const filteredOrders = useMemo(() => {
+    const orders =
+      activeTab === "ALL"
+        ? dateFilteredOrders
+        : dateFilteredOrders.filter((o) => o.order_status === activeTab);
+
     return [...orders].sort((a, b) => {
       if (sortBy === "amount") return b.total_amount - a.total_amount;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [allOrders, activeTab, search, sortBy, dateFilter]);
+  }, [dateFilteredOrders, activeTab, sortBy]);
 
   // Optimistic status update — patch cache immediately without API roundtrip
   const handleStatusChange = useCallback(

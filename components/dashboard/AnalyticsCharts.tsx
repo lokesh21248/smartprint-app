@@ -74,7 +74,7 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
 
   const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
   const totalOrders = filteredOrders.length;
-  
+
   // Corrected AOV formula: Completed Revenue / Completed Orders Count
   const avgOrderValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
 
@@ -198,11 +198,10 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
             <button
               key={r.value}
               onClick={() => setDateRange(r.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                dateRange === r.value
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${dateRange === r.value
                   ? "bg-white text-[#111827] shadow-sm"
                   : "text-[#6B7280] hover:text-[#111827]"
-              }`}
+                }`}
             >
               {r.label}
             </button>
@@ -275,12 +274,12 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
                   const y = centerY + radius * Math.sin(-angle * RADIAN);
                   return (
                     <text
-                       x={x}
-                       y={y}
-                       fill="#374151"
-                       textAnchor={x > centerX ? "start" : "end"}
-                       dominantBaseline="central"
-                       className="text-xs font-semibold select-none"
+                      x={x}
+                      y={y}
+                      fill="#374151"
+                      textAnchor={x > centerX ? "start" : "end"}
+                      dominantBaseline="central"
+                      className="text-xs font-semibold select-none"
                     >
                       {`${name} (${value})`}
                     </text>
@@ -315,7 +314,7 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
       <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-[#111827]">Most Popular Services</h2>
-          <button 
+          <button
             onClick={() => {
               const headers = ["Date", "Orders", "Revenue"];
               const rows = revenueTrend.map(r => [r.rawDate, r.orders, r.revenue]);
