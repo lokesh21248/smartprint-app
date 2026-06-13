@@ -28,7 +28,9 @@ export type BlockType =
   | { type: "ul"; items: string[] }
   | { type: "ol"; items: string[] }
   | { type: "callout"; text: string }  // highlighted tip/note box
-  | { type: "image"; src: string; alt: string; caption?: string };
+  | { type: "image"; src: string; alt: string; caption?: string }
+  | { type: "faq"; items: { q: string; a: string }[] }   // FAQ accordion — emits FAQPage JSON-LD
+  | { type: "links"; heading?: string; items: { label: string; href: string; external?: boolean }[] }; // curated link list
 
 export interface BlogPost {
   slug: string;
@@ -543,6 +545,139 @@ const qrOrderingContent: BlockType[] = [
     type: "p",
     text: "QR code ordering is one of the highest-return investments a print shop can make. The setup cost is ₹0 (Scan2Paper is free to start), the deployment cost is the price of printing one A4 poster, and the first orders typically arrive within 24 hours of placing the QR code at your counter.",
   },
+  {
+    type: "h2",
+    text: "Advanced QR Code Strategies to Grow Your Print Business",
+  },
+  {
+    type: "p",
+    text: "Once your QR code is live and your first batch of online orders is flowing in, the next step is scaling adoption strategically. Most shop owners who go beyond basic counter placement see a 3× to 5× increase in online order volume within 60 days.",
+  },
+  {
+    type: "h3",
+    text: "Build a QR Code Referral Loop",
+  },
+  {
+    type: "p",
+    text: "Every satisfied customer who orders online can become an ambassador. When you hand over a printout, include a small card — or print a note directly on the receipt — that says: 'Loved skipping the queue? Share this QR code with a friend.' Provide the QR image and a one-line benefit statement. In tight-knit communities like college hostels, coaching centre batches, and office floors, a single referral can unlock 10–20 new customers in a week.",
+  },
+  {
+    type: "h3",
+    text: "Time-Limited Promotions via QR",
+  },
+  {
+    type: "p",
+    text: "QR codes are a powerful channel for time-limited offers. Post a message in your WhatsApp group: 'This week only — scan the QR, upload a 20-page document, get 2 pages free.' This creates urgency, drives first-time users to try the platform, and gives you a memorable moment with new customers. Most shops run one such promotion per month during slow periods.",
+  },
+  {
+    type: "h3",
+    text: "Seasonal and Event-Based QR Campaigns",
+  },
+  {
+    type: "p",
+    text: "Peak printing seasons — exam time, application season, tax season, festival season — are when QR promotion pays off the most. Design a QR code flyer specific to each occasion ('Exam prints sorted — scan and order from hostel') and distribute it through campus groups or colony WhatsApp chats two weeks before the season peak. The advance awareness converts walk-in customers into pre-orderers during your busiest week.",
+  },
+  {
+    type: "h2",
+    text: "Troubleshooting Common QR Code Ordering Issues",
+  },
+  {
+    type: "p",
+    text: "Even a well-deployed QR system occasionally produces friction. Here are the most common issues shop owners encounter and how to resolve them:",
+  },
+  {
+    type: "ul",
+    items: [
+      "QR code not scanning: Print at minimum 10 cm × 10 cm. Laminate to prevent glare. Ensure adequate lighting at the placement location.",
+      "Customer can't find their file: Most files are in WhatsApp downloads or in Google Drive. Walk the first few customers through it — once they know, they never struggle again.",
+      "Order submitted with wrong settings: Allow cancellation and resubmission before printing begins. Communicate this policy clearly on the order page.",
+      "Printer not connected during peak hours: QR orders queue in the dashboard — process them as soon as the printer is ready. Customers receive status notifications automatically.",
+      "Customer doesn't have internet: Offer your 6-character shop code as a fallback. They can visit scan2paper.com/find-shop and enter it manually without needing to scan.",
+    ],
+  },
+  {
+    type: "h2",
+    text: "How QR Code Ordering Compares to WhatsApp Ordering",
+  },
+  {
+    type: "p",
+    text: "Many print shop owners currently use WhatsApp to receive orders — customers send a PDF and a message describing what they want. This works, but it has significant limitations compared to a structured QR ordering system.",
+  },
+  {
+    type: "ul",
+    items: [
+      "WhatsApp compresses PDF files by default, which can affect print quality. Scan2Paper accepts and stores original, uncompressed files.",
+      "WhatsApp has no order management — you manually track what's been printed, what's pending, and who's been notified. Scan2Paper automates all of this.",
+      "WhatsApp pricing is informal — customers estimate or argue about cost. Scan2Paper calculates the exact total before order submission.",
+      "WhatsApp has no payment record. Scan2Paper creates a timestamped order log for every transaction.",
+      "WhatsApp messages get buried in conversation history. Scan2Paper orders stay in a prioritised queue until completed.",
+    ],
+  },
+  {
+    type: "callout",
+    text: "The most successful print shops use both: QR code for new and returning customers who are comfortable with digital ordering, and WhatsApp as a backup communication channel for edge cases or large bulk orders that need negotiation.",
+  },
+  {
+    type: "h2",
+    text: "The Long-Term ROI of QR Code Ordering",
+  },
+  {
+    type: "p",
+    text: "The immediate impact of QR code ordering — shorter queues, faster transactions, happier customers — is obvious. But the long-term compounding effects are what make it a true business transformation. Each customer who converts to online ordering generates a digital order history. That history enables reorders without re-uploading. Reorders are the fastest transaction type — under 30 seconds from order placement to confirmation.",
+  },
+  {
+    type: "p",
+    text: "Over a 12-month period, a shop with 40% of orders coming online typically sees: 35% reduction in average transaction time, 22% increase in average order value (online customers plan better), and a measurable improvement in customer satisfaction driven by transparency and convenience. These are compounding advantages — they grow every month as more customers shift to digital.",
+  },
+  {
+    type: "h2",
+    text: "Frequently Asked Questions About QR Code Ordering for Print Shops",
+  },
+  {
+    type: "faq",
+    items: [
+      {
+        q: "Do customers need to download an app to use QR ordering?",
+        a: "No. Scan2Paper's ordering flow works entirely in a mobile browser. Customers scan the QR code with their phone camera and the shop's order page opens instantly — no app download, no account creation required for basic ordering.",
+      },
+      {
+        q: "What file types does Scan2Paper accept for printing?",
+        a: "Scan2Paper accepts PDF files only. This ensures consistent formatting and eliminates compatibility issues that arise with .docx, .pptx, or image files. Customers who have non-PDF files can use any free online converter before uploading.",
+      },
+      {
+        q: "How do I handle customers who don't know how to scan a QR code?",
+        a: "Offer your 6-character shop code as a fallback. Customers can go to scan2paper.com/find-shop and type in the code manually. For older customers, take 2 minutes to walk them through the camera-scan process once — most never need help again after the first time.",
+      },
+      {
+        q: "Is Scan2Paper free for print shop owners?",
+        a: "Yes, Scan2Paper is free to start. There are no monthly fees or setup costs. You can create your shop profile, get your QR code, and start receiving digital orders on the same day at no cost.",
+      },
+      {
+        q: "Can I use QR ordering alongside my existing walk-in counter?",
+        a: "Absolutely. QR ordering is designed to complement your walk-in business, not replace it. Walk-in customers can scan on the spot and have their job queued immediately. Remote customers can order from home and arrive to collect a ready printout.",
+      },
+      {
+        q: "How quickly will I start getting online orders after setting up?",
+        a: "Most shops receive their first online order within 24 hours of placing the QR code at the counter. Shops that also promote via WhatsApp Status typically see 10+ orders in the first week. Consistent promotion via local groups accelerates adoption significantly.",
+      },
+    ],
+  },
+  {
+    type: "links",
+    heading: "Explore More from Scan2Paper",
+    items: [
+      { label: "Scan2Paper Home — Digital Print Shop Management", href: "/" },
+      { label: "Features — What Scan2Paper Can Do for Your Shop", href: "/features" },
+      { label: "Pricing — Free to Start, No Monthly Fees", href: "/pricing" },
+      { label: "How Xerox Shops Can Accept Print Orders Online", href: "/blog/how-xerox-shops-can-accept-print-orders-online" },
+      { label: "Benefits of Online Document Upload for Customers", href: "/blog/benefits-of-online-document-upload-for-customers" },
+      {
+        label: "Google Search Central — How QR Codes Affect SEO",
+        href: "https://developers.google.com/search/docs/crawling-indexing/links-crawlable",
+        external: true,
+      },
+    ],
+  },
 ];
 
 const documentUploadContent: BlockType[] = [
@@ -681,6 +816,133 @@ const documentUploadContent: BlockType[] = [
       "Use clear signage: 'Forgot your pen drive? Upload from your phone — scan here'",
       "Show customers the upload process on their phone the first time (takes 2 minutes, earns a customer for life)",
       "Offer a small first-time incentive — a free page, ₹5 off — to get them to try it once",
+    ],
+  },
+  {
+    type: "h2",
+    text: "Document Privacy and Security: What Customers Need to Know",
+  },
+  {
+    type: "p",
+    text: "Privacy is a top concern for customers uploading sensitive documents — government ID copies, legal affidavits, medical records, financial statements, or academic certificates. A pen drive handed to a stranger at a counter carries more privacy risk than a properly secured upload, but customers don't always perceive it that way because the physical handoff feels familiar.",
+  },
+  {
+    type: "p",
+    text: "When introducing online document upload to your customers, address privacy proactively. Explain that uploaded documents are used solely to generate the print job, are not visible to other customers, and are not retained or shared. This transparency — even as a simple sign at your counter — significantly increases trust and conversion rates, especially among government employees, legal professionals, and healthcare workers who handle confidential documents regularly.",
+  },
+  {
+    type: "h3",
+    text: "Best Practices for Document Security at Your Shop",
+  },
+  {
+    type: "ul",
+    items: [
+      "Never leave the Scan2Paper dashboard open and unattended in a public-facing area where other customers can see order details",
+      "Download and print each file, then clear the downloaded copy from your computer after printing — do not accumulate customer files on your desktop",
+      "Ensure your shop computer has a password lock that activates after 5 minutes of inactivity",
+      "If a customer requests that their file be deleted after printing, accommodate the request immediately — it builds trust and costs you nothing",
+    ],
+  },
+  {
+    type: "h2",
+    text: "How Online Document Upload Improves Your Shop's Google Reputation",
+  },
+  {
+    type: "p",
+    text: "In the age of Google Maps reviews, every friction point that causes frustration leads to a lower star rating. 'I waited 20 minutes and they printed the wrong settings' is a common complaint that leads to 2-star reviews. Online document upload, by having customers configure their own settings with a price preview, virtually eliminates misprint complaints and the negative reviews they generate.",
+  },
+  {
+    type: "p",
+    text: "More importantly, customers who experience a smooth, digital, queue-free pickup leave positive reviews of their own accord. 'Ordered from home, walked in, collected in 30 seconds — incredible service' is the kind of organic review that attracts new customers. Your Google Maps rating directly affects foot traffic in your area, especially for customers searching for 'xerox shop near me' on their phone.",
+  },
+  {
+    type: "callout",
+    text: "Ask happy customers to leave a Google Maps review during the handoff moment. Say: 'If you enjoyed the experience, we'd really appreciate a quick review on Google — it helps other customers find us.' Done naturally, this converts 15–25% of satisfied customers into reviewers.",
+  },
+  {
+    type: "h2",
+    text: "Online Document Upload vs. Traditional Methods: A Comparison",
+  },
+  {
+    type: "p",
+    text: "To understand the full value of online document upload, it helps to compare it directly with the two most common alternatives: pen drives and WhatsApp.",
+  },
+  {
+    type: "ul",
+    items: [
+      "Pen drive: Customer must remember to bring it. Risk of virus transfer. Incompatible formats common. No record of transaction.",
+      "WhatsApp: Compresses PDFs by default (quality loss). No structured settings — customer describes verbally. No automated pricing. Buries in conversation history.",
+      "Online upload (Scan2Paper): PDF preserved at original quality. Customer selects all settings with transparent pricing. Timestamped order record. Automated status notifications. Order history for reorders.",
+    ],
+  },
+  {
+    type: "h2",
+    text: "Getting Started: Your First Week with Online Document Upload",
+  },
+  {
+    type: "p",
+    text: "The transition to online document upload doesn't require changing your entire business at once. Here is a practical first-week plan for print shop owners who are just getting started:",
+  },
+  {
+    type: "ol",
+    items: [
+      "Day 1: Create your Scan2Paper shop profile and configure your pricing. Download and print your QR code at A5 size.",
+      "Day 2: Place the QR code on your counter and add a simple sign: 'Skip the queue — upload your document from your phone.'",
+      "Day 3–4: For every walk-in customer, mention online ordering and show them the QR code. Walk 2–3 customers through the upload process personally.",
+      "Day 5–7: Share your QR code on WhatsApp Status and in 2–3 relevant local groups. Track online order count in your dashboard.",
+      "End of week 1: Review your first online orders. Note average order value, time saved, and any questions customers asked — use these to refine your counter signage.",
+    ],
+  },
+  {
+    type: "p",
+    text: "By the end of your first week, you will have a working online ordering channel, a growing base of repeat digital customers, and a clearer picture of how online upload fits into your shop's daily workflow. The transition is gradual, low-risk, and immediately beneficial — even five online orders a day saves you 20–25 minutes of counter time.",
+  },
+  {
+    type: "h2",
+    text: "Frequently Asked Questions About Online Document Upload",
+  },
+  {
+    type: "faq",
+    items: [
+      {
+        q: "What types of documents can customers upload?",
+        a: "Scan2Paper accepts PDF files. This covers the vast majority of print jobs: resumes, forms, reports, project documents, certificates, government documents, and more. Customers with other file types (Word, PowerPoint, images) can convert to PDF using free tools like Smallpdf or Google Drive before uploading.",
+      },
+      {
+        q: "Is there a file size limit for document uploads?",
+        a: "Scan2Paper supports standard document sizes comfortably. Very large files (multi-hundred-page colour books) may take longer to upload on slow mobile connections. For most common print jobs — resumes, forms, reports under 100 pages — upload is fast and seamless.",
+      },
+      {
+        q: "Can customers reorder a document they uploaded previously?",
+        a: "Yes. Every order submitted through Scan2Paper is stored in the customer's order history. Customers can browse past orders and reorder with one tap — no need to re-upload the file. This is especially valuable for recurring documents like CV versions, application forms, and study notes.",
+      },
+      {
+        q: "What happens if a customer uploads the wrong file?",
+        a: "Customers can cancel an order before printing begins and resubmit with the correct file. Most shops communicate their cancellation window clearly (e.g., 'cancellations accepted within 10 minutes of order placement'). This is far less friction than a misprint discovered at the counter.",
+      },
+      {
+        q: "Do customers need to create an account to upload documents?",
+        a: "Basic ordering through Scan2Paper is designed to be as frictionless as possible. Customers can scan your QR code, upload their document, and place an order without lengthy registration. This low-barrier entry is critical for maximising adoption.",
+      },
+      {
+        q: "How does online document upload affect my shop's peak-hour management?",
+        a: "It dramatically smooths peak-hour congestion. Orders placed before opening are already queued by the time you arrive. Walk-in customers who pre-order online collect and leave in under 60 seconds, creating room for the next customer. Shops with 30%+ online ordering typically see 40% shorter peak-hour queues.",
+      },
+    ],
+  },
+  {
+    type: "links",
+    heading: "Related Resources",
+    items: [
+      { label: "Scan2Paper — Start Accepting Online Print Orders Today", href: "/" },
+      { label: "QR Code Ordering for Xerox Shops: Complete Guide", href: "/blog/qr-code-ordering-for-xerox-shops-complete-guide" },
+      { label: "How to Manage Print Orders Efficiently with Scan2Paper", href: "/blog/how-to-manage-print-orders-efficiently-with-scan2paper" },
+      { label: "Explore All Features of Scan2Paper", href: "/features" },
+      {
+        label: "Google Guide to Structured Data for Articles",
+        href: "https://developers.google.com/search/docs/appearance/structured-data/article",
+        external: true,
+      },
     ],
   },
 ];
@@ -864,6 +1126,115 @@ const manageOrdersContent: BlockType[] = [
     type: "p",
     text: "This level of operational reliability is what separates shops that stay small from shops that grow. When the owner can step back without the business slowing down, growth becomes possible.",
   },
+  {
+    type: "h2",
+    text: "Handling Difficult Order Scenarios",
+  },
+  {
+    type: "p",
+    text: "Even well-managed shops encounter edge cases. Knowing how to handle them consistently — without defaulting to ad hoc decisions — is a mark of operational maturity. Here are the most common difficult scenarios and how to resolve them within the Scan2Paper system:",
+  },
+  {
+    type: "h3",
+    text: "Customer Disputes the Print Quality",
+  },
+  {
+    type: "p",
+    text: "When a customer claims the printout quality doesn't match their expectations, open the original file from the order in Scan2Paper. If the file itself is low-resolution (a common issue with WhatsApp-forwarded documents), the print quality is a function of the file — not your printer. Showing the customer the original file on screen and comparing it to the printout resolves most disputes immediately. For cases where the fault is on your end (wrong settings, toner issue), a reprint at no charge is the right call — it costs you 50 paise and preserves a customer relationship worth thousands over time.",
+  },
+  {
+    type: "h3",
+    text: "Order Submitted Twice by Mistake",
+  },
+  {
+    type: "p",
+    text: "Duplicate orders occasionally happen when a customer taps 'Submit' twice or reloads the page. Scan2Paper's order management makes duplicates easy to identify — two identical orders from the same customer within a short time window. Cancel the duplicate before printing, notify the customer, and process only one copy. This prevents wasted paper and a confused customer at pickup.",
+  },
+  {
+    type: "h3",
+    text: "Printer Malfunction During Peak Hours",
+  },
+  {
+    type: "p",
+    text: "When the printer goes down during peak hours, the Scan2Paper queue becomes your communication tool. Update all pending orders to a custom status noting the delay. Customers who have already been notified their order is 'Processing' can be sent a follow-up. Shops with a secondary printer handle this by routing orders to the backup machine with zero customer-facing disruption.",
+  },
+  {
+    type: "h2",
+    text: "Scaling Your Print Shop: When to Add Staff and How to Onboard Them",
+  },
+  {
+    type: "p",
+    text: "The right moment to add a staff member is when your average order completion time consistently exceeds 25 minutes during peak hours, or when you're processing more than 60 orders per day alone. Beyond these thresholds, the bottleneck is counter capacity — not the platform. Scan2Paper's role-based access makes onboarding straightforward: create a staff account, assign the 'Staff' role, and your new team member can begin managing the order queue within minutes.",
+  },
+  {
+    type: "p",
+    text: "Training a new staff member on Scan2Paper takes about 30 minutes: 10 minutes to explain the order lifecycle (Placed → Processing → Ready → Completed), 10 minutes on the download-print-mark-ready workflow, and 10 minutes on how to handle the most common customer questions. The platform's simplicity means that staff errors are rare, and when they happen, the audit trail (every action is timestamped to the staff account) makes resolution straightforward.",
+  },
+  {
+    type: "h2",
+    text: "Integration with Your Existing Shop Operations",
+  },
+  {
+    type: "p",
+    text: "Scan2Paper is designed to layer on top of your existing operation — not replace it. Your printer, your counter, your UPI QR code for payments: all of these continue to function exactly as before. Scan2Paper adds a digital management layer on top. Walk-in cash customers are handled at the counter exactly as before. Digital customers submit and pay, you process from the queue, you hand over the printout.",
+  },
+  {
+    type: "p",
+    text: "Over time, the balance shifts. Shops typically see online orders grow from 10% of total volume in week one to 40–50% within three months, driven by word-of-mouth and repeat customers who have converted to digital. This shift doesn't disrupt walk-in operations — it adds to them. You're serving more customers in the same hours, with less per-transaction friction.",
+  },
+  {
+    type: "callout",
+    text: "Advanced integration tip: Use the Scan2Paper analytics export to create a simple weekly revenue spreadsheet. Track online orders vs. walk-in orders, average order value for each channel, and total daily revenue. This takes 10 minutes per week and gives you clear visibility into how your business is growing.",
+  },
+  {
+    type: "h2",
+    text: "Frequently Asked Questions About Managing Print Orders with Scan2Paper",
+  },
+  {
+    type: "faq",
+    items: [
+      {
+        q: "How many orders can Scan2Paper handle per day?",
+        a: "Scan2Paper is built for high-volume print shop operations. There is no order cap. Shops processing 100+ orders per day use the platform without performance issues. The dashboard is designed to remain fast and clear even with a large pending queue.",
+      },
+      {
+        q: "Can I manage orders from my smartphone while away from the shop?",
+        a: "Yes. The Scan2Paper dashboard is fully responsive and works on any smartphone browser. You can review, update, and complete orders from anywhere with an internet connection. The audio notification for new orders works on mobile too — keep the tab open in your browser.",
+      },
+      {
+        q: "What happens to orders when my internet goes down?",
+        a: "Orders placed by customers before your connection dropped remain in the queue and will appear when your connection is restored. For brief outages (under an hour), this is a non-issue. For extended outages, have a backup — a mobile data hotspot is sufficient to keep the dashboard running.",
+      },
+      {
+        q: "Can staff members see my shop's revenue data?",
+        a: "No. Staff accounts have order management access only. They can accept, process, and complete orders, but they cannot view financial analytics, revenue reports, or account settings. Only the owner account has full access.",
+      },
+      {
+        q: "How do I handle an order where the customer doesn't show up for pickup?",
+        a: "If a customer doesn't collect their order within a reasonable window, you can keep the printout aside for a day or two, then mark the order as completed and recycle the print. Most non-collections are accidental — the customer usually contacts you to arrange a later pickup. Scan2Paper's order history makes it easy to reference the original order details when they do.",
+      },
+      {
+        q: "Is there a way to add custom print services (spiral binding, lamination) to the order form?",
+        a: "Scan2Paper's current order form covers the core print settings. For add-on services like binding or lamination, most shops collect this request verbally at pickup and charge it separately. Future platform updates are expected to include configurable service add-ons.",
+      },
+    ],
+  },
+  {
+    type: "links",
+    heading: "Helpful Resources",
+    items: [
+      { label: "Scan2Paper — Home", href: "/" },
+      { label: "Explore Scan2Paper Features", href: "/features" },
+      { label: "Scan2Paper Pricing", href: "/pricing" },
+      { label: "QR Code Ordering: Complete Guide for Xerox Shops", href: "/blog/qr-code-ordering-for-xerox-shops-complete-guide" },
+      { label: "7 Ways to Increase Revenue for Your Print Shop", href: "/blog/7-ways-to-increase-revenue-for-your-print-shop" },
+      {
+        label: "Google Search Console Help — Fixing Indexing Issues",
+        href: "https://support.google.com/webmasters/answer/9012289",
+        external: true,
+      },
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -911,7 +1282,8 @@ export const allPosts: BlogPost[] = [
     description:
       "A complete guide to setting up, deploying, and promoting QR code-based print ordering for your xerox shop — with exact placement strategies for maximum adoption.",
     date: "2025-05-10",
-    readingTime: "8 min read",
+    updatedDate: "2026-06-13",
+    readingTime: "14 min read",
     category: "QR Ordering",
     coverImage: "/blog-qr-ordering.png",
     coverImageAlt: "Customer scanning QR code at a print shop to place an online order",
@@ -926,7 +1298,8 @@ export const allPosts: BlogPost[] = [
     description:
       "Seven concrete benefits of online document upload for xerox shop customers — from eliminating pen drive problems to transparent pricing and real-time order tracking.",
     date: "2025-04-28",
-    readingTime: "7 min read",
+    updatedDate: "2026-06-13",
+    readingTime: "13 min read",
     category: "Customer Experience",
     coverImage: "/blog-document-upload.png",
     coverImageAlt: "Customer uploading documents on smartphone for online print ordering",
@@ -941,7 +1314,8 @@ export const allPosts: BlogPost[] = [
     description:
       "The complete operational guide for print shop owners using Scan2Paper — daily workflow, peak hour management, staff delegation, and analytics-driven improvement.",
     date: "2025-04-15",
-    readingTime: "9 min read",
+    updatedDate: "2026-06-13",
+    readingTime: "16 min read",
     category: "Print Shop Management",
     coverImage: "/blog-shop-management.png",
     coverImageAlt: "Print shop dashboard showing order queue and analytics on a laptop",

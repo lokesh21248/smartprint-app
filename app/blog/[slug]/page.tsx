@@ -79,10 +79,10 @@ export default function BlogPostPage({
 
   const relatedPosts = getRelatedPosts(post.slug, post.category, 2);
 
-  // JSON-LD Article structured data
+  // JSON-LD BlogPosting structured data (upgraded from Article for better indexing signals)
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "Article",
+    "@type": "BlogPosting",
     headline: post.title,
     description: post.metaDescription,
     datePublished: post.date,

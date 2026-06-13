@@ -50,10 +50,41 @@ export default function Home() {
           See Features
         </Link>
       </div>
+
+      {/* Latest from our blog — internal links to blog articles for SEO */}
+      <section aria-labelledby="blog-preview-heading" className="mt-14 max-w-xl w-full text-left">
+        <h2 id="blog-preview-heading" className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4 text-center">
+          From the Blog
+        </h2>
+        <ul className="space-y-3">
+          <li>
+            <Link href="/blog/qr-code-ordering-for-xerox-shops-complete-guide" className="text-sm text-emerald-700 hover:underline">
+              QR Code Ordering for Xerox Shops: Complete Guide
+            </Link>
+          </li>
+          <li>
+            <Link href="/blog/benefits-of-online-document-upload-for-customers" className="text-sm text-emerald-700 hover:underline">
+              Benefits of Online Document Upload for Print Shop Customers
+            </Link>
+          </li>
+          <li>
+            <Link href="/blog/how-to-manage-print-orders-efficiently-with-scan2paper" className="text-sm text-emerald-700 hover:underline">
+              How to Manage Print Orders Efficiently with Scan2Paper
+            </Link>
+          </li>
+          <li>
+            <Link href="/blog" className="text-sm font-semibold text-emerald-700 hover:underline">
+              View all articles →
+            </Link>
+          </li>
+        </ul>
+      </section>
+
       <nav aria-label="Site links" className="mt-10 flex flex-wrap gap-6 justify-center text-sm text-gray-500">
         <Link href="/features" className="hover:text-emerald-700 transition">Features</Link>
         <Link href="/pricing" className="hover:text-emerald-700 transition">Pricing</Link>
         <Link href="/about" className="hover:text-emerald-700 transition">About</Link>
+        <Link href="/blog" className="hover:text-emerald-700 transition">Blog</Link>
         <Link href="/contact" className="hover:text-emerald-700 transition">Contact</Link>
       </nav>
     </main>

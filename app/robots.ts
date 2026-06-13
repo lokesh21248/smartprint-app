@@ -16,6 +16,7 @@ export default function robots(): MetadataRoute.Robots {
           "/contact",
           "/blog",
           "/blog/",
+          "/blog/*",   // explicitly allow all blog article slugs
         ],
         disallow: [
           "/find-shop",   // utility lookup page — noindex
