@@ -124,13 +124,15 @@ function LoginForm() {
       title="Welcome back"
       description="Sign in to manage your shop"
       footer={
-        <div className="mt-8 pt-6 border-t border-[#E5E7EB] text-center">
-          <p className="text-sm text-[#6B7280]">
-            Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-[#2E8B57] font-semibold hover:underline">
-              Create a shop
-            </Link>
-          </p>
+        <div className="mt-6 pt-5 border-t border-[#E5E7EB]">
+          <Link
+            href="/signup"
+            className="group flex items-center justify-center gap-2 w-full rounded-[10px] border-2 border-[#16A34A] bg-white text-[#16A34A] font-semibold text-sm px-6 transition-all duration-200 hover:bg-[#F0FDF4] hover:border-[#15803D] hover:shadow-sm active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+            style={{ height: "44px" }}
+          >
+            <Store className="h-4 w-4 shrink-0" />
+            Create Your Shop
+          </Link>
         </div>
       }
     >
@@ -192,16 +194,32 @@ function LoginForm() {
           </p>
         )}
 
-        <Button type="submit" className="w-full mt-2" size="lg" disabled={isLoading}>
+        <Button
+          type="submit"
+          disabled={isLoading}
+          className="
+            w-full mt-2
+            h-14
+            text-lg font-semibold
+            rounded-xl
+            px-8
+            bg-[#16A34A] text-white
+            shadow-md shadow-green-900/20
+            hover:bg-[#15803D] hover:shadow-lg hover:shadow-green-900/25
+            active:scale-[0.98]
+            transition-all duration-200
+            focus-visible:ring-[#16A34A]
+          "
+        >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               Signing in...
             </>
           ) : (
             <>
               Sign In
-              <LogIn className="ml-2 h-4 w-4" />
+              <LogIn className="ml-2 h-5 w-5" />
             </>
           )}
         </Button>
