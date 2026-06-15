@@ -17,8 +17,6 @@ export async function POST(request: Request) {
       expectedSize?: number;
     };
 
-    console.log("[SUPABASE_VERIFY_REQUEST]", { storagePath, expectedSize });
-
     if (!storagePath || expectedSize === undefined) {
       return NextResponse.json(
         { success: false, error: "Missing required fields: storagePath, expectedSize" },
@@ -26,7 +24,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Security path check to block traversal and unauthorized path accesses
+    // Security: block path traversal and unauthorized access
     const pathCheck = validateStoragePath(storagePath);
     if (!pathCheck.valid) {
       console.warn(`[SECURITY] Blocked verify path: "${storagePath}" — ${pathCheck.error}`);
@@ -35,59 +33,42 @@ export async function POST(request: Request) {
 
     const admin = createAdminClient();
 
-    // Method 1: Try getting object info
+    /** Mark both tracking tables as uploaded — called from both verify paths */
+    async function markUploaded(path: string) {
+      await admin
+        .from("upload_sessions")
+        .update({ security_status: "pending", scan_status: "pending", upload_status: "uploaded" })
+        .eq("storage_path", path);
+      try {
+        await admin
+          .from("uploaded_files")
+          .update({ security_status: "pending", scan_status: "pending", upload_status: "uploaded" })
+          .eq("storage_path", path);
+      } catch { /* ignore — table may not exist */ }
+    }
+
+    // ── Method 1: .info() — fast, single API call ─────────────────────────────
     try {
       const { data: fileInfo, error: infoError } = await admin.storage
         .from(UPLOAD_BUCKET)
         .info(storagePath);
 
       if (!infoError && fileInfo) {
-        console.log("[SUPABASE_VERIFY_SUCCESS_INFO]", {
-          path: storagePath,
-          size: fileInfo.size,
-          expected: expectedSize,
-        });
-
         if (fileInfo.size === expectedSize) {
-          // Update upload_sessions status
-          await admin
-            .from("upload_sessions")
-            .update({
-              security_status: "pending",
-              scan_status: "pending",
-              upload_status: "uploaded",
-            })
-            .eq("storage_path", storagePath);
-
-          try {
-            await admin
-              .from("uploaded_files")
-              .update({
-                security_status: "pending",
-                scan_status: "pending",
-                upload_status: "uploaded",
-              })
-              .eq("storage_path", storagePath);
-          } catch {}
-
-          return NextResponse.json({
-            success: true,
-            verified: true,
-            size: fileInfo.size,
-          });
-        } else {
-          return NextResponse.json({
-            success: false,
-            verified: false,
-            error: `Size mismatch. Expected ${expectedSize} bytes, storage has ${fileInfo.size} bytes.`,
-          });
+          await markUploaded(storagePath);
+          return NextResponse.json({ success: true, verified: true, size: fileInfo.size });
         }
+        return NextResponse.json({
+          success: false,
+          verified: false,
+          error: `Size mismatch. Expected ${expectedSize} bytes, storage has ${fileInfo.size} bytes.`,
+        });
       }
     } catch (err) {
-      console.warn("[SUPABASE_VERIFY_INFO_FALLBACK] info() threw an error:", err);
+      console.warn("[SUPABASE_VERIFY_INFO_FALLBACK] info() threw:", err);
     }
 
-    // Method 2: Fallback to listing folder
+    // ── Method 2: Fallback — list folder ─────────────────────────────────────
     const folderPath = storagePath.substring(0, storagePath.lastIndexOf("/"));
     const filename = storagePath.substring(storagePath.lastIndexOf("/") + 1);
 
@@ -107,29 +88,16 @@ export async function POST(request: Request) {
     const uploadedFileItem = fileList?.find((f: { name: string }) => f.name === filename);
     if (!uploadedFileItem) {
       console.error("[SUPABASE_VERIFY_MISSING]", { path: storagePath });
-      return NextResponse.json({
-        success: false,
-        verified: false,
-        error: "File missing in storage bucket.",
-      });
+      return NextResponse.json({ success: false, verified: false, error: "File missing in storage bucket." });
     }
 
     const actualSize = uploadedFileItem.metadata?.size ?? 0;
     if (actualSize === 0) {
-      console.error("[SUPABASE_VERIFY_EMPTY]", { path: storagePath });
-      return NextResponse.json({
-        success: false,
-        verified: false,
-        error: "File is empty (0 bytes) in storage bucket.",
-      });
+      return NextResponse.json({ success: false, verified: false, error: "File is empty (0 bytes) in storage bucket." });
     }
 
     if (actualSize !== expectedSize) {
-      console.error("[SUPABASE_VERIFY_SIZE_MISMATCH]", {
-        path: storagePath,
-        expectedSize,
-        actualSize,
-      });
+      console.error("[SUPABASE_VERIFY_SIZE_MISMATCH]", { path: storagePath, expectedSize, actualSize });
       return NextResponse.json({
         success: false,
         verified: false,
@@ -137,33 +105,10 @@ export async function POST(request: Request) {
       });
     }
 
-    // Update upload_sessions status
-    await admin
-      .from("upload_sessions")
-      .update({
-        security_status: "pending",
-        scan_status: "pending",
-        upload_status: "uploaded",
-      })
-      .eq("storage_path", storagePath);
-
-    try {
-      await admin
-        .from("uploaded_files")
-        .update({
-          security_status: "pending",
-          scan_status: "pending",
-          upload_status: "uploaded",
-        })
-        .eq("storage_path", storagePath);
-    } catch {}
-
+    await markUploaded(storagePath);
     console.log("[SUPABASE_VERIFY_SUCCESS_LIST]", { path: storagePath, size: actualSize });
-    return NextResponse.json({
-      success: true,
-      verified: true,
-      size: actualSize,
-    });
+    return NextResponse.json({ success: true, verified: true, size: actualSize });
+
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[SUPABASE_VERIFY_EXCEPTION]", error);

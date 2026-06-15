@@ -3,6 +3,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 import { validateApiAccess } from "@/lib/auth/role-guard";
 
+export const runtime = "nodejs";
+export const maxDuration = 10;
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
@@ -25,31 +27,40 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    const { data: shop, error: shopError } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("id", shopId)
-      .eq("clerk_owner_id", userId)
-      .single();
-
-    if (shopError || !shop) {
-      return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
-    }
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const { data: rawStats, error: statsError } = await supabase
-      .from("orders")
-      .select("total_amount, status, customer_phone, created_at, updated_at, completed_at")
-      .eq("shop_id", shopId)
-      .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`);
+    // ── Parallelise ownership check + stats query ─────────────────────────
+    const [shopResult, statsResult] = await Promise.all([
+      supabase
+        .from("shops")
+        .select("id")
+        .eq("id", shopId)
+        .eq("clerk_owner_id", userId)
+        .single(),
+      supabase
+        .from("orders")
+        .select("total_amount, status, customer_phone, created_at, updated_at, completed_at")
+        .eq("shop_id", shopId)
+        .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`),
+    ]);
 
-    if (statsError) {
+    if (shopResult.error || !shopResult.data) {
+      return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
+    }
+
+    if (statsResult.error) {
       return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
     }
 
-    const orders = rawStats ?? [];
+    const orders = (statsResult.data ?? []) as typeof statsResult.data & Array<{
+      total_amount: number;
+      status: string;
+      customer_phone: string;
+      created_at: string;
+      updated_at: string;
+      completed_at: string | null;
+    }>;
     
     // An order is completed today if its status is COMPLETED/SUCCESS and completed_at (or updated_at) is today
     const completed = orders.filter(o => {

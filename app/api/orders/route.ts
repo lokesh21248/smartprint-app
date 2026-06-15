@@ -11,7 +11,7 @@ import { moveFileAcrossBuckets } from "@/lib/storage";
 // maxDuration 30s: orders should never need more. If they do, the bottleneck
 // is in the DB, not the application — investigate indexes first.
 export const runtime = "nodejs";
-export const maxDuration = 10; // 10 seconds (max allowed on Vercel Hobby plan)
+export const maxDuration = 10;
 export const dynamic = "force-dynamic";
 
 // ─── In-memory Idempotency Cache ─────────────────────────────────────────────
@@ -580,9 +580,21 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "shortToken required" }, { status: 400 });
     }
 
-    const { data, error } = await supabase.rpc("get_order_by_token", {
-      p_token: shortToken,
-    }) as { data: GetOrderByTokenResponse | null; error: unknown };
+    // ── Parallelise: RPC + raw order fetch run simultaneously ─────────────────
+    const [rpcResult, rawResult] = await Promise.all([
+      supabase.rpc("get_order_by_token", { p_token: shortToken }) as Promise<{
+        data: GetOrderByTokenResponse | null;
+        error: unknown;
+      }>,
+      supabase
+        .from("orders")
+        .select("id, shop_id, files, notes")
+        .eq("short_token", shortToken)
+        .maybeSingle(),
+    ]);
+
+    const { data, error } = rpcResult;
+    const { data: rawOrder } = rawResult;
 
     if (error || !data || !data.success) {
       console.warn(
@@ -594,13 +606,6 @@ export async function GET(request: Request) {
         { status: 404 }
       );
     }
-
-    // Fetch files JSONB and notes from the orders table directly by short_token
-    const { data: rawOrder } = await supabase
-      .from("orders")
-      .select("id, shop_id, files, notes")
-      .eq("short_token", shortToken)
-      .maybeSingle();
 
     const mappedOrder = {
       id: rawOrder?.id || null,

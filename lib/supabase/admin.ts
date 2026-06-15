@@ -37,7 +37,15 @@ type FlexDatabase = {
   };
 };
 
+// ─── Singleton Admin Client ───────────────────────────────────────────────────
+// One shared instance per cold-start (serverless function lifetime).
+// Safe: service-role key, stateless, no session, no user context to leak.
+// Benefit: avoids re-allocating the HTTP connection pool on every API call.
+let _adminClient: SupabaseClient<FlexDatabase> | null = null;
+
 export function createAdminClient(): SupabaseClient<FlexDatabase> {
+  if (_adminClient) return _adminClient;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -48,13 +56,12 @@ export function createAdminClient(): SupabaseClient<FlexDatabase> {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for admin operations");
   }
 
-  // Create a fresh client instance per call. This avoids HMR-related stale
-  // reference issues that occur with module-level singletons.
-  // Supabase client internally manages connection pooling.
-  return createClient<FlexDatabase>(url, serviceKey, {
+  _adminClient = createClient<FlexDatabase>(url, serviceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
     },
   });
+
+  return _adminClient;
 }

@@ -2,6 +2,10 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+export const maxDuration = 10;
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const { userId } = await auth();
   if (!userId) {
