@@ -141,23 +141,23 @@ export default function SignupPage() {
       title="Create your shop"
       description="Fill in your details to get started — you'll verify your email next."
       footer={
-        <div className="mt-8 pt-6 border-t border-[#E5E7EB]">
+        <div className="mt-6 pt-5 border-t border-[#E5E7EB]">
           <Link
             href="/login"
-            className="flex items-center justify-center gap-2.5 w-full h-[52px] rounded-xl border-2 border-[#16A34A] bg-white text-[#16A34A] font-semibold text-base px-6 shadow-sm transition-all duration-200 hover:bg-[#F0FDF4] hover:border-[#15803D] hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+            className="flex items-center justify-center gap-2 w-full h-12 rounded-[10px] border-2 border-[#16A34A] bg-white text-[#16A34A] font-semibold text-[15px] px-5 shadow-sm transition-all duration-200 hover:bg-[#F0FDF4] hover:border-[#15803D] hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
           >
             Already have an account? Sign In
           </Link>
         </div>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           id="ownerName"
           label="Full Name"
           placeholder="John Doe"
           required
-          leftIcon={<User className="h-[18px] w-[18px]" />}
+          leftIcon={<User className="h-4 w-4" />}
           value={formData.ownerName}
           onChange={handleChange}
         />
@@ -166,7 +166,7 @@ export default function SignupPage() {
           label="Shop Name"
           placeholder="Quick Print Solutions"
           required
-          leftIcon={<Store className="h-[18px] w-[18px]" />}
+          leftIcon={<Store className="h-4 w-4" />}
           value={formData.shopName}
           onChange={handleChange}
         />
@@ -177,7 +177,7 @@ export default function SignupPage() {
           placeholder="9876543210"
           required
           maxLength={10}
-          leftIcon={<Phone className="h-[18px] w-[18px]" />}
+          leftIcon={<Phone className="h-4 w-4" />}
           value={formData.phone}
           onChange={handleChange}
         />
@@ -186,17 +186,17 @@ export default function SignupPage() {
           label="Address"
           placeholder="123 Main St"
           required
-          leftIcon={<MapPin className="h-[18px] w-[18px]" />}
+          leftIcon={<MapPin className="h-4 w-4" />}
           value={formData.address}
           onChange={handleChange}
         />
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <Input
             id="city"
             label="City"
             placeholder="Mumbai"
             required
-            leftIcon={<Building2 className="h-[18px] w-[18px]" />}
+            leftIcon={<Building2 className="h-4 w-4" />}
             value={formData.city}
             onChange={handleChange}
           />
@@ -224,7 +224,7 @@ export default function SignupPage() {
           type="email"
           placeholder="owner@example.com"
           required
-          leftIcon={<Mail className="h-[18px] w-[18px]" />}
+          leftIcon={<Mail className="h-4 w-4" />}
           value={formData.email}
           onChange={handleChange}
         />
@@ -234,7 +234,7 @@ export default function SignupPage() {
           type={showPassword ? "text" : "password"}
           placeholder="••••••••"
           required
-          leftIcon={<Lock className="h-[18px] w-[18px]" />}
+          leftIcon={<Lock className="h-4 w-4" />}
           rightIcon={
             <button
               type="button"
@@ -243,9 +243,9 @@ export default function SignupPage() {
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? (
-                <EyeOff className="h-[18px] w-[18px]" />
+                <EyeOff className="h-4 w-4" />
               ) : (
-                <Eye className="h-[18px] w-[18px]" />
+                <Eye className="h-4 w-4" />
               )}
             </button>
           }
@@ -258,7 +258,7 @@ export default function SignupPage() {
           type={showConfirmPassword ? "text" : "password"}
           placeholder="••••••••"
           required
-          leftIcon={<Lock className="h-[18px] w-[18px]" />}
+          leftIcon={<Lock className="h-4 w-4" />}
           rightIcon={
             <button
               type="button"
@@ -267,9 +267,9 @@ export default function SignupPage() {
               aria-label={showConfirmPassword ? "Hide password" : "Show password"}
             >
               {showConfirmPassword ? (
-                <EyeOff className="h-[18px] w-[18px]" />
+                <EyeOff className="h-4 w-4" />
               ) : (
-                <Eye className="h-[18px] w-[18px]" />
+                <Eye className="h-4 w-4" />
               )}
             </button>
           }
@@ -280,17 +280,17 @@ export default function SignupPage() {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full h-[56px] rounded-xl text-[18px] font-semibold px-8 bg-[#16A34A] text-white shadow-md shadow-green-900/20 hover:bg-[#15803D] hover:shadow-lg hover:shadow-green-900/[0.28] active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+          className="w-full h-12 rounded-[10px] text-base font-semibold px-6 bg-[#16A34A] text-white shadow-sm hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
         >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Creating Account...
             </>
           ) : (
             <>
               Continue
-              <ArrowRight className="ml-2 h-5 w-5" />
+              <ArrowRight className="ml-2 h-4 w-4" />
             </>
           )}
         </Button>

@@ -29,11 +29,11 @@ export default function AuthLayout({
         <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-[#1F4E79]/10 blur-3xl" />
       </div>
 
-      <div className="relative w-full max-w-[500px]">
+      <div className="relative w-full max-w-[440px]">
         {/* Brand */}
-        <div className="flex flex-col items-center justify-center mb-8">
-          <Scan2PaperLogo variant="full" size={52} color="color" />
-          <p className="text-sm text-[#6B7280] mt-2">Shop Owner Panel</p>
+        <div className="flex flex-col items-center justify-center mb-6">
+          <Scan2PaperLogo variant="full" size={46} color="color" />
+          <p className="text-[13px] text-[#6B7280] mt-1.5">Shop Owner Panel</p>
         </div>
         {children}
       </div>

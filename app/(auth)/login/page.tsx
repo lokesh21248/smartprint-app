@@ -124,37 +124,37 @@ function LoginForm() {
       title="Welcome back"
       description="Sign in to manage your shop"
       footer={
-        <div className="mt-8 pt-6 border-t border-[#E5E7EB]">
+        <div className="mt-6 pt-5 border-t border-[#E5E7EB]">
           <Link
             href="/signup"
-            className="flex items-center justify-center gap-2.5 w-full h-[52px] rounded-xl border-2 border-[#16A34A] bg-white text-[#16A34A] font-semibold text-base px-6 shadow-sm transition-all duration-200 hover:bg-[#F0FDF4] hover:border-[#15803D] hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+            className="flex items-center justify-center gap-2 w-full h-12 rounded-[10px] border-2 border-[#16A34A] bg-white text-[#16A34A] font-semibold text-[15px] px-5 shadow-sm transition-all duration-200 hover:bg-[#F0FDF4] hover:border-[#15803D] hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
           >
-            <Store className="h-[18px] w-[18px] shrink-0" />
+            <Store className="h-4 w-4 shrink-0" />
             Create Your Shop
           </Link>
         </div>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           <Input
             id="email"
             label="Email Address"
             type="email"
             placeholder="owner@example.com"
             required
-            leftIcon={<Mail className="h-[18px] w-[18px]" />}
+            leftIcon={<Mail className="h-4 w-4" />}
             value={formData.email}
             onChange={handleChange}
           />
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Input
               id="password"
               label="Password"
               type={showPassword ? "text" : "password"}
               placeholder="••••••••"
               required
-              leftIcon={<Lock className="h-[18px] w-[18px]" />}
+              leftIcon={<Lock className="h-4 w-4" />}
               rightIcon={
                 <button
                   type="button"
@@ -163,19 +163,19 @@ function LoginForm() {
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <EyeOff className="h-[18px] w-[18px]" />
+                    <EyeOff className="h-4 w-4" />
                   ) : (
-                    <Eye className="h-[18px] w-[18px]" />
+                    <Eye className="h-4 w-4" />
                   )}
                 </button>
               }
               value={formData.password}
               onChange={handleChange}
             />
-            <div className="flex justify-end mt-1.5">
+            <div className="flex justify-end mt-1">
               <Link
                 href="/forgot-password"
-                className="text-[14px] font-medium text-[#16A34A] hover:text-[#15803D] hover:underline transition-colors"
+                className="text-[13px] font-medium text-[#16A34A] hover:text-[#15803D] hover:underline transition-colors"
               >
                 Forgot password?
               </Link>
@@ -196,7 +196,7 @@ function LoginForm() {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full h-[56px] rounded-xl text-[18px] font-semibold px-8 bg-[#16A34A] text-white shadow-md shadow-green-900/20 hover:bg-[#15803D] hover:shadow-lg hover:shadow-green-900/[0.28] active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+          className="w-full h-12 rounded-[10px] text-base font-semibold px-6 bg-[#16A34A] text-white shadow-sm hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
         >
           {isLoading ? (
             <>
