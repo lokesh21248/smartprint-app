@@ -13,26 +13,36 @@ interface AuthLayoutProps {
 
 export function AuthLayout({ icon, title, description, footer, children }: AuthLayoutProps) {
   return (
-    <div className="bg-white rounded-3xl shadow-2xl shadow-slate-900/[0.02] border border-slate-100/80 p-8 sm:p-10 animate-fade-in w-full max-w-md mx-auto transition-all duration-300 hover:shadow-emerald-900/[0.01]">
-      <div className="mb-8">
-        <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100/50 flex items-center justify-center mb-4">
+    <div className="bg-white rounded-[24px] shadow-[0_8px_40px_-8px_rgba(0,0,0,0.12),0_2px_8px_-2px_rgba(0,0,0,0.06)] border border-slate-100 p-10 sm:p-12 animate-fade-in w-full max-w-[500px] mx-auto transition-shadow duration-300">
+      {/* Header */}
+      <div className="mb-9">
+        <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5 shadow-sm">
           {icon}
         </div>
-        <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2">{title}</h2>
-        <p className="text-slate-500 text-sm font-semibold leading-relaxed">{description}</p>
+        <h2 className="text-[40px] font-black text-slate-900 tracking-tight leading-tight mb-2">
+          {title}
+        </h2>
+        <p className="text-base text-slate-500 font-medium leading-relaxed">
+          {description}
+        </p>
       </div>
+
+      {/* Form slot */}
       {children}
+
+      {/* Footer slot */}
       {footer}
-      {/* Container for Clerk CAPTCHA bot protection */}
-      <div id="clerk-captcha"></div>
+
+      {/* Clerk CAPTCHA */}
+      <div id="clerk-captcha" />
     </div>
   );
 }
 
 export function AuthLoader() {
   return (
-    <div className="flex w-full min-h-[400px] items-center justify-center p-8 animate-pulse">
-      <Loader2 className="h-8 w-8 animate-spin text-[#2E8B57]" />
+    <div className="flex w-full min-h-[400px] items-center justify-center p-8">
+      <Loader2 className="h-8 w-8 animate-spin text-[#16A34A]" />
     </div>
   );
 }
