@@ -83,27 +83,41 @@ function ForgotPasswordForm() {
 
   if (!isLoaded) return <AuthLoader />;
 
+  // ── Shared footer: Back to Login outlined button ──────────────────────────
+  const footer = (
+    <div className="mt-6 pt-5 border-t border-[#E5E7EB]">
+      <Link
+        href="/login"
+        className="flex items-center justify-center gap-2 w-full h-12 rounded-[10px] border-2 border-[#16A34A] bg-white text-[#16A34A] font-semibold text-[15px] px-5 shadow-sm transition-all duration-200 hover:bg-[#F0FDF4] hover:border-[#15803D] hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+      >
+        <ArrowLeft className="h-4 w-4 shrink-0" />
+        Back to Login
+      </Link>
+    </div>
+  );
+
   return (
     <AuthLayout
-      icon={<KeyRound className="h-6 w-6 text-[#2E8B57]" />}
-      title={stage === "email" ? "Forgot Password" : stage === "code" ? "Enter Reset Code" : "Set New Password"}
+      icon={<KeyRound className="h-5 w-5 text-[#16A34A]" />}
+      title={
+        stage === "email"
+          ? "Forgot Password"
+          : stage === "code"
+          ? "Enter Reset Code"
+          : "Set New Password"
+      }
       description={
         stage === "email"
-          ? "Enter your email and we'll send a reset code"
+          ? "Enter your email and we'll send a reset code."
           : stage === "code"
           ? `We sent a code to ${email}. Enter it below with your new password.`
-          : "Enter your new password"
+          : "Enter your new password below."
       }
-      footer={
-        <div className="mt-8 pt-6 border-t border-[#E5E7EB] text-center">
-          <Link href="/login" className="text-sm text-[#2E8B57] font-semibold hover:underline flex items-center justify-center gap-1">
-            <ArrowLeft className="h-3 w-3" /> Back to Login
-          </Link>
-        </div>
-      }
+      footer={footer}
     >
-      {stage === "email" ? (
-        <form onSubmit={handleSendCode} className="space-y-5">
+      {/* ── Stage 1: Email ───────────────────────────────────────────────── */}
+      {stage === "email" && (
+        <form onSubmit={handleSendCode} className="space-y-4">
           <Input
             id="email"
             label="Email Address"
@@ -114,13 +128,31 @@ function ForgotPasswordForm() {
             value={email}
             onChange={(e) => { setEmail(e.target.value); setError(""); }}
           />
-          {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
-          <Button type="submit" className="w-full mt-2" size="lg" disabled={isLoading}>
-            {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : "Send Reset Code"}
+          {error && (
+            <p className="text-[13px] text-red-500 font-medium" role="alert">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            disabled={isLoading}
+            className="w-full h-12 rounded-[10px] text-base font-semibold px-6 bg-[#16A34A] text-white shadow-sm hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              "Send Reset Code"
+            )}
           </Button>
         </form>
-      ) : (
-        <form onSubmit={handleVerifyCode} className="space-y-5">
+      )}
+
+      {/* ── Stage 2: Code + New Password ─────────────────────────────────── */}
+      {stage === "code" && (
+        <form onSubmit={handleVerifyCode} className="space-y-4">
           <Input
             id="code"
             label="Reset Code"
@@ -142,14 +174,10 @@ function ForgotPasswordForm() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-gray-500 hover:text-black focus:outline-none transition-colors"
+                className="text-slate-400 hover:text-slate-700 focus:outline-none transition-colors"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             }
             value={newPassword}
@@ -166,29 +194,41 @@ function ForgotPasswordForm() {
               <button
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="text-gray-500 hover:text-black focus:outline-none transition-colors"
+                className="text-slate-400 hover:text-slate-700 focus:outline-none transition-colors"
                 aria-label={showConfirmPassword ? "Hide password" : "Show password"}
               >
-                {showConfirmPassword ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             }
             value={confirmPassword}
             onChange={(e) => { setConfirmPassword(e.target.value); setError(""); }}
           />
-          {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
-          <Button type="submit" className="w-full mt-2" size="lg" disabled={isLoading}>
-            {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Resetting...</> : "Reset Password"}
+          {error && (
+            <p className="text-[13px] text-red-500 font-medium" role="alert">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            disabled={isLoading}
+            className="w-full h-12 rounded-[10px] text-base font-semibold px-6 bg-[#16A34A] text-white shadow-sm hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Resetting...
+              </>
+            ) : (
+              "Reset Password"
+            )}
           </Button>
+          {/* Resend code — subtle secondary action */}
           <button
             type="button"
-            onClick={() => setStage("email")}
-            className="w-full text-sm text-[#6B7280] hover:text-[#2E8B57] text-center"
+            onClick={() => { setStage("email"); setError(""); }}
+            className="w-full text-[13px] text-slate-400 hover:text-[#16A34A] text-center transition-colors"
           >
-            Resend code
+            Didn&apos;t receive a code? Resend
           </button>
         </form>
       )}
