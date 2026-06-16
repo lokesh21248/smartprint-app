@@ -67,7 +67,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const parsed = ShopProfileSchema.safeParse(body);
+    const parsed = ShopProfileSchema.partial().safeParse(body);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -78,35 +78,45 @@ export async function PATCH(request: Request) {
     }
 
     const patch = parsed.data;
+    const supabase = createAdminClient();
 
-    // FIX C2: shop_code now comes from parsed.data (Zod-validated), NOT raw body.
-    // The ShopProfileSchema validates shop_code as exactly 6 uppercase alphanumeric chars.
-    // If not provided by caller, we generate a cryptographically random one.
-    const finalShopCode: string = patch.shop_code ?? generateShopCode();
-
-    // 4. Build the update payload
+    // 4. Build the update payload dynamically to avoid overwriting unsupplied fields with undefined
     const payload: Record<string, unknown> = {
-      name: patch.name,
-      owner_phone: patch.phone,
-      owner_email: patch.owner_email,
-      address_line1: patch.address,
-      price_bw_per_page: patch.price_bw_per_page,
-      price_color_per_page: patch.price_color_per_page,
-      business_hours: {
-        opening_time: patch.opening_time,
-        closing_time: patch.closing_time,
-        working_days: patch.working_days,
-        services: patch.services,
-      },
-      // FIX P7: removed the pre-fetch to check existing shop_code.
-      // We always write shop_code using COALESCE semantics: if the shop already
-      // has a code, the DB trigger/default preserves it. If not, we set it now.
-      // Eliminates an extra DB round-trip per update.
-      shop_code: finalShopCode,
       updated_at: new Date().toISOString(),
     };
 
-    const supabase = createAdminClient();
+    if (patch.name !== undefined) payload.name = patch.name;
+    if (patch.phone !== undefined) payload.owner_phone = patch.phone;
+    if (patch.owner_email !== undefined) payload.owner_email = patch.owner_email;
+    if (patch.address !== undefined) payload.address_line1 = patch.address;
+    if (patch.price_bw_per_page !== undefined) payload.price_bw_per_page = patch.price_bw_per_page;
+    if (patch.price_color_per_page !== undefined) payload.price_color_per_page = patch.price_color_per_page;
+
+    const finalShopCode: string = patch.shop_code ?? generateShopCode();
+    payload.shop_code = finalShopCode;
+
+    // Check if any business_hours fields are explicitly passed
+    const hasOpening = body.opening_time !== undefined;
+    const hasClosing = body.closing_time !== undefined;
+    const hasWorkingDays = body.working_days !== undefined;
+    const hasServices = body.services !== undefined;
+
+    if (hasOpening || hasClosing || hasWorkingDays || hasServices) {
+      const { data: existingShop } = await supabase
+        .from("shops")
+        .select("business_hours")
+        .eq("id", shopId)
+        .maybeSingle();
+
+      const existingHours = (existingShop?.business_hours as Record<string, any>) || {};
+
+      payload.business_hours = {
+        opening_time: hasOpening ? patch.opening_time : existingHours.opening_time,
+        closing_time: hasClosing ? patch.closing_time : existingHours.closing_time,
+        working_days: hasWorkingDays ? patch.working_days : existingHours.working_days,
+        services: hasServices ? patch.services : existingHours.services,
+      };
+    }
 
     const { data: updatedShop, error: updateError } = await supabase
       .from("shops")

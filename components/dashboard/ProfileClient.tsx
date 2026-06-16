@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { Check, Copy, Edit, Hash, Loader2, Mail, MapPin, Phone, Printer, QrCode, Store, User } from "lucide-react";
@@ -49,6 +49,10 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const addressInputRef = useRef<HTMLInputElement>(null);
 
   const isOpen = !!shop.is_open;
   const shopName = shop.name ?? "";
@@ -204,30 +208,46 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
 
     if (!nameVal) {
       clientErrors.name = "Shop name is required";
-    } else if (nameVal.length < 2) {
-      clientErrors.name = "Shop name must be at least 2 characters";
+    } else if (nameVal.length < 3) {
+      clientErrors.name = "Shop name must be at least 3 characters";
     }
-    if (phoneVal && !/^[6-9]\d{9}$/.test(phoneVal)) {
-      clientErrors.phone = "Enter a valid 10-digit Indian mobile number";
+
+    if (!phoneVal) {
+      clientErrors.phone = "Phone number is required";
+    } else if (!/^[6-9]\d{9}$/.test(phoneVal)) {
+      clientErrors.phone = "Enter a valid 10-digit mobile number";
     }
-    if (addressVal && addressVal.length < 5) {
-      clientErrors.address = "Address must be at least 5 characters";
+
+    if (!addressVal) {
+      clientErrors.address = "Address is required";
+    } else if (addressVal.length < 10) {
+      clientErrors.address = "Address must be at least 10 characters";
     }
 
     if (Object.keys(clientErrors).length > 0) {
       setFieldErrors(clientErrors);
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[ProfileClient] Client-side validation failed:", clientErrors);
+      }
+
+      // Focus the first invalid field
+      if (clientErrors.name) {
+        nameInputRef.current?.focus();
+      } else if (clientErrors.phone) {
+        phoneInputRef.current?.focus();
+      } else if (clientErrors.address) {
+        addressInputRef.current?.focus();
+      }
+
+      const specificErrors = Object.values(clientErrors).join(", ");
+      toast.error(`Validation failed: ${specificErrors}`);
       return;
     }
 
     const patch: Record<string, string> = {};
-    if (nameVal)    patch.name    = nameVal;
-    if (phoneVal)   patch.phone   = phoneVal;
-    if (addressVal) patch.address = addressVal;
-
-    if (Object.keys(patch).length === 0) {
-      toast.info("No changes to save");
-      return;
-    }
+    patch.name = nameVal;
+    patch.phone = phoneVal;
+    patch.address = addressVal;
 
     setFieldErrors({});
     setSaving(true);
@@ -243,7 +263,24 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
       if (!res.ok) {
         if (resData?.fieldErrors && typeof resData.fieldErrors === "object") {
           setFieldErrors(resData.fieldErrors);
-          toast.error("Please fix the highlighted fields");
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[ProfileClient] API validation failed:", resData.fieldErrors);
+          }
+
+          // Focus the first invalid field from API
+          if (resData.fieldErrors.name) {
+            nameInputRef.current?.focus();
+          } else if (resData.fieldErrors.phone) {
+            phoneInputRef.current?.focus();
+          } else if (resData.fieldErrors.address) {
+            addressInputRef.current?.focus();
+          }
+
+          const specificErrors = Object.entries(resData.fieldErrors)
+            .filter(([key]) => ["name", "phone", "address"].includes(key))
+            .map(([key, val]) => `${key}: ${val}`)
+            .join(", ");
+          toast.error(specificErrors ? `Validation failed: ${specificErrors}` : "Please fix the highlighted fields");
           return;
         }
         throw new Error(resData?.error ?? "Failed to save. Please try again.");
@@ -252,9 +289,9 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
       // Update local state and Zustand store
       const updated = {
         ...shop,
-        ...(patch.name    ? { name: patch.name }            : {}),
-        ...(patch.phone   ? { owner_phone: patch.phone }     : {}),
-        ...(patch.address ? { address_line1: patch.address } : {}),
+        name: patch.name,
+        owner_phone: patch.phone,
+        address_line1: patch.address,
       };
       setShopState(updated);
       setShopStore(updated as never);
@@ -304,19 +341,26 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
           <CardContent className="space-y-4">
             {editing ? (
               <>
-                <Field label="Shop name *" error={fieldErrors.name}>
+                <div className="space-y-2">
+                  <Label htmlFor="profile-shop-name">Shop name *</Label>
                   <Input
+                    id="profile-shop-name"
+                    ref={nameInputRef}
                     value={form.name}
                     onChange={(e) => {
                       setForm({ ...form, name: e.target.value });
                       if (fieldErrors.name) setFieldErrors((p) => ({ ...p, name: "" }));
                     }}
                     placeholder="My Print Shop"
+                    error={fieldErrors.name}
                     aria-invalid={!!fieldErrors.name}
                   />
-                </Field>
-                <Field label="Phone" error={fieldErrors.phone}>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="profile-shop-phone">Phone *</Label>
                   <Input
+                    id="profile-shop-phone"
+                    ref={phoneInputRef}
                     value={form.phone}
                     onChange={(e) => {
                       setForm({ ...form, phone: e.target.value });
@@ -324,20 +368,25 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
                     }}
                     placeholder="9876543210"
                     inputMode="tel"
+                    error={fieldErrors.phone}
                     aria-invalid={!!fieldErrors.phone}
                   />
-                </Field>
-                <Field label="Address" error={fieldErrors.address}>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="profile-shop-address">Address *</Label>
                   <Input
+                    id="profile-shop-address"
+                    ref={addressInputRef}
                     value={form.address}
                     onChange={(e) => {
                       setForm({ ...form, address: e.target.value });
                       if (fieldErrors.address) setFieldErrors((p) => ({ ...p, address: "" }));
                     }}
                     placeholder="Street, City"
+                    error={fieldErrors.address}
                     aria-invalid={!!fieldErrors.address}
                   />
-                </Field>
+                </div>
                 <div className="flex gap-2 pt-2">
                   <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
                     {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving</> : "Save"}

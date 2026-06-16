@@ -366,11 +366,17 @@ const increaseRevenueContent: BlockType[] = [
 const qrOrderingContent: BlockType[] = [
   {
     type: "p",
-    text: "A QR code is a small square matrix barcode that a smartphone camera can read instantly. In the context of a xerox or print shop, a QR code is a direct link that takes a customer from scanning with their phone to placing a print order in under 60 seconds — no app download, no registration, no waiting in line to tell the counter person what they need.",
+    text: "A QR code is a small square matrix barcode that a smartphone camera can read instantly. In the context of a xerox or print shop, a QR code is a direct link that takes a customer from scanning with their phone to placing a print order in under 60 seconds — no app download, no registration, and no waiting in line. Customers can scan your shop's custom code, find your shop on our <a href='/find-shop' class='text-emerald-700 hover:underline font-semibold'>Xerox Shop Finder</a>, and submit their files in seconds.",
   },
   {
     type: "p",
     text: "This guide explains how QR code ordering works, how to set it up with Scan2Paper, and how to use it to get more orders — including from customers who were never going to walk into your shop.",
+  },
+  {
+    type: "image",
+    src: "/blog-qr-ordering.png",
+    alt: "QR Code display stand on xerox shop counter",
+    caption: "A simple QR code display on your counter allows customers to scan, upload, and queue print orders directly.",
   },
   {
     type: "h2",
@@ -410,7 +416,7 @@ const qrOrderingContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Go to scan2paper.com and sign up with your email. You'll be asked for your shop name, address, city, phone number, and business hours. This information appears on your shop page so customers know where to come for pickup.",
+    text: "Go to the <a href='/' class='text-emerald-700 hover:underline font-semibold'>Scan2Paper Home</a> page and sign up with your email. You'll be asked for your shop name, address, city, phone number, and business hours. This information appears on your shop page so customers know where to come for pickup.",
   },
   {
     type: "h3",
@@ -527,7 +533,7 @@ const qrOrderingContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Documents uploaded through Scan2Paper are used only to generate the print job and are not shared with third parties. This is a common concern from government employees, lawyers, and healthcare workers. Reassure customers that their files are treated with the same privacy as any file they'd hand over on a pen drive.",
+    text: "Documents uploaded through Scan2Paper are used only to generate the print job and are not shared with third parties. This is a common concern from government employees, lawyers, and healthcare workers. Reassure customers that their files are treated with the same privacy as any file they'd hand over on a pen drive. To understand more about why online uploading is safer and more convenient, check out our guide on the <a href='/blog/benefits-of-online-document-upload-for-customers' class='text-emerald-700 hover:underline font-semibold'>benefits of online document upload for print shop customers</a>.",
   },
   {
     type: "h3",
@@ -543,7 +549,7 @@ const qrOrderingContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "QR code ordering is one of the highest-return investments a print shop can make. The setup cost is ₹0 (Scan2Paper is free to start), the deployment cost is the price of printing one A4 poster, and the first orders typically arrive within 24 hours of placing the QR code at your counter.",
+    text: "QR code ordering is one of the highest-return investments a print shop can make. The setup cost is ₹0 (Scan2Paper is free to start — see our <a href='/pricing' class='text-emerald-700 hover:underline font-semibold'>pricing plans</a>), the deployment cost is the price of printing one A4 poster, and the first orders typically arrive within 24 hours. Learn more about how to get started on our <a href='/features' class='text-emerald-700 hover:underline font-semibold'>features page</a>.",
   },
   {
     type: "h2",
@@ -646,7 +652,7 @@ const qrOrderingContent: BlockType[] = [
       },
       {
         q: "How do I handle customers who don't know how to scan a QR code?",
-        a: "Offer your 6-character shop code as a fallback. Customers can go to scan2paper.com/find-shop and type in the code manually. For older customers, take 2 minutes to walk them through the camera-scan process once — most never need help again after the first time.",
+        a: "Offer your 6-character shop code as a fallback. Customers can go to <a href='/find-shop' class='text-emerald-700 hover:underline font-semibold'>scan2paper.com/find-shop</a> and type in the code manually. For older customers, take 2 minutes to walk them through the camera-scan process once — most never need help again after the first time.",
       },
       {
         q: "Is Scan2Paper free for print shop owners?",
@@ -687,7 +693,13 @@ const documentUploadContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Document upload — letting customers submit their files directly through a web browser before arriving at your shop — eliminates every one of these friction points. For customers, it's transformatively convenient. For shop owners, it's a systematic improvement to every aspect of the business. Here's why.",
+    text: "Document upload — letting customers submit their files directly through a web browser before arriving at your shop — eliminates every one of these friction points. For customers, it's transformatively convenient. For shop owners, it's a systematic improvement to every aspect of the business. By using our <a href='/order-upload' class='text-emerald-700 hover:underline font-semibold'>Online PDF Document Upload Tool</a>, print shops can streamline their order queue and minimize customer waiting time. Here's why.",
+  },
+  {
+    type: "image",
+    src: "/blog-document-upload.png",
+    alt: "Scan2Paper online document upload interface on a smartphone",
+    caption: "The Scan2Paper document upload interface allows customers to select paper size, duplex settings, and color options on their own phones.",
   },
   {
     type: "h2",
@@ -715,7 +727,7 @@ const documentUploadContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "When customers configure their own settings through Scan2Paper — selecting colour mode, duplex, number of copies, and page range — they take ownership of the configuration. Errors become far less likely, and when they do happen, it's clearly not the shop's fault. You process the order exactly as specified.",
+    text: "When customers configure their own settings through Scan2Paper — selecting colour mode, duplex, number of copies, and page range — they take ownership of the configuration. Errors become far less likely, and when they do happen, it's clearly not the shop's fault. You process the order exactly as specified. If a shop isn't registered yet, customers can search for active shops in our <a href='/find-shop' class='text-emerald-700 hover:underline font-semibold'>Find Shop Directory</a>.",
   },
   {
     type: "ul",
@@ -749,7 +761,7 @@ const documentUploadContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "With online ordering, those customers can submit their job from their phone and arrive at the shop just to pick up their printout. The queue they walk past is for people who didn't know about online ordering — not for them. This convenience alone is a strong word-of-mouth driver: customers tell their friends about 'the xerox shop where you don't have to wait.'",
+    text: "With online ordering, those customers can submit their job from their phone and arrive at the shop just to pick up their printout. The queue they walk past is for people who didn't know about online ordering — not for them. This convenience alone is a strong word-of-mouth driver: customers tell their friends about 'the xerox shop where you don't have to wait.' Many shops achieve this by placing physical flyers or print stickers around their counter. Read more details in our guide on <a href='/blog/qr-code-ordering-for-xerox-shops-complete-guide' class='text-emerald-700 hover:underline font-semibold'>QR code ordering for xerox shops</a>.",
   },
   {
     type: "h3",
@@ -786,7 +798,7 @@ const documentUploadContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "For customers who order in advance (submitting a job the night before), this notification is especially valuable. They can carry on with their morning routine and head to your shop only when they know their printout is ready.",
+    text: "For customers who order in advance (submitting a job the night before), this notification is especially valuable. They can carry on with their morning routine and head to your shop only when they know their printout is ready. This dashboard order flow is detailed in our operation manual on <a href='/blog/how-to-manage-print-orders-efficiently-with-scan2paper' class='text-emerald-700 hover:underline font-semibold'>how to manage print orders efficiently with Scan2Paper</a>.",
   },
   {
     type: "callout",
@@ -872,7 +884,7 @@ const documentUploadContent: BlockType[] = [
     items: [
       "Pen drive: Customer must remember to bring it. Risk of virus transfer. Incompatible formats common. No record of transaction.",
       "WhatsApp: Compresses PDFs by default (quality loss). No structured settings — customer describes verbally. No automated pricing. Buries in conversation history.",
-      "Online upload (Scan2Paper): PDF preserved at original quality. Customer selects all settings with transparent pricing. Timestamped order record. Automated status notifications. Order history for reorders.",
+      "Online upload (Scan2Paper): PDF preserved at original quality. Customer selects all settings with transparent pricing. Timestamped order record. Automated status notifications. Order history for reorders. Explore the full suite of benefits on our <a href='/features' class='text-emerald-700 hover:underline font-semibold'>features page</a>.",
     ],
   },
   {
@@ -954,7 +966,7 @@ const manageOrdersContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Scan2Paper is built specifically to solve this operational challenge. This guide walks through the practical day-to-day workflow for managing print orders efficiently — from the moment an order arrives to the moment a customer walks out satisfied.",
+    text: "Scan2Paper is built specifically to solve this operational challenge. This guide walks through the practical day-to-day workflow for managing print orders efficiently — from the moment an order arrives to the moment a customer walks out satisfied. First-time users can register their shop page easily on <a href='/' class='text-emerald-700 hover:underline font-semibold'>Scan2Paper Home</a> or explore the features available on our <a href='/features' class='text-emerald-700 hover:underline font-semibold'>Features page</a>.",
   },
   {
     type: "h2",
@@ -980,6 +992,12 @@ const manageOrdersContent: BlockType[] = [
   {
     type: "h2",
     text: "Setting Up Your Dashboard for Efficient Order Management",
+  },
+  {
+    type: "image",
+    src: "/blog-shop-management.png",
+    alt: "Scan2Paper shop manager order dashboard",
+    caption: "The live order queue on the Scan2Paper dashboard provides full status visibility and notifications for incoming prints.",
   },
   {
     type: "h3",
@@ -1047,7 +1065,7 @@ const manageOrdersContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "Peak hours — typically 9–10 AM, 12–1 PM, and 5–6 PM for shops near offices and colleges — are where operational efficiency matters most. Here's how Scan2Paper helps:",
+    text: "Peak hours — typically 9–10 AM, 12–1 PM, and 5–6 PM for shops near offices and colleges — are where operational efficiency matters most. High queue pressure can be solved by redirecting walk-in customers to upload files directly. Learn more about the customer benefits of this on our <a href='/blog/benefits-of-online-document-upload-for-customers' class='text-emerald-700 hover:underline font-semibold'>benefits of online document upload guide</a>, or consider using <a href='/blog/qr-code-ordering-for-xerox-shops-complete-guide' class='text-emerald-700 hover:underline font-semibold'>QR code ordering guides</a> to deploy scanner cards at your counter.",
   },
   {
     type: "h3",
@@ -1164,7 +1182,7 @@ const manageOrdersContent: BlockType[] = [
   },
   {
     type: "p",
-    text: "The right moment to add a staff member is when your average order completion time consistently exceeds 25 minutes during peak hours, or when you're processing more than 60 orders per day alone. Beyond these thresholds, the bottleneck is counter capacity — not the platform. Scan2Paper's role-based access makes onboarding straightforward: create a staff account, assign the 'Staff' role, and your new team member can begin managing the order queue within minutes.",
+    text: "The right moment to add a staff member is when your average order completion time consistently exceeds 25 minutes during peak hours, or when you're processing more than 60 orders per day alone. Beyond these thresholds, the bottleneck is counter capacity — not the platform. Check out our <a href='/pricing' class='text-emerald-700 hover:underline font-semibold'>pricing plans</a> for staff seats. Scan2Paper's role-based access makes onboarding straightforward: create a staff account, assign the 'Staff' role, and your new team member can begin managing the order queue within minutes.",
   },
   {
     type: "p",

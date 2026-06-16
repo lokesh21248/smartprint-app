@@ -50,7 +50,7 @@ export type OrderStatusUpdateInput = z.infer<typeof OrderStatusUpdateSchema>;
 const IndianPhone = z
   .string()
   .trim()
-  .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number");
+  .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number");
 
 // ─── Shop Code ────────────────────────────────────────────────────────────────
 // 6 uppercase alphanumeric characters (no ambiguous chars like O, 0, I, 1).
@@ -63,8 +63,8 @@ const ShopCode = z
 // ─── Shop Profile (full — used by ShopProfileForm / Settings tab) ─────────────
 
 export const ShopProfileSchema = z.object({
-  name: z.string().trim().min(2, "Shop name must be at least 2 characters").max(100),
-  address: z.string().trim().min(5).max(300),
+  name: z.string().trim().min(3, "Shop name must be at least 3 characters").max(100),
+  address: z.string().trim().min(10, "Address must be at least 10 characters").max(300),
   phone: IndianPhone,
   owner_email: z.string().email(),
   // Minimum 0.01 — prevents free pricing that would create zero-amount orders

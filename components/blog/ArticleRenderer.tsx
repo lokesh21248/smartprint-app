@@ -59,9 +59,11 @@ export function ArticleRenderer({ blocks }: Props) {
             );
           case "p":
             return (
-              <p key={i} className="text-[15px] leading-7">
-                {block.text}
-              </p>
+              <p
+                key={i}
+                className="text-[15px] leading-7"
+                dangerouslySetInnerHTML={{ __html: block.text }}
+              />
             );
           case "ul":
             return (
@@ -70,7 +72,7 @@ export function ArticleRenderer({ blocks }: Props) {
                 className="list-disc list-outside pl-5 space-y-1.5 text-[15px]"
               >
                 {block.items.map((item, j) => (
-                  <li key={j}>{item}</li>
+                  <li key={j} dangerouslySetInnerHTML={{ __html: item }} />
                 ))}
               </ul>
             );
@@ -81,7 +83,7 @@ export function ArticleRenderer({ blocks }: Props) {
                 className="list-decimal list-outside pl-5 space-y-1.5 text-[15px]"
               >
                 {block.items.map((item, j) => (
-                  <li key={j}>{item}</li>
+                  <li key={j} dangerouslySetInnerHTML={{ __html: item }} />
                 ))}
               </ol>
             );
