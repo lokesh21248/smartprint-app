@@ -10,6 +10,7 @@ import { getShopByUserId } from "@/lib/data/shop";
 import { StatsSection } from "@/components/dashboard/StatsSection";
 import { NewOrdersFeed } from "@/components/dashboard/NewOrdersFeed";
 import { PendingOrdersBanner } from "@/components/dashboard/PendingOrdersBanner";
+import { ScannerPreloader } from "@/components/scanner/ScannerPreloader";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -143,6 +144,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <ScannerPreloader />
       {/* User Info Card */}
       <div className="bg-white rounded-2xl p-6 border border-[#E5E7EB] shadow-sm flex flex-wrap gap-6 items-center">
         <div className="flex gap-6">
