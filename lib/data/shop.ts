@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Shop } from "@/types";
+import { getUserShop } from "../auth/shop-access";
 
 /**
  * Fetches shop data by Clerk User ID with React Cache.
@@ -10,10 +11,13 @@ export const getShopByUserId = cache(async (userId: string): Promise<Shop | null
   
   try {
     const supabase = createAdminClient();
+    const shopId = await getUserShop(userId);
+    if (!shopId) return null;
+
     const { data: shop, error } = await supabase
       .from("shops")
       .select("id, name, slug, shop_code, clerk_owner_id, owner_name, owner_email, owner_phone, address_line1, is_open, price_bw_per_page, price_color_per_page, business_hours, updated_at")
-      .eq("clerk_owner_id", userId)
+      .eq("id", shopId)
       .limit(1)
       .maybeSingle();
 

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 import { validateApiAccess } from "@/lib/auth/role-guard";
 import { getClientIp } from "@/lib/utils/ip";
+import { canManageShop } from "@/lib/auth/shop-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 10;
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     // 1. Strict Role Guard
-    const { authorized, response, userId, role } = await validateApiAccess([
+    const { authorized, response, userId } = await validateApiAccess([
       "admin",
       "shop_owner",
       "manager",
@@ -32,25 +33,24 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
+    // ─── OWNERSHIP/ROLE CHECK ────────────────────────────────────────────────
+    const isAuthorized = await canManageShop(userId, shopId);
+    if (!isAuthorized) {
+      return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
+    }
+
     const supabase = createAdminClient();
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayIso = today.toISOString();
 
-    // ── Parallelise: ownership + targeted stats queries ────────────────────────
-    // FIX P4: replaced the unbounded "fetch all orders" approach with 4 targeted
+    // ── Parallelise: targeted stats queries ────────────────────────
+    // FIX P4: replaced the unbounded "fetch all orders" approach with 3 targeted
     // queries. Each query returns only the rows needed for that specific metric,
     // capped at 500 rows. For high-volume shops, consider moving to a DB function
     // (get_shop_stats) to push aggregation fully into Postgres.
-    const [shopResult, pendingResult, todayOrdersResult, completedResult] = await Promise.all([
-      // Shop verification (owner ID check)
-      supabase
-        .from("shops")
-        .select("clerk_owner_id")
-        .eq("id", shopId)
-        .maybeSingle(),
-
+    const [pendingResult, todayOrdersResult, completedResult] = await Promise.all([
       // Pending orders count (PLACED or NEW)
       supabase
         .from("orders")
@@ -75,30 +75,6 @@ export async function GET(request: Request) {
         .gte("completed_at", todayIso)
         .limit(500),
     ]);
-
-    if (shopResult.error || !shopResult.data) {
-      return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
-    }
-
-    const shopOwnerId = shopResult.data.clerk_owner_id;
-    const isOwner = shopOwnerId === userId;
-    let hasStaffAccess = false;
-
-    if (!isOwner && role !== "admin") {
-      const { data: staffData } = await supabase
-        .from("shop_staff")
-        .select("id")
-        .eq("shop_id", shopId)
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (staffData) {
-        hasStaffAccess = true;
-      }
-    }
-
-    if (!isOwner && !hasStaffAccess && role !== "admin") {
-      return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
-    }
 
     if (pendingResult.error || todayOrdersResult.error || completedResult.error) {
       console.error("[shop/stats] Query error:", {

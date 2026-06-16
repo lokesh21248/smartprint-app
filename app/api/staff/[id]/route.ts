@@ -14,21 +14,31 @@ export async function DELETE(
 
     const supabase = createAdminClient();
 
-    const { data: shop, error: shopError } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("clerk_owner_id", userId)
-      .single();
+    // Look up the staff record to retrieve shop_id
+    const { data: staffRecord, error: fetchError } = await supabase
+      .from("shop_staff")
+      .select("shop_id")
+      .eq("id", params.id)
+      .maybeSingle();
 
-    if (shopError || !shop) {
-      return NextResponse.json({ error: "Shop not found or you are not an owner" }, { status: 403 });
+    if (fetchError || !staffRecord) {
+      return NextResponse.json({ error: "Staff member not found" }, { status: 404 });
+    }
+
+    const shopId = staffRecord.shop_id;
+
+    // Check if user is authorized to manage the shop
+    const { canManageShop } = await import("@/lib/auth/shop-access");
+    const isAuthorized = await canManageShop(userId, shopId);
+    if (!isAuthorized) {
+      return NextResponse.json({ error: "Forbidden: Not authorized to manage staff for this shop" }, { status: 403 });
     }
 
     const { error: deleteError } = await supabase
       .from("shop_staff")
       .delete()
       .eq("id", params.id)
-      .eq("shop_id", shop.id)
+      .eq("shop_id", shopId)
       .neq("role", "owner");
 
     if (deleteError) {

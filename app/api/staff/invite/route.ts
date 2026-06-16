@@ -10,13 +10,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Role-Based Guard (Defense-in-depth)
-    const { getServerRole } = await import("@/lib/auth/role-guard");
-    const userRole = await getServerRole();
-    if (userRole !== "admin" && userRole !== "shop_owner") {
-      return NextResponse.json({ error: "Forbidden: Only owners can invite staff" }, { status: 403 });
-    }
-
     const body = await request.json();
     const parsed = StaffInviteSchema.safeParse(body);
     if (!parsed.success) {
@@ -26,22 +19,25 @@ export async function POST(request: Request) {
     const { email, role } = parsed.data;
     const supabase = createAdminClient();
 
-    // 1. Get the shop owned by this user
-    const { data: shop, error: shopError } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("clerk_owner_id", userId)  // ← correct column
-      .single();
+    // 1. Get the shop associated with this user
+    const { getUserShop, canManageShop } = await import("@/lib/auth/shop-access");
+    const shopId = await getUserShop(userId);
 
-    if (shopError || !shop) {
-      return NextResponse.json({ error: "Shop not found or you are not an owner" }, { status: 403 });
+    if (!shopId) {
+      return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+    }
+
+    // Verify user is authorized to manage staff for this shop
+    const isAuthorized = await canManageShop(userId, shopId);
+    if (!isAuthorized) {
+      return NextResponse.json({ error: "Forbidden: Not authorized to invite staff to this shop" }, { status: 403 });
     }
 
     // 2. check if user already exists in shop_staff
     const { data: existing } = await supabase
       .from("shop_staff")
       .select("id")
-      .eq("shop_id", shop.id)
+      .eq("shop_id", shopId)
       .eq("email", email)
       .maybeSingle();
 
@@ -54,7 +50,7 @@ export async function POST(request: Request) {
     const { data: newStaff, error: inviteError } = await supabase
       .from("shop_staff")
       .insert({
-        shop_id: shop.id,
+        shop_id: shopId,
         email,
         role,
         is_active: true

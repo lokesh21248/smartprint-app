@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 import { validateApiAccess } from "@/lib/auth/role-guard";
+import { canManageShop } from "@/lib/auth/shop-access";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
 export async function GET(request: Request) {
   try {
     // 1. Auth + role guard
-    const { authorized, response, userId, role } = await validateApiAccess([
+    const { authorized, response, userId } = await validateApiAccess([
       "admin",
       "shop_owner",
       "manager",
@@ -81,37 +82,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "shopId is required" }, { status: 400 });
     }
 
-    const supabase = createAdminClient();
-
     // Verify user access to this shop
-    const { data: shop, error: shopError } = await supabase
-      .from("shops")
-      .select("clerk_owner_id")
-      .eq("id", shopId)
-      .maybeSingle();
-
-    if (shopError || !shop) {
+    const isAuthorized = await canManageShop(userId, shopId);
+    if (!isAuthorized) {
       return NextResponse.json({ success: false, error: "Shop not found or access denied" }, { status: 404 });
     }
 
-    const isOwner = shop.clerk_owner_id === userId;
-    let hasStaffAccess = false;
-
-    if (!isOwner && role !== "admin") {
-      const { data: staffData } = await supabase
-        .from("shop_staff")
-        .select("id")
-        .eq("shop_id", shopId)
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (staffData) {
-        hasStaffAccess = true;
-      }
-    }
-
-    if (!isOwner && !hasStaffAccess && role !== "admin") {
-      return NextResponse.json({ success: false, error: "Shop not found or access denied" }, { status: 404 });
-    }
+    const supabase = createAdminClient();
 
     // 3. Build query — only the fields the client actually needs.
     let query = supabase

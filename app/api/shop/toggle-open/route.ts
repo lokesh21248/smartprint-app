@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
+import { getUserShop } from "@/lib/auth/shop-access";
 
 export async function POST() {
   try {
@@ -18,26 +19,7 @@ export async function POST() {
     const supabase = createAdminClient();
 
     // Find the shop ID for this user (either as owner or staff)
-    let shopId: string | null = null;
-
-    const { data: ownerShop } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("clerk_owner_id", userId)
-      .maybeSingle();
-
-    if (ownerShop) {
-      shopId = ownerShop.id;
-    } else {
-      const { data: staffRecord } = await supabase
-        .from("shop_staff")
-        .select("shop_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (staffRecord) {
-        shopId = staffRecord.shop_id;
-      }
-    }
+    const shopId = await getUserShop(userId);
 
     if (!shopId) {
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });

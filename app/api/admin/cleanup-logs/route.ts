@@ -16,16 +16,12 @@ export async function GET() {
 
   const supabase = createAdminClient();
 
-  // Verify user is a shop owner (has at least one shop)
-  const { data: shop } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("clerk_owner_id", userId)
-    .limit(1)
-    .maybeSingle();
+  // Verify user is a shop member (owner or staff)
+  const { getUserShop } = await import("@/lib/auth/shop-access");
+  const shopId = await getUserShop(userId);
 
-  if (!shop) {
-    return NextResponse.json({ error: "Forbidden: owners only" }, { status: 403 });
+  if (!shopId) {
+    return NextResponse.json({ error: "Forbidden: shop members only" }, { status: 403 });
   }
 
   const { data: logs, error } = await supabase

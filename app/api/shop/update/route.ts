@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopProfileSchema } from "@/lib/validators";
 import { rateLimit } from "@/lib/ratelimit";
 import { randomBytes } from "crypto";
+import { canManageShop, getUserShop } from "@/lib/auth/shop-access";
 
 /**
  * Generates a cryptographically random 6-char shop code.
@@ -30,17 +31,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 2. Role-Based Guard (Defense-in-depth)
-    const { getServerRole } = await import("@/lib/auth/role-guard");
-    const role = await getServerRole();
-    if (role !== "admin" && role !== "shop_owner") {
-      return NextResponse.json(
-        { error: "Forbidden: Only owners can update shop settings" },
-        { status: 403 }
-      );
-    }
-
-    // 3. Rate limit — keyed on userId (authenticated write endpoint)
+    // 2. Rate limit — keyed on userId (authenticated write endpoint)
     //    10 updates / 60s is generous for real users, blocks automated abuse.
     const { success: rateLimitOk } = rateLimit(`shop_update_${userId}`, 10, 60);
     if (!rateLimitOk) {
@@ -50,13 +41,31 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // 4. Parse + validate with Zod
+    // 3. Parse + validate with Zod
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
     const targetShopId = new URL(request.url).searchParams.get("shopId") || (body && (body as { shopId?: string }).shopId);
+
+    // ─── OWNERSHIP/ROLE CHECK ────────────────────────────────────────────────
+    let shopId = targetShopId;
+    if (!shopId) {
+      const userShopId = await getUserShop(userId);
+      if (!userShopId) {
+        return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+      }
+      shopId = userShopId;
+    }
+
+    const isAuthorized = await canManageShop(userId, shopId);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { error: "Forbidden: Not authorized to manage this shop" },
+        { status: 403 }
+      );
+    }
 
     const parsed = ShopProfileSchema.safeParse(body);
     if (!parsed.success) {
@@ -75,7 +84,7 @@ export async function PATCH(request: Request) {
     // If not provided by caller, we generate a cryptographically random one.
     const finalShopCode: string = patch.shop_code ?? generateShopCode();
 
-    // 5. Build the update payload
+    // 4. Build the update payload
     const payload: Record<string, unknown> = {
       name: patch.name,
       owner_phone: patch.phone,
@@ -99,14 +108,10 @@ export async function PATCH(request: Request) {
 
     const supabase = createAdminClient();
 
-    let dbQuery = supabase.from("shops").update(payload);
-    if (role === "admin" && targetShopId) {
-      dbQuery = dbQuery.eq("id", targetShopId);
-    } else {
-      dbQuery = dbQuery.eq("clerk_owner_id", userId);
-    }
-
-    const { data: updatedShop, error: updateError } = await dbQuery
+    const { data: updatedShop, error: updateError } = await supabase
+      .from("shops")
+      .update(payload)
+      .eq("id", shopId)
       .select("id")
       .maybeSingle();
 

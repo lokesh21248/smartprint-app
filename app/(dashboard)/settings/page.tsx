@@ -13,14 +13,20 @@ export default async function SettingsPage() {
   const { userId } = await auth();
   if (!userId) redirect("/login");
 
-  // Fetch shop display info server-side — eliminates Zustand race condition
+  const { getUserShop } = await import("@/lib/auth/shop-access");
+  const shopIdFromUser = await getUserShop(userId);
+
   const supabase = createAdminClient();
-  const { data: shop } = await supabase
-    .from("shops")
-    .select("id, name, owner_email, city, state, address_line1")
-    .eq("clerk_owner_id", userId)
-    .limit(1)
-    .maybeSingle();
+  let shop = null;
+  if (shopIdFromUser) {
+    const { data } = await supabase
+      .from("shops")
+      .select("id, name, owner_email, city, state, address_line1")
+      .eq("id", shopIdFromUser)
+      .limit(1)
+      .maybeSingle();
+    shop = data;
+  }
 
   const shopId = shop?.id || null;
   const shopName = shop?.name || "My Shop";

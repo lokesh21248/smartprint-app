@@ -88,26 +88,11 @@ async function fetchOrder(id: string, userId: string): Promise<FetchResult> {
 
     console.log(`[orders/${id}] found order, shop_id=${raw.shop_id}, status=${raw.status}`);
 
-    // ── Query 2: verify shop ownership (separate flat query, no join) ─────────
-    const { data: shop, error: shopError } = await supabase
-      .from("shops")
-      .select("clerk_owner_id")
-      .eq("id", raw.shop_id)
-      .maybeSingle();
-
-    if (shopError) {
-      console.error(`[orders/${id}] shop lookup error:`, shopError.message);
-      return { ok: false, reason: "error", message: shopError.message };
-    }
-
-    if (!shop) {
-      console.warn(`[orders/${id}] shop not found for shop_id=${raw.shop_id}`);
-      return { ok: false, reason: "not-found" };
-    }
-
-    // Ownership check — shop owner only
-    if (shop.clerk_owner_id !== userId) {
-      console.warn(`[orders/${id}] unauthorized: userId=${userId} !== owner=${shop.clerk_owner_id}`);
+    // Verify shop access using the canManageShop helper (handles owners, managers, staff, admins)
+    const { canManageShop } = await import("@/lib/auth/shop-access");
+    const isAuthorized = await canManageShop(userId, raw.shop_id);
+    if (!isAuthorized) {
+      console.warn(`[orders/${id}] unauthorized: userId=${userId} does not manage shop=${raw.shop_id}`);
       return { ok: false, reason: "unauthorized" };
     }
 

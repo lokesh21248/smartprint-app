@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { OrderStatusUpdateSchema } from "@/lib/validators";
 import type { OrderStatus } from "@/types";
+import { canManageShop } from "@/lib/auth/shop-access";
 
 const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PLACED: ["ACCEPTED", "CANCELLED"],
@@ -45,7 +46,7 @@ export async function PATCH(
     // Fetch order to verify ownership and current status
     const { data: order, error: fetchError } = await supabase
       .from("orders")
-      .select("id, status, shop_id, status_history, customer_name, customer_phone, short_token, shops!inner(clerk_owner_id)")
+      .select("id, status, shop_id, status_history, customer_name, customer_phone, short_token")
       .eq("id", params.id)
       .single();
 
@@ -54,10 +55,10 @@ export async function PATCH(
     }
 
     // ─── OWNERSHIP CHECK ─────────────────────────────────────────────────────
-    // Verify the order belongs to a shop owned by the requesting user.
-    // This prevents cross-tenant attacks (shop A updating shop B's orders).
-    const shopData = order.shops as unknown as { clerk_owner_id: string } | null;
-    if (!shopData || shopData.clerk_owner_id !== userId) {
+    // Verify the user is authorized to manage the shop associated with this order.
+    // This supports owners, managers, staff, and admins.
+    const isAuthorized = await canManageShop(userId, order.shop_id);
+    if (!isAuthorized) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

@@ -13,12 +13,16 @@ export default async function ProfilePage() {
   const { userId } = await auth();
   if (!userId) redirect("/login");
 
+  const { getUserShop } = await import("@/lib/auth/shop-access");
+  const shopId = await getUserShop(userId);
+  if (!shopId) redirect("/create-shop");
+
   // Fetch full shop data for the profile page — broader select than getShopByUserId
   const supabase = createAdminClient();
   const { data: shop } = await supabase
     .from("shops")
     .select("id, name, owner_name, owner_email, owner_phone, address_line1, city, state, pincode, shop_code, slug, is_open")
-    .eq("clerk_owner_id", userId)
+    .eq("id", shopId)
     .limit(1)
     .maybeSingle();
 
