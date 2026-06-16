@@ -25,7 +25,7 @@ const STATUS_STEPS: OrderStatus[] = ["PLACED", "ACCEPTED", "PRINTING", "READY", 
 
 export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
   const [order, setOrder] = useState(initialOrder);
-  const [isOpeningPdf, setIsOpeningPdf] = useState(false);
+  const [openingFileUrl, setOpeningFileUrl] = useState<string | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -36,7 +36,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
   const handleOpenPdf = async (path?: string) => {
     const s3Path = path || order.file_s3_key;
     if (!s3Path) return;
-    setIsOpeningPdf(true);
+    setOpeningFileUrl(s3Path);
     try {
       const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${s3Path}`);
       const data = await res.json();
@@ -49,7 +49,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       console.error("[OrderDetailView] Signed URL fetch error:", err);
       toast.error("Error accessing document");
     } finally {
-      setIsOpeningPdf(false);
+      setOpeningFileUrl(null);
     }
   };
 
@@ -281,7 +281,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                             variant="ghost"
                             size="icon-sm"
                             className="text-[#6B7280] hover:text-[#2E8B57] hover:bg-emerald-50 shrink-0"
-                            loading={isOpeningPdf}
+                            loading={openingFileUrl === file.url}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleOpenPdf(file.url);
@@ -314,7 +314,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                     <Button
                       size="sm"
                       className="bg-[#2E8B57] hover:bg-[#1F6B42]"
-                      loading={isOpeningPdf}
+                      loading={openingFileUrl === (currentFile?.url || order.file_s3_key)}
                       onClick={() => handleOpenPdf(currentFile?.url)}
                     >
                       <Printer className="h-4 w-4 mr-2" />
@@ -331,7 +331,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                     <p className="text-sm text-[#9CA3AF] mt-1">
                       Ready to print · {currentFile?.pages || 1} pages
                     </p>
-                    <Button variant="outline" className="mt-4" loading={isOpeningPdf} onClick={() => handleOpenPdf(currentFile?.url)}>
+                    <Button variant="outline" className="mt-4" loading={openingFileUrl === (currentFile?.url || order.file_s3_key)} onClick={() => handleOpenPdf(currentFile?.url)}>
                       View Full Document
                     </Button>
                   </div>
