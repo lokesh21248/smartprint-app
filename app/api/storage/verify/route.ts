@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const admin = createAdminClient();
 
     /** Mark both tracking tables as uploaded — called from both verify paths */
-    async function markUploaded(path: string) {
+    const markUploaded = async (path: string) => {
       await admin
         .from("upload_sessions")
         .update({ security_status: "pending", scan_status: "pending", upload_status: "uploaded" })
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
           .update({ security_status: "pending", scan_status: "pending", upload_status: "uploaded" })
           .eq("storage_path", path);
       } catch { /* ignore — table may not exist */ }
-    }
+    };
 
     // ── Method 1: .info() — fast, single API call ─────────────────────────────
     try {

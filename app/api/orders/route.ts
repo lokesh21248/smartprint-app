@@ -577,7 +577,7 @@ export async function GET(request: Request) {
 
     // ── Parallelise: RPC + raw order fetch run simultaneously ─────────────────
     const [rpcResult, rawResult] = await Promise.all([
-      supabase.rpc("get_order_by_token", { p_token: shortToken }) as Promise<{
+      supabase.rpc("get_order_by_token", { p_token: shortToken }) as unknown as Promise<{
         data: GetOrderByTokenResponse | null;
         error: unknown;
       }>,

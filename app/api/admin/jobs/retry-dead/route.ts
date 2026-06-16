@@ -1,11 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/auth/role-guard";
+import { validateApiAccess, logAdminAction } from "@/lib/auth/role-guard";
 import { rateLimit } from "@/lib/ratelimit";
 import { headers } from "next/headers";
 
 export async function POST(req: Request) {
-  const { authorized, response, userId } = await requireAdmin();
+  const { authorized, response, userId } = await validateApiAccess(["admin"]);
   if (!authorized) return response;
 
   // 1. Rate Limiting

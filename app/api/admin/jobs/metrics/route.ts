@@ -1,9 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/auth/role-guard";
+import { validateApiAccess, logAdminAction } from "@/lib/auth/role-guard";
 
 export async function GET() {
-  const { authorized, response, userId } = await requireAdmin();
+  const { authorized, response, userId } = await validateApiAccess(["admin"]);
   if (!authorized) return response;
 
   logAdminAction({ userId: userId!, action: "view_metrics" });

@@ -1,9 +1,9 @@
-import { requireAdmin, logAdminAction } from "@/lib/auth/role-guard";
+import { validateApiAccess, logAdminAction } from "@/lib/auth/role-guard";
 import { validateSchema } from "@/lib/supabase/schema-validator";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const { authorized, response, userId } = await requireAdmin();
+  const { authorized, response, userId } = await validateApiAccess(["admin"]);
   if (!authorized) return response;
 
   logAdminAction({ userId: userId!, action: "validate_database_schema" });
