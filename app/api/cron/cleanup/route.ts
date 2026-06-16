@@ -22,7 +22,8 @@ export async function GET(request: Request) {
       .from("upload_sessions")
       .select("storage_path")
       .eq("upload_status", "uploading")
-      .lt("created_at", twentyFourHoursAgo);
+      .lt("created_at", twentyFourHoursAgo)
+      .limit(100);
 
     if (!sessionErr && abandonedSessions && abandonedSessions.length > 0) {
       const paths = abandonedSessions.map(s => s.storage_path);
@@ -43,7 +44,8 @@ export async function GET(request: Request) {
     const { data: infectedFiles } = await supabase
       .from("order_files")
       .select("id, storage_path")
-      .eq("scan_status", "infected");
+      .eq("scan_status", "infected")
+      .limit(100);
 
     if (infectedFiles && infectedFiles.length > 0) {
       const paths = infectedFiles.map(f => f.storage_path);

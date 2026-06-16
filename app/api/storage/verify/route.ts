@@ -35,16 +35,26 @@ export async function POST(request: Request) {
 
     /** Mark both tracking tables as uploaded — called from both verify paths */
     const markUploaded = async (path: string) => {
-      await admin
-        .from("upload_sessions")
-        .update({ security_status: "pending", scan_status: "pending", upload_status: "uploaded" })
-        .eq("storage_path", path);
-      try {
-        await admin
-          .from("uploaded_files")
-          .update({ security_status: "pending", scan_status: "pending", upload_status: "uploaded" })
-          .eq("storage_path", path);
-      } catch { /* ignore — table may not exist */ }
+      const payload = { security_status: "pending", scan_status: "pending", upload_status: "uploaded" };
+      
+      const updateUploadedFiles = async () => {
+        try {
+          await admin
+            .from("uploaded_files")
+            .update(payload)
+            .eq("storage_path", path);
+        } catch {
+          // ignore — table may not exist
+        }
+      };
+
+      await Promise.all([
+        admin
+          .from("upload_sessions")
+          .update(payload)
+          .eq("storage_path", path),
+        updateUploadedFiles(),
+      ]);
     };
 
     // ── Method 1: .info() — fast, single API call ─────────────────────────────

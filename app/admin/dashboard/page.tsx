@@ -8,17 +8,25 @@ export default async function AdminDashboardPage() {
   const supabase = createAdminClient();
 
   // 1. Fetch Aggregated Stats (Parallel)
-  const [shopsRes, ordersCountRes, revenueRes, latestOrdersRes] = await Promise.all([
-    supabase.from("shops").select("id, is_active, is_approved"),
+  const [
+    totalShopsRes,
+    activeShopsRes,
+    pendingApprovalRes,
+    ordersCountRes,
+    revenueRes,
+    latestOrdersRes
+  ] = await Promise.all([
+    supabase.from("shops").select("id", { count: "exact", head: true }),
+    supabase.from("shops").select("id", { count: "exact", head: true }).eq("is_active", true),
+    supabase.from("shops").select("id", { count: "exact", head: true }).eq("is_approved", false),
     supabase.from("orders").select("id", { count: "exact", head: true }),
     supabase.from("orders").select("total_amount").eq("status", "COMPLETED"),
     supabase.from("orders").select("id, short_token, customer_name, status, created_at").order("created_at", { ascending: false }).limit(20)
   ]);
 
-  const shops = shopsRes.data || [];
-  const totalShops = shops.length;
-  const activeShops = shops.filter(s => s.is_active).length;
-  const pendingApproval = shops.filter(s => !s.is_approved).length;
+  const totalShops = totalShopsRes.count || 0;
+  const activeShops = activeShopsRes.count || 0;
+  const pendingApproval = pendingApprovalRes.count || 0;
   
   const totalOrders = ordersCountRes.count || 0;
   const totalRevenue = (revenueRes.data || []).reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);

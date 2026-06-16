@@ -50,7 +50,7 @@ async function run() {
   }
 
   await checkColumn("shops", "id");
-  await checkColumn("shops", "owner_id");
+  await checkColumn("shops", "clerk_owner_id");
   await checkColumn("webhook_jobs", "id");
   await checkColumn("worker_locks", "id");
   await checkColumn("order_files", "id");
