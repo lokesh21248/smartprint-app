@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     // 1. Strict Role Guard
-    const { authorized, response, userId } = await validateApiAccess([
+    const { authorized, response, userId, role } = await validateApiAccess([
       "admin",
       "shop_owner",
       "manager",
@@ -44,13 +44,12 @@ export async function GET(request: Request) {
     // capped at 500 rows. For high-volume shops, consider moving to a DB function
     // (get_shop_stats) to push aggregation fully into Postgres.
     const [shopResult, pendingResult, todayOrdersResult, completedResult] = await Promise.all([
-      // Ownership verification
+      // Shop verification (owner ID check)
       supabase
         .from("shops")
-        .select("id")
+        .select("clerk_owner_id")
         .eq("id", shopId)
-        .eq("clerk_owner_id", userId!)
-        .single(),
+        .maybeSingle(),
 
       // Pending orders count (PLACED or NEW)
       supabase
@@ -78,6 +77,26 @@ export async function GET(request: Request) {
     ]);
 
     if (shopResult.error || !shopResult.data) {
+      return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
+    }
+
+    const shopOwnerId = shopResult.data.clerk_owner_id;
+    const isOwner = shopOwnerId === userId;
+    let hasStaffAccess = false;
+
+    if (!isOwner && role !== "admin") {
+      const { data: staffData } = await supabase
+        .from("shop_staff")
+        .select("id")
+        .eq("shop_id", shopId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (staffData) {
+        hasStaffAccess = true;
+      }
+    }
+
+    if (!isOwner && !hasStaffAccess && role !== "admin") {
       return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
     }
 

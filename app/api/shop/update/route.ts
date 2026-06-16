@@ -56,6 +56,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
+    const targetShopId = new URL(request.url).searchParams.get("shopId") || (body && (body as { shopId?: string }).shopId);
+
     const parsed = ShopProfileSchema.safeParse(body);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
@@ -97,10 +99,14 @@ export async function PATCH(request: Request) {
 
     const supabase = createAdminClient();
 
-    const { data: updatedShop, error: updateError } = await supabase
-      .from("shops")
-      .update(payload)
-      .eq("clerk_owner_id", userId)
+    let dbQuery = supabase.from("shops").update(payload);
+    if (role === "admin" && targetShopId) {
+      dbQuery = dbQuery.eq("id", targetShopId);
+    } else {
+      dbQuery = dbQuery.eq("clerk_owner_id", userId);
+    }
+
+    const { data: updatedShop, error: updateError } = await dbQuery
       .select("id")
       .maybeSingle();
 

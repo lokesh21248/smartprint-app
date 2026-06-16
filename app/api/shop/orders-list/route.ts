@@ -58,7 +58,7 @@ function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
 export async function GET(request: Request) {
   try {
     // 1. Auth + role guard
-    const { authorized, response, userId } = await validateApiAccess([
+    const { authorized, response, userId, role } = await validateApiAccess([
       "admin",
       "shop_owner",
       "manager",
@@ -83,9 +83,37 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
+    // Verify user access to this shop
+    const { data: shop, error: shopError } = await supabase
+      .from("shops")
+      .select("clerk_owner_id")
+      .eq("id", shopId)
+      .maybeSingle();
+
+    if (shopError || !shop) {
+      return NextResponse.json({ success: false, error: "Shop not found or access denied" }, { status: 404 });
+    }
+
+    const isOwner = shop.clerk_owner_id === userId;
+    let hasStaffAccess = false;
+
+    if (!isOwner && role !== "admin") {
+      const { data: staffData } = await supabase
+        .from("shop_staff")
+        .select("id")
+        .eq("shop_id", shopId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (staffData) {
+        hasStaffAccess = true;
+      }
+    }
+
+    if (!isOwner && !hasStaffAccess && role !== "admin") {
+      return NextResponse.json({ success: false, error: "Shop not found or access denied" }, { status: 404 });
+    }
+
     // 3. Build query — only the fields the client actually needs.
-    //    The shop join enforces row-level ownership: only orders belonging to
-    //    a shop owned by the requesting user are returned.
     let query = supabase
       .from("orders")
       .select(
@@ -105,12 +133,10 @@ export async function GET(request: Request) {
           "status",
           "created_at",
           "updated_at",
-          "shops!inner(clerk_owner_id)",
         ].join(", "),
         { count: "estimated" }
       )
-      .eq("shop_id", shopId)
-      .eq("shops.clerk_owner_id", userId!);
+      .eq("shop_id", shopId);
 
     // Optional status filter — only apply if the value is in the allowlist
     if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
