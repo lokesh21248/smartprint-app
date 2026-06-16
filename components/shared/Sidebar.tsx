@@ -14,7 +14,6 @@ import {
   ChevronRight,
   User,
   X,
-  Camera,
 } from "lucide-react";
 import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 import { cn } from "@/lib/utils";
@@ -30,7 +29,6 @@ const SIDEBAR_COLLAPSED_W = 68;
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, badge: true },
-  { href: "/scanner", label: "Scanner", icon: Camera },
   { href: "/shop-profile", label: "My Shop", icon: Store },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
