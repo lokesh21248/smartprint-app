@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
+import { getClientIp } from "@/lib/utils/ip";
 
 /**
  * POST /api/shop/find
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     }
 
     // Rate limit: 10 attempts per minute per IP to prevent code brute-forcing
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
+    const ip = getClientIp(request);
     const { success } = rateLimit(`shop_find_${ip}`, 10, 60);
     if (!success) {
       return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });

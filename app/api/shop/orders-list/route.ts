@@ -7,25 +7,56 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 70;
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type OrderFileRow = {
+  id: string;
+  order_id: string;
+  scan_status: string | null;
+  infected?: boolean | null;
+};
+
+type OrderRow = {
+  id: string;
+  short_token: string;
+  shop_id: string;
+  customer_name: string;
+  customer_phone: string;
+  file_name: string;
+  page_count: number;
+  copies: number;
+  is_color: boolean;
+  is_double_sided: boolean;
+  notes: string | null;
+  total_amount: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const VALID_STATUSES = ["PLACED", "ACCEPTED", "PRINTING", "READY", "COMPLETED", "CANCELLED", "DRAFT"] as const;
+type ValidStatus = (typeof VALID_STATUSES)[number];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Derives the worst file scan status across all files in an order.
+ * Priority: infected > scanning > failed > pending > clean
+ */
+function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
+  if (!files || files.length === 0) return null;
+  const statuses = files.map((f) => f.scan_status ?? "pending");
+  if (statuses.includes("infected")) return "infected";
+  if (statuses.includes("scanning")) return "scanning";
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("pending")) return "pending";
+  return "clean";
+}
+
+// ── Route Handler ─────────────────────────────────────────────────────────────
+
 export async function GET(request: Request) {
   try {
-    // 0. Verify required environment variables
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
-      console.error("Orders API Error: Missing database environment variables.");
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Database environment variables are not configured.",
-          details: { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey, serviceRoleKey: !!serviceRoleKey }
-        },
-        { status: 500 }
-      );
-    }
-
     // 1. Auth + role guard
     const { authorized, response, userId } = await validateApiAccess([
       "admin",
@@ -43,24 +74,18 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get("shopId")?.trim();
-    const status = searchParams.get("status")?.trim().toUpperCase();
-    const page = Math.min(
-      200,
-      Math.max(1, parseInt(searchParams.get("page") ?? "1", 10))
-    );
+    const statusParam = searchParams.get("status")?.trim().toUpperCase() as ValidStatus | undefined;
+    const page = Math.min(200, Math.max(1, parseInt(searchParams.get("page") ?? "1", 10)));
 
     if (!shopId) {
-      return NextResponse.json(
-        { error: "shopId is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "shopId is required" }, { status: 400 });
     }
 
     const supabase = createAdminClient();
 
     // 3. Build query — only the fields the client actually needs.
-    //    We do NOT join order_files here because there is no foreign key relation
-    //    defined in PostgREST's schema cache. Instead, we query it separately in memory.
+    //    The shop join enforces row-level ownership: only orders belonging to
+    //    a shop owned by the requesting user are returned.
     let query = supabase
       .from("orders")
       .select(
@@ -85,21 +110,11 @@ export async function GET(request: Request) {
         { count: "estimated" }
       )
       .eq("shop_id", shopId)
-      // Row-level ownership: ensures the requesting user owns this shop
       .eq("shops.clerk_owner_id", userId!);
 
-    // Optional status filter
-    const VALID_STATUSES = [
-      "PLACED",
-      "ACCEPTED",
-      "PRINTING",
-      "READY",
-      "COMPLETED",
-      "CANCELLED",
-      "DRAFT",
-    ];
-    if (status && VALID_STATUSES.includes(status)) {
-      query = query.eq("status", status);
+    // Optional status filter — only apply if the value is in the allowlist
+    if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
+      query = query.eq("status", statusParam);
     }
 
     query = query
@@ -109,85 +124,51 @@ export async function GET(request: Request) {
     const { data, error, count } = await query;
 
     if (error) {
-      console.error("Orders API Error:", error);
-      console.error("Request Params:", { status, page });
-      console.error("Shop ID:", shopId);
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-          details: error
-        },
-        { status: 500 }
-      );
+      // FIX S9: log full error internally, never expose Supabase internals to client
+      console.error("[orders-list] DB error:", {
+        code: error.code,
+        message: error.message,
+        hint: error.hint,
+        shopId,
+        page,
+      });
+      return NextResponse.json({ success: false, error: "Failed to load orders" }, { status: 500 });
     }
 
-    // 4. Map DB column names → client field names
-    type OrderFileRow = {
-      id: string;
-      scan_status: string | null;
-      infected?: boolean | null;
-    };
-
-    type OrderRow = {
-      id: string;
-      short_token: string;
-      shop_id: string;
-      customer_name: string;
-      customer_phone: string;
-      file_name: string;
-      page_count: number;
-      copies: number;
-      is_color: boolean;
-      is_double_sided: boolean;
-      notes: string | null;
-      total_amount: number;
-      status: string;
-      created_at: string;
-      updated_at: string;
-    };
-
-    // Query order_files separately in memory using fetched order IDs
     const rows = (data ?? []) as unknown as OrderRow[];
     const orderIds = rows.map((o) => o.id);
     const orderFilesMap: Record<string, OrderFileRow[]> = {};
 
+    // 4. Fetch order_files in a single query using the batch of order IDs
     if (orderIds.length > 0) {
       const { data: filesData, error: filesError } = await supabase
         .from("order_files")
-        .select("id, order_id, scan_status")
+        .select("id, order_id, scan_status, infected")
         .in("order_id", orderIds);
 
       if (filesError) {
-        console.error("Orders API Error: Failed to fetch related order files", filesError);
+        // Non-fatal: log and continue without file scan status
+        console.error("[orders-list] order_files fetch error:", {
+          code: filesError.code,
+          message: filesError.message,
+        });
       } else if (filesData) {
-        filesData.forEach((file: any) => {
+        // FIX R3: replaced the `any` cast with properly typed OrderFileRow
+        for (const file of filesData as OrderFileRow[]) {
           if (!orderFilesMap[file.order_id]) {
             orderFilesMap[file.order_id] = [];
           }
           orderFilesMap[file.order_id].push({
             id: file.id,
+            order_id: file.order_id,
             scan_status: file.scan_status,
             infected: file.infected,
           });
-        });
+        }
       }
     }
 
-    // Derive the worst file_scan_status across all files in the order.
-    // Priority: infected > scanning > failed > pending > clean
-    const worstScanStatus = (
-      files: OrderFileRow[] | undefined
-    ): string | null => {
-      if (!files || files.length === 0) return null;
-      const statuses = files.map((f) => f.scan_status ?? "pending");
-      if (statuses.includes("infected")) return "infected";
-      if (statuses.includes("scanning")) return "scanning";
-      if (statuses.includes("failed")) return "failed";
-      if (statuses.includes("pending")) return "pending";
-      return "clean";
-    };
-
+    // 5. Map DB column names → client field names
     const orders = rows.map((ord) => ({
       id: ord.id,
       short_token: ord.short_token,
@@ -197,9 +178,9 @@ export async function GET(request: Request) {
       file_name: ord.file_name,
       page_count: ord.page_count,
       copies: ord.copies,
-      color: ord.is_color,              // DB: is_color      → client: color
+      color: ord.is_color, // DB: is_color       → client: color
       double_sided: ord.is_double_sided, // DB: is_double_sided → client: double_sided
-      order_status: ord.status,          // DB: status        → client: order_status
+      order_status: ord.status, // DB: status         → client: order_status
       notes: ord.notes ?? "",
       total_amount: ord.total_amount,
       created_at: ord.created_at,
@@ -220,14 +201,7 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    console.error("Orders API Error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-        details: error
-      },
-      { status: 500 }
-    );
+    console.error("[orders-list] Unhandled error:", error.message);
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
 }

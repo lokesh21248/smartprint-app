@@ -1,4 +1,4 @@
-import { requireAdmin, logAdminAction } from "@/lib/auth/admin";
+import { requireAdmin, logAdminAction } from "@/lib/auth/role-guard";
 import { validateSchema } from "@/lib/supabase/schema-validator";
 import { NextResponse } from "next/server";
 

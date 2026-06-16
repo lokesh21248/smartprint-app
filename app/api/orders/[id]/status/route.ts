@@ -102,20 +102,18 @@ export async function PATCH(
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    // Send notification to customer
-    try {
-      const { NotificationService } = await import("@/lib/notifications");
-      await NotificationService.sendStatusUpdate({
-        orderId: order.id,
-        phone: order.customer_phone,
-        customerName: order.customer_name,
-        status: newStatus,
-        shortToken: order.short_token,
-      });
-    } catch (notifErr) {
-      console.error("Notification failed:", notifErr);
-      // Don't fail the request if notification fails
-    }
+    // Send notification to customer — fire-and-forget (void return, never blocks response)
+    // FIX Fix12: removed incorrect `await` — sendStatusUpdate() is void and runs
+    // its DB insert in the background via Promise.resolve(). The await was misleading
+    // and didn't actually wait for anything meaningful.
+    const { NotificationService } = await import("@/lib/notifications");
+    NotificationService.sendStatusUpdate({
+      orderId: order.id,
+      phone: order.customer_phone,
+      customerName: order.customer_name,
+      status: newStatus,
+      shortToken: order.short_token,
+    });
 
     return NextResponse.json({ success: true, order_status: newStatus });
   } catch {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
+import { getClientIp } from "@/lib/utils/ip";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     // Rate limit: 100 requests per minute per IP
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
+    const ip = getClientIp(request);
     const { success } = rateLimit(`shop_public_${ip}`, 100, 60);
     if (!success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });

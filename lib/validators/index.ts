@@ -45,14 +45,27 @@ export const OrderStatusUpdateSchema = z.object({
 });
 export type OrderStatusUpdateInput = z.infer<typeof OrderStatusUpdateSchema>;
 
+// ─── Indian phone number (reused across schemas) ──────────────────────────────
+// Matches 10-digit Indian mobile numbers starting with 6–9.
+const IndianPhone = z
+  .string()
+  .trim()
+  .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number");
+
+// ─── Shop Code ────────────────────────────────────────────────────────────────
+// 6 uppercase alphanumeric characters (no ambiguous chars like O, 0, I, 1).
+const ShopCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z0-9]{6}$/, "Shop code must be exactly 6 alphanumeric characters");
+
 // ─── Shop Profile (full — used by ShopProfileForm / Settings tab) ─────────────
 
 export const ShopProfileSchema = z.object({
   name: z.string().trim().min(2, "Shop name must be at least 2 characters").max(100),
   address: z.string().trim().min(5).max(300),
-  phone: z
-    .string()
-    .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number"),
+  phone: IndianPhone,
   owner_email: z.string().email(),
   // Minimum 0.01 — prevents free pricing that would create zero-amount orders
   price_bw_per_page: z.coerce.number().min(0.01, "B&W price must be at least ₹0.01"),
@@ -61,36 +74,57 @@ export const ShopProfileSchema = z.object({
   closing_time: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM format").optional(),
   working_days: z.array(z.string()).max(7).optional(),
   services: z.array(z.string()).max(20).optional(),
+  // Optional: validated shop code (only provided when caller wants to override)
+  shop_code: ShopCode.optional(),
 });
 export type ShopProfileInput = z.infer<typeof ShopProfileSchema>;
+
+// ─── Shop Create (used by POST /api/shop/create) ──────────────────────────────
+
+export const ShopCreateSchema = z.object({
+  shopName: z
+    .string()
+    .trim()
+    .min(2, "Shop name must be at least 2 characters")
+    .max(100, "Shop name must be at most 100 characters"),
+  ownerName: z.string().trim().max(100).optional(),
+  phone: IndianPhone,
+  addressLine1: z
+    .string()
+    .trim()
+    .min(5, "Address must be at least 5 characters")
+    .max(300, "Address is too long"),
+  city: z.string().trim().min(1, "City is required").max(100),
+  state: z.string().trim().min(1, "State is required").max(100),
+  pincode: z.string().regex(/^\d{6}$/, "Pincode must be 6 digits"),
+});
+export type ShopCreateInput = z.infer<typeof ShopCreateSchema>;
 
 // ─── Shop Profile Patch (partial — used by Profile page mini-form) ────────────
 // Each field is optional so the caller only sends what changed.
 // When present, the same business rules apply.
-export const ShopProfilePatchSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(2, "Shop name must be at least 2 characters")
-    .max(100)
-    .optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number")
-    .optional(),
-  address: z
-    .string()
-    .trim()
-    .min(5, "Address must be at least 5 characters")
-    .max(300)
-    .optional(),
-}).refine((data) => Object.keys(data).length > 0, {
-  message: "At least one field must be provided",
-  // path ensures this error is captured in the fieldErrors extraction loop
-  // (issues with an empty path[] are silently dropped since path[0] is undefined)
-  path: ["_root"],
-});
+export const ShopProfilePatchSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(2, "Shop name must be at least 2 characters")
+      .max(100)
+      .optional(),
+    phone: IndianPhone.optional(),
+    address: z
+      .string()
+      .trim()
+      .min(5, "Address must be at least 5 characters")
+      .max(300)
+      .optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field must be provided",
+    // path ensures this error is captured in the fieldErrors extraction loop
+    // (issues with an empty path[] are silently dropped since path[0] is undefined)
+    path: ["_root"],
+  });
 export type ShopProfilePatchInput = z.infer<typeof ShopProfilePatchSchema>;
 
 // ─── Staff ────────────────────────────────────────────────────────────────────
@@ -107,31 +141,49 @@ export const OrderCreateSchema = z.object({
   id: z.string().uuid().optional(),
   shopId: z.string().uuid("Invalid shopId"),
   // Support for multiple files
-  files: z.array(z.object({
-    name: z.string().min(1).max(255)
-      .refine((n) => !n.includes("..") && !n.includes("/") && !n.includes("\\"), {
-        message: "Invalid filename",
-      }),
-    size: z.coerce.number().int().min(1).max(26_214_400), // 25 MB cap per file
-    pages: z.coerce.number().int().min(1).max(2000),
-    url: z.string().min(1).max(1000)
-      .refine((u) => !u.includes("..") && !u.includes("\0"), {
-        message: "Invalid file path",
-      }),
-    copies: z.coerce.number().int().min(1).max(50).optional().default(1),
-    color: z.boolean().optional().default(false),
-    doubleSided: z.boolean().optional().default(false),
-    mimeType: z.string().optional(),
-    scanStatus: ScanStatusEnum.optional().default("pending"),
-    securityStatus: FileSecurityStatusEnum.optional().default("pending"),
-  })).min(1, "At least one file is required").optional(),
+  files: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(255)
+          .refine((n) => !n.includes("..") && !n.includes("/") && !n.includes("\\"), {
+            message: "Invalid filename",
+          }),
+        size: z.coerce.number().int().min(1).max(26_214_400), // 25 MB cap per file
+        pages: z.coerce.number().int().min(1).max(2000),
+        url: z
+          .string()
+          .min(1)
+          .max(1000)
+          .refine((u) => !u.includes("..") && !u.includes("\0"), {
+            message: "Invalid file path",
+          }),
+        copies: z.coerce.number().int().min(1).max(50).optional().default(1),
+        color: z.boolean().optional().default(false),
+        doubleSided: z.boolean().optional().default(false),
+        mimeType: z.string().optional(),
+        scanStatus: ScanStatusEnum.optional().default("pending"),
+        securityStatus: FileSecurityStatusEnum.optional().default("pending"),
+      })
+    )
+    .min(1, "At least one file is required")
+    .optional(),
   // Legacy single-file fields (optional for backward compatibility)
-  filePath: z.string().trim().min(1)
+  filePath: z
+    .string()
+    .trim()
+    .min(1)
     .refine((p) => !p.includes("..") && !p.includes("\0"), {
       message: "Invalid file path",
     })
     .optional(),
-  fileName: z.string().trim().min(1).max(255)
+  fileName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
     .refine((n) => !n.includes("..") && !n.includes("/") && !n.includes("\\"), {
       message: "Invalid filename",
     })
@@ -142,8 +194,7 @@ export const OrderCreateSchema = z.object({
   doubleSided: z.boolean().optional().default(false),
   notes: z.string().max(500).optional(),
   customerName: z.string().trim().min(1, "Customer name is required").max(100),
-  customerPhone: z.string().regex(/^[6-9]\d{9}$/, "Invalid Indian mobile number"),
+  customerPhone: IndianPhone,
   fileSize: z.coerce.number().int().min(1).max(26_214_400).optional(),
 });
 export type OrderCreateInput = z.infer<typeof OrderCreateSchema>;
-

@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/auth/admin";
+import { requireAdmin, logAdminAction } from "@/lib/auth/role-guard";
 
 export async function GET() {
   const { authorized, response, userId } = await requireAdmin();

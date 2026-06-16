@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitPresign, rateLimitHeaders } from "@/lib/ratelimit";
+import { getClientIp } from "@/lib/utils/ip";
 import {
   validateUploadRequest,
   generateStoragePath,
@@ -30,7 +31,7 @@ let isBucketConfigured = false;
 export async function POST(request: Request) {
   try {
     // 1. Rate limit — 20 uploads/hour/IP (in-memory, zero DB cost)
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
+    const ip = getClientIp(request);
     const rl = rateLimitPresign(ip);
     if (!rl.success) {
       console.error("[PRESIGN_ERROR] Rate limit exceeded");
@@ -93,34 +94,34 @@ export async function POST(request: Request) {
     // 5. Confirm shop exists and is active (prevent orphan uploads)
     const supabase = createAdminClient();
 
-    // Verify Supabase Storage bucket is accessible and online
-    const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(UPLOAD_BUCKET);
-    if (bucketError || !bucketData) {
-      console.error("[UPLOAD_FAIL]", bucketError || new Error("Supabase storage bucket unavailable"));
-      return NextResponse.json(
-        { success: false, error: "Storage service is currently unavailable. Please contact support." },
-        { status: 503 }
-      );
-    }
-
-    // Programmatically ensure the bucket allows PDF and image MIME types.
-    // Done once per warm container instance via service role.
+    // Programmatically ensure the bucket allows PDF and image MIME types — once per warm instance.
+    // FIX P8: skip the getBucket() health check entirely after first successful configuration.
+    // Previously, getBucket() was called on every warm request even when isBucketConfigured=true.
     if (!isBucketConfigured) {
+      // Verify Supabase Storage bucket is accessible and online
+      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(UPLOAD_BUCKET);
+      if (bucketError || !bucketData) {
+        console.error("[UPLOAD_FAIL]", bucketError || new Error("Supabase storage bucket unavailable"));
+        return NextResponse.json(
+          { success: false, error: "Storage service is currently unavailable. Please contact support." },
+          { status: 503 }
+        );
+      }
+
       try {
         const { error: updateError } = await supabase.storage.updateBucket(UPLOAD_BUCKET, {
           public: false,
-          // image/webp added: client compressor converts large PNG/JPG → WebP before upload
           allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"],
-          fileSizeLimit: 500 * 1024 * 1024, // Hardened 500 MB limit
+          fileSizeLimit: 500 * 1024 * 1024,
         });
         if (updateError) {
-          console.warn("[presign] Failed to update bucket configuration programmatically:", updateError.message);
+          console.warn("[presign] Failed to update bucket configuration:", updateError.message);
         } else {
           isBucketConfigured = true;
-          console.log("[presign] Successfully configured bucket allowed MIME types programmatically");
+          console.log("[presign] Bucket configured successfully");
         }
       } catch (err) {
-        console.error("[presign] Error while updating bucket:", err);
+        console.error("[presign] Error while configuring bucket:", err);
       }
     }
 

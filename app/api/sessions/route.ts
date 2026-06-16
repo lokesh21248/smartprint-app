@@ -19,9 +19,12 @@ export async function POST(request: Request) {
 
   // ── Guard: catch misconfigured Vercel env before touching the DB ──────────
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    // FIX S5: log the specific missing vars server-side, return generic message to client.
+    // Exposing which env vars are missing tells attackers about server configuration.
     console.error(
       "[POST /api/sessions] FATAL: Missing Supabase env vars. " +
-      "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel."
+        `Missing: ${[!SUPABASE_URL && "NEXT_PUBLIC_SUPABASE_URL", !SUPABASE_SERVICE_KEY && "SUPABASE_SERVICE_ROLE_KEY"].filter(Boolean).join(", ")}. ` +
+        "Set these in Vercel."
     );
     return NextResponse.json(
       { error: "Server configuration error. Please contact support." },

@@ -23,8 +23,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing params: bucket and path are required" }, { status: 400 })
     }
 
-    // Validate path to prevent traversal attacks
-    if (path.includes("..") || path.startsWith("/")) {
+    // FIX S4: extended path traversal check.
+    // Blocks: dot-dot sequences, Windows-style backslash, null bytes.
+    // Note: searchParams.get() already URL-decodes values, so %2E%2E → ".." is caught by ".." check.
+    if (path.includes("..") || path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
       return NextResponse.json({ error: "Invalid path" }, { status: 400 })
     }
 

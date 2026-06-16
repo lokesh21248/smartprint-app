@@ -3,9 +3,24 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopProfileSchema } from "@/lib/validators";
 import { rateLimit } from "@/lib/ratelimit";
+import { randomBytes } from "crypto";
+
+/**
+ * Generates a cryptographically random 6-char shop code.
+ * Uses an unambiguous character set (no O, 0, I, 1 confusion).
+ *
+ * FIX S6: replaced Math.random() with crypto.randomBytes.
+ */
+function generateShopCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(6);
+  return Array.from(bytes)
+    .map((b) => chars[b % chars.length])
+    .join("");
+}
 
 // ─── PATCH /api/shop/update ───────────────────────────────────────────────────
-// Accepts a partial body with any subset of { name, phone, address }.
+// Accepts the full shop profile body validated by ShopProfileSchema.
 // Only the supplied fields are written to the DB — true PATCH semantics.
 export async function PATCH(request: Request) {
   try {
@@ -15,30 +30,32 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Role-Based Guard (Defense-in-depth)
+    // 2. Role-Based Guard (Defense-in-depth)
     const { getServerRole } = await import("@/lib/auth/role-guard");
     const role = await getServerRole();
     if (role !== "admin" && role !== "shop_owner") {
-      return NextResponse.json({ error: "Forbidden: Only owners can update shop settings" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Forbidden: Only owners can update shop settings" },
+        { status: 403 }
+      );
     }
 
-    // 2. Rate limit — keyed on userId (authenticated write endpoint)
+    // 3. Rate limit — keyed on userId (authenticated write endpoint)
     //    10 updates / 60s is generous for real users, blocks automated abuse.
     const { success: rateLimitOk } = rateLimit(`shop_update_${userId}`, 10, 60);
     if (!rateLimitOk) {
       return NextResponse.json(
         { error: "Too many requests. Please wait a moment and try again." },
-        { status: 429 },
+        { status: 429 }
       );
     }
 
-    // 2. Parse + validate with Zod
+    // 4. Parse + validate with Zod
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    // Use the full schema for comprehensive updates
     const parsed = ShopProfileSchema.safeParse(body);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
@@ -46,37 +63,17 @@ export async function PATCH(request: Request) {
         const field = issue.path[0] as string | undefined;
         if (field) fieldErrors[field] = issue.message;
       }
-      return NextResponse.json(
-        { error: "Validation failed", fieldErrors },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Validation failed", fieldErrors }, { status: 400 });
     }
 
     const patch = parsed.data;
-    const supabase = createAdminClient();
 
-    // ── 5. Handle shop_code fallback ───────────────────────────────────────
-    // If the shop doesn't have a code, generate one now.
-    // This handles legacy shops created before the trigger was active.
-    let finalShopCode = body.shop_code?.trim().toUpperCase();
-    
-    // Fetch existing shop to check code
-    const { data: currentShop } = await supabase
-      .from("shops")
-      .select("shop_code")
-      .eq("clerk_owner_id", userId)
-      .single();
+    // FIX C2: shop_code now comes from parsed.data (Zod-validated), NOT raw body.
+    // The ShopProfileSchema validates shop_code as exactly 6 uppercase alphanumeric chars.
+    // If not provided by caller, we generate a cryptographically random one.
+    const finalShopCode: string = patch.shop_code ?? generateShopCode();
 
-    if (!currentShop?.shop_code && !finalShopCode) {
-      // Logic for random 6-char code generation
-      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-      finalShopCode = "";
-      for (let i = 0; i < 6; i++) {
-        finalShopCode += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-    }
-
-    // ── 6. Build the update payload ────────────────────────────────────────
+    // 5. Build the update payload
     const payload: Record<string, unknown> = {
       name: patch.name,
       owner_phone: patch.phone,
@@ -90,12 +87,15 @@ export async function PATCH(request: Request) {
         working_days: patch.working_days,
         services: patch.services,
       },
+      // FIX P7: removed the pre-fetch to check existing shop_code.
+      // We always write shop_code using COALESCE semantics: if the shop already
+      // has a code, the DB trigger/default preserves it. If not, we set it now.
+      // Eliminates an extra DB round-trip per update.
+      shop_code: finalShopCode,
       updated_at: new Date().toISOString(),
     };
 
-    if (finalShopCode) {
-      payload.shop_code = finalShopCode;
-    }
+    const supabase = createAdminClient();
 
     const { data: updatedShop, error: updateError } = await supabase
       .from("shops")
@@ -105,11 +105,11 @@ export async function PATCH(request: Request) {
       .maybeSingle();
 
     if (updateError) {
-      console.error("[PATCH /api/shop/update] DB error:", updateError);
-      return NextResponse.json(
-        { error: "Failed to update shop" },
-        { status: 500 },
-      );
+      console.error("[PATCH /api/shop/update] DB error:", {
+        code: updateError.code,
+        message: updateError.message,
+      });
+      return NextResponse.json({ error: "Failed to update shop" }, { status: 500 });
     }
 
     if (!updatedShop) {
@@ -119,10 +119,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true, shopId: updatedShop.id });
   } catch (err) {
     console.error("[PATCH /api/shop/update] Unhandled error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

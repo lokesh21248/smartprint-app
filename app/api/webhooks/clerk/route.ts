@@ -8,10 +8,22 @@ const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 if (!WEBHOOK_SECRET) {
   console.error(
     "[FATAL] CLERK_WEBHOOK_SECRET is not set. " +
-    "Webhooks will be rejected. Set this in your Vercel environment variables."
+      "Webhooks will be rejected. Set this in your Vercel environment variables."
   );
 }
 
+/**
+ * POST /api/webhooks/clerk
+ *
+ * Receives Clerk webhook events, verifies signature + timestamp drift,
+ * then queues the job atomically in webhook_jobs (idempotent via svix-id
+ * unique constraint) and triggers the worker asynchronously.
+ *
+ * ⚠️  SSRF FIX: the worker URL is built from NEXT_PUBLIC_APP_URL (a server-side
+ * environment variable), NOT from req.url. Using req.url would allow an attacker
+ * to manipulate the Host header and redirect the internal fetch to an arbitrary
+ * network endpoint.
+ */
 export async function POST(req: Request) {
   // ── 1. Reject immediately if secret is missing ──────────────────────────────
   if (!WEBHOOK_SECRET) {
@@ -40,7 +52,7 @@ export async function POST(req: Request) {
   if (ageSeconds > 300) {
     console.warn(
       `[SECURITY] Webhook replay detected — timestamp drift: ${ageSeconds}s (max 300s). ` +
-      `svix-id: ${svix_id}`
+        `svix-id: ${svix_id}`
     );
     return new Response("Timestamp too old", { status: 400 });
   }
@@ -111,11 +123,24 @@ export async function POST(req: Request) {
   );
 
   // ── 8. Trigger worker asynchronously (fire and forget) ──────────────────────
-  const workerUrl = new URL("/api/webhooks/clerk/worker", req.url);
-  fetch(workerUrl, {
-    method: "POST",
-    headers: { "x-worker-secret": WEBHOOK_SECRET },
-  }).catch(() => {});
+  // ⚠️ SSRF FIX: always use the configured APP_URL as the base — never req.url.
+  // An attacker can spoof the Host header to redirect this fetch to an internal
+  // network endpoint if req.url is used as the base.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (appUrl) {
+    const workerUrl = new URL("/api/webhooks/clerk/worker", appUrl);
+    fetch(workerUrl.toString(), {
+      method: "POST",
+      headers: { "x-worker-secret": WEBHOOK_SECRET },
+    }).catch((err) =>
+      console.error("[webhook] Worker trigger failed:", err instanceof Error ? err.message : err)
+    );
+  } else {
+    console.warn(
+      "[webhook] NEXT_PUBLIC_APP_URL is not set — worker not triggered. " +
+        "Set this env var to enable async processing."
+    );
+  }
 
   return new Response("OK", { status: 200 });
 }

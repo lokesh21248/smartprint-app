@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/auth/admin";
+import { requireAdmin, logAdminAction } from "@/lib/auth/role-guard";
 import { rateLimit } from "@/lib/ratelimit";
 import { headers } from "next/headers";
 

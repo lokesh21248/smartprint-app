@@ -5,6 +5,7 @@ import { rateLimitOrders, rateLimitOrdersGet, rateLimitHeaders } from "@/lib/rat
 import { OrderCreateSchema } from "@/lib/validators";
 import { enqueueBackgroundTasks } from "@/lib/queue/background-tasks";
 import { moveFileAcrossBuckets } from "@/lib/storage";
+import { getClientIp } from "@/lib/utils/ip";
 
 // ─── Runtime Config ──────────────────────────────────────────────────────────
 // Node.js runtime: required for Supabase client (uses Node crypto internals).
@@ -123,8 +124,7 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
 
     // ── 1. Rate Limiting ──────────────────────────────────────────────────────
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+    const ip = getClientIp(request);
     const rl = rateLimitOrders(ip);
     if (!rl.success) {
       console.timeEnd("[orders:POST:total]");
@@ -427,29 +427,25 @@ export async function POST(request: Request) {
       }));
 
       // ── CRITICAL LIFE CYCLE boundary: Link staging uploads in upload_sessions to permanent order
+      // FIX C3/P2: replaced N sequential awaits with 2 parallel batch updates.
+      // Previously: 1 DB round-trip per file × N files (serial, blocking response).
+      // Now: 1 batch UPDATE per table regardless of file count.
       try {
-        for (const fileToMove of orderFilesPayload) {
-          // Link upload session to order and ensure it is not marked as temporary
-          await supabase
+        const storagePaths = orderFilesPayload.map((f) => f.storage_path);
+        await Promise.all([
+          supabase
             .from("upload_sessions")
-            .update({
-              order_id: data.id,
-              is_temporary: false,
-            })
-            .eq("storage_path", fileToMove.storage_path);
-
-          // Try updating generic uploaded_files table as well
-          try {
-            await supabase
-              .from("uploaded_files")
-              .update({
-                order_id: data.id,
-              })
-              .eq("storage_path", fileToMove.storage_path);
-          } catch {
-            // Ignore if uploaded_files table does not exist
-          }
-        }
+            .update({ order_id: data.id, is_temporary: false })
+            .in("storage_path", storagePaths),
+          supabase
+            .from("uploaded_files")
+            .update({ order_id: data.id })
+            .in("storage_path", storagePaths)
+            .then(({ error }) => {
+              // Non-fatal: uploaded_files table may not exist in all environments
+              if (error) console.warn("[orders:POST] uploaded_files update skipped:", error.message);
+            }),
+        ]);
       } catch (linkErr) {
         console.error("[orders:POST] Failed to link upload sessions:", linkErr);
       }
@@ -562,8 +558,7 @@ interface GetOrderByTokenResponse {
  */
 export async function GET(request: Request) {
   try {
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+    const ip = getClientIp(request);
     const rl = rateLimitOrdersGet(ip);
     if (!rl.success) {
       return NextResponse.json(
