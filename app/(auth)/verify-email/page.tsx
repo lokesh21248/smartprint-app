@@ -20,6 +20,7 @@ export default function VerifyEmailPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [resetKey, setResetKey] = useState(0);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   // Handle hydration safely
   useEffect(() => {
@@ -38,57 +39,71 @@ export default function VerifyEmailPage() {
     return <AuthLoader />;
   }
 
-   const handleVerify = async (codeToVerify: string) => {
-     if (!isLoaded || !signUp || codeToVerify.length !== 6) return;
+  const handleVerify = async (codeToVerify: string) => {
+    if (!isLoaded || !signUp) return;
+    if (codeToVerify.length !== 6) {
+      toast.error("Please enter the 6-digit verification code.");
+      return;
+    }
 
-     setIsLoading(true);
-     setError("");
+    setIsLoading(true);
+    setError("");
 
-     try {
-       const completeSignUp = await signUp.attemptEmailAddressVerification({
-         code: codeToVerify,
-       });
+    try {
+      const completeSignUp = await signUp.attemptEmailAddressVerification({
+        code: codeToVerify,
+      });
 
-       if (completeSignUp.status === "complete" && completeSignUp.createdSessionId) {
-         await setActive({ session: completeSignUp.createdSessionId });
+      if (completeSignUp.status === "complete" && completeSignUp.createdSessionId) {
+        setIsSuccess(true);
+        await setActive({ session: completeSignUp.createdSessionId });
 
-         const meta = (signUp.unsafeMetadata || {}) as Record<string, string>;
-         if (meta.shopName) {
-           try {
-             await fetch("/api/shop/create", {
-               method: "POST",
-               headers: { "Content-Type": "application/json" },
-               body: JSON.stringify({
-                 shopName: meta.shopName,
-                 ownerName: meta.ownerName,
-                 phone: meta.phone,
-                 addressLine1: meta.address,
-                 city: meta.city,
-                 state: meta.state,
-                 pincode: meta.pincode,
-               }),
-             });
-           } catch (shopErr) {
-             console.error("[verify-email] Shop creation failed:", shopErr);
-           }
-         }
+        const meta = (signUp.unsafeMetadata || {}) as Record<string, string>;
+        if (meta.shopName) {
+          try {
+            const res = await fetch("/api/shop/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                shopName: meta.shopName,
+                ownerName: meta.ownerName,
+                phone: meta.phone,
+                addressLine1: meta.address,
+                city: meta.city,
+                state: meta.state,
+                pincode: meta.pincode,
+              }),
+            });
 
-         toast.success("Email verified! Welcome aboard.");
-         window.location.assign("/dashboard");
-       } else {
-         console.error(JSON.stringify(completeSignUp, null, 2));
-         setError("Verification incomplete. Please try again.");
-       }
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.error || "Failed to create shop record");
+            }
+          } catch (shopErr: any) {
+            console.error("Signup failed:", shopErr);
+            setIsSuccess(false);
+            toast.error(shopErr.message || "Failed to set up shop details. Please try again.");
+            setError(shopErr.message || "Failed to set up shop details. Please try again.");
+            return;
+          }
+        }
+
+        toast.success("Email verified! Welcome aboard.");
+        window.location.assign("/dashboard");
+      } else {
+        console.error(JSON.stringify(completeSignUp, null, 2));
+        setError("Verification incomplete. Please try again.");
+      }
     } catch (err: unknown) {
-      console.error(err);
+      console.error("Signup failed:", err);
       const clerkErr = err as { errors?: Array<{ message?: string }> };
       setError(clerkErr.errors?.[0]?.message || "Invalid code. Please try again.");
-       toast.error("Verification failed");
-       setCode(""); // Clear on error
-     } finally {
-       setIsLoading(false);
-     }
-   };
+      toast.error(clerkErr.errors?.[0]?.message || "Verification failed");
+      setCode(""); // Clear on error
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
    const handleResend = async () => {
      if (!isLoaded || !signUp) return;
@@ -143,18 +158,21 @@ export default function VerifyEmailPage() {
 
         <Button
           onClick={() => handleVerify(code)}
-          className="w-full"
-          size="lg"
-          disabled={isLoading || code.length !== 6}
+          disabled={isLoading || isSuccess}
+          className="w-full h-14 rounded-xl text-base font-semibold px-6 bg-[#16A34A] text-white shadow-sm hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
               Verifying...
+            </>
+          ) : isSuccess ? (
+            <>
+              <CheckCircle2 className="h-4 w-4" />
+              Email Verified
             </>
           ) : (
             <>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
               Verify Email
             </>
           )}

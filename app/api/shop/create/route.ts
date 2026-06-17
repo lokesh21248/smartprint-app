@@ -159,5 +159,21 @@ export async function POST(req: Request) {
     );
   }
 
+  // Create shop admin staff record
+  const { error: staffError } = await supabase
+    .from("shop_staff")
+    .insert({
+      shop_id: shopId,
+      user_id: userId,
+      email: ownerEmail,
+      role: "owner",
+      is_active: true,
+    });
+
+  if (staffError) {
+    console.error("[POST /api/shop/create] Failed to insert shop_staff admin record:", staffError);
+    return NextResponse.json({ error: "Failed to create shop admin record" }, { status: 500 });
+  }
+
   return NextResponse.json({ ok: true, shopId });
 }
