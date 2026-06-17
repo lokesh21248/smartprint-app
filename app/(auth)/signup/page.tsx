@@ -102,7 +102,10 @@ export default function SignupPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || !signUp) {
+      toast.error("Sign up service is not ready yet. Please try again in a moment.");
+      return;
+    }
 
     if (!formData.ownerName.trim()) {
       toast.error("Please enter your full name.");
@@ -150,47 +153,51 @@ export default function SignupPage() {
           return;
         }
 
-        // Verify token with backend
-        const verifyRes = await fetch("/api/auth/verify-turnstile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: turnstileToken }),
-        });
+        // Verify token with backend (with a 10-second timeout)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        if (!verifyRes.ok) {
-          toast.error("Please complete the verification.");
+        try {
+          const verifyRes = await fetch("/api/auth/verify-turnstile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: turnstileToken }),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!verifyRes.ok) {
+            toast.error("Please complete the verification.");
+            resetTurnstile();
+            setIsLoading(false);
+            return;
+          }
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          console.error("Turnstile verification client error:", fetchErr);
+          toast.error("Verification failed or timed out. Please try again.");
           resetTurnstile();
           setIsLoading(false);
           return;
         }
       }
 
-      // Create a promise for signup and verification preparation
-      const signupPromise = (async () => {
-        await signUp.create({
-          emailAddress: formData.email,
-          password: formData.password,
-          unsafeMetadata: {
-            ownerName: formData.ownerName,
-            shopName: formData.shopName,
-            phone: formData.phone,
-            address: formData.address,
-            city: formData.city,
-            state: formData.state,
-            pincode: formData.pincode,
-          },
-        });
+      await signUp.create({
+        emailAddress: formData.email,
+        password: formData.password,
+        unsafeMetadata: {
+          ownerName: formData.ownerName,
+          shopName: formData.shopName,
+          phone: formData.phone,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          pincode: formData.pincode,
+        },
+      });
 
-        await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      })();
-
-      // Create a 20-second timeout promise
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Signup timed out. Please try again.")), 20000)
-      );
-
-      // Race the promises
-      await Promise.race([signupPromise, timeoutPromise]);
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
 
       toast.success("Verification code sent to your email!");
       router.push("/verify-email");

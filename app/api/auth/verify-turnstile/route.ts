@@ -9,16 +9,28 @@ export async function POST(request: Request) {
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY || "1x0000000000000000000000000000000AA";
     
-    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(token)}`,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const data = await response.json();
-    if (!data.success) {
-      console.warn("[verify-turnstile] Cloudflare verification failed:", data);
-      return NextResponse.json({ error: "Verification failed" }, { status: 400 });
+    try {
+      const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(token)}`,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      const data = await response.json();
+      if (!data.success) {
+        console.warn("[verify-turnstile] Cloudflare verification failed:", data);
+        return NextResponse.json({ error: "Verification failed" }, { status: 400 });
+      }
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      console.error("[verify-turnstile] Cloudflare siteverify error or timeout:", fetchErr);
+      return NextResponse.json({ error: "Verification service unavailable or timed out" }, { status: 504 });
     }
 
     return NextResponse.json({ success: true });
