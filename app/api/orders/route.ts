@@ -4,7 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitOrders, rateLimitOrdersGet, rateLimitHeaders } from "@/lib/ratelimit";
 import { OrderCreateSchema } from "@/lib/validators";
 import { enqueueBackgroundTasks } from "@/lib/queue/background-tasks";
-import { moveFileAcrossBuckets } from "@/lib/storage";
 import { getClientIp } from "@/lib/utils/ip";
 
 // ─── Runtime Config ──────────────────────────────────────────────────────────

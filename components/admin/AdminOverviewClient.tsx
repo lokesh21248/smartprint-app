@@ -7,10 +7,7 @@ import {
 import { 
   Store, 
   ShoppingBag, 
-  IndianRupee, 
-  Users,
-  ArrowUpRight,
-  ArrowDownRight
+  IndianRupee
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 

@@ -2,7 +2,7 @@
 
 import { toast } from "sonner";
 import {
-  Bell, Volume2, VolumeX, Zap, Globe, LogOut, MessageSquare, Coins, BellRing, Radio, CheckCircle2, Play
+  Bell, Volume2, VolumeX, Zap, Globe, LogOut, MessageSquare, Coins, BellRing, Radio, CheckCircle2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";

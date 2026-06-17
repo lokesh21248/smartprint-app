@@ -15,7 +15,6 @@ import type { Order, Shop } from "@/types";
 import { motion } from "framer-motion";
 import { useUploadQueue } from "@/hooks/useUploadQueue";
 import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
-import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 
 export default function OrderStatusPage() {
   const params = useParams();

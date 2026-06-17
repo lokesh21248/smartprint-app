@@ -26,8 +26,7 @@ import { UploadProgressBar } from "@/components/upload/UploadProgressBar";
 import type { UploadPhase } from "@/components/upload/UploadProgressBar";
 import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
 import { createOrderTracker } from "@/lib/monitoring/orderMetrics";
-import type { UploadedFile, FileSecurityStatus } from "@/types";
-import { createClient } from "@/lib/supabase/client";
+import type { UploadedFile } from "@/types";
 import type { MultiFileUploaderRef } from "@/components/upload/MultiFileUploader";
 import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 
@@ -585,7 +584,7 @@ function OrderUploadPageInner() {
           maxRetries: 2,
           baseDelayMs: 600,
           signal: controller.signal,
-          onRetry: (attempt) => {
+          onRetry: () => {
             tracker.incrementRetry();
           },
         }
@@ -637,7 +636,7 @@ function OrderUploadPageInner() {
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
     }
-  }, [files, shop, customerName, customerPhone, isOffline, notes, router]);
+  }, [files, shop, customerName, customerPhone, isOffline, notes, router, orderId]);
 
   // Loading Screen
   if (isLoadingShop) {

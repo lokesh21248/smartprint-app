@@ -461,16 +461,6 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      {children}
-      {error && <p className="text-xs font-medium text-red-600" role="alert">{error}</p>}
-    </div>
-  );
-}
-
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string | null }) {
   return (
     <div className="flex items-start gap-3">
