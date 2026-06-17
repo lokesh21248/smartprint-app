@@ -17,18 +17,24 @@ export type AppUserRole = "admin" | "shop_owner" | "manager" | "staff" | "custom
  * whenever it changes (shop created, staff invited, etc.) via:
  *   clerkClient.users.updateUserMetadata(userId, { publicMetadata: { role } })
  */
-export async function getServerRole(): Promise<AppUserRole | null> {
-  const authObj = await auth();
-  const userId = authObj.userId;
+export async function getServerRole(
+  userIdParam?: string | null,
+  clerkRoleParam?: string | null
+): Promise<AppUserRole | null> {
+  let userId = userIdParam;
+  let clerkRole = clerkRoleParam;
+
+  if (userId === undefined || clerkRole === undefined) {
+    const authObj = await auth();
+    userId = authObj.userId ?? null;
+    clerkRole = String(
+      (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
+    )
+      .trim()
+      .toLowerCase();
+  }
 
   if (!userId) return null;
-
-  // ── 1. Fast-path: Clerk session claims (0 DB calls) ───────────────────────
-  const clerkRole = String(
-    (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
-  )
-    .trim()
-    .toLowerCase();
 
   if (clerkRole === "admin") return "admin";
   if (clerkRole === "shop_owner") return "shop_owner";
@@ -107,8 +113,8 @@ export async function requireAdmin(): Promise<AppUserRole> {
 export async function validateApiAccess(
   allowedRoles: AppUserRole[] = ["admin", "shop_owner", "manager", "staff"]
 ): Promise<
-  | { authorized: true; userId: string; role: AppUserRole; response?: never }
-  | { authorized: false; userId?: string; role?: AppUserRole; response: NextResponse }
+  | { authorized: true; userId: string; role: AppUserRole; clerkRole: string; response?: never }
+  | { authorized: false; userId?: string; role?: AppUserRole; clerkRole?: string; response: NextResponse }
 > {
   const authObj = await auth();
   const userId = authObj.userId;
@@ -120,7 +126,13 @@ export async function validateApiAccess(
     };
   }
 
-  const role = await getServerRole();
+  const clerkRole = String(
+    (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const role = await getServerRole(userId, clerkRole);
   const isAuthorized = role !== null && allowedRoles.includes(role);
 
   if (!isAuthorized) {
@@ -128,11 +140,12 @@ export async function validateApiAccess(
       authorized: false,
       userId,
       role: role ?? undefined,
+      clerkRole,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };
   }
 
-  return { authorized: true, userId, role: role! };
+  return { authorized: true, userId, role: role!, clerkRole };
 }
 
 /**

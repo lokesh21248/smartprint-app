@@ -59,7 +59,7 @@ function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
 export async function GET(request: Request) {
   try {
     // 1. Auth + role guard
-    const { authorized, response, userId } = await validateApiAccess([
+    const { authorized, response, userId, clerkRole } = await validateApiAccess([
       "admin",
       "shop_owner",
       "manager",
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
     }
 
     // Verify user access to this shop
-    const isAuthorized = await canManageShop(userId, shopId);
+    const isAuthorized = await canManageShop(userId, shopId, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json({ success: false, error: "Shop not found or access denied" }, { status: 404 });
     }

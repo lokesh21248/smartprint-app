@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import * as React from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   FileText, Phone, Clock, ChevronRight,
@@ -22,16 +23,17 @@ interface OrderCardProps {
   onStatusChange?: (orderId: string, newStatus: OrderStatus) => void;
 }
 
+const STATUS_ICONS: Record<OrderStatus, ReactNode> = {
+  DRAFT: <Clock className="h-3.5 w-3.5" />,
+  PLACED: <Clock className="h-3.5 w-3.5" />,
+  ACCEPTED: <Check className="h-3.5 w-3.5" />,
+  PRINTING: <Printer className="h-3.5 w-3.5" />,
+  READY: <Package className="h-3.5 w-3.5" />,
+  COMPLETED: <CheckCircle className="h-3.5 w-3.5" />,
+  CANCELLED: <X className="h-3.5 w-3.5" />,
+};
+
 export function OrderCard({ order, onStatusChange }: OrderCardProps) {
-  const STATUS_ICONS: Record<OrderStatus, React.ReactNode> = {
-    DRAFT: <Clock className="h-3.5 w-3.5" />,
-    PLACED: <Clock className="h-3.5 w-3.5" />,
-    ACCEPTED: <Check className="h-3.5 w-3.5" />,
-    PRINTING: <Printer className="h-3.5 w-3.5" />,
-    READY: <Package className="h-3.5 w-3.5" />,
-    COMPLETED: <CheckCircle className="h-3.5 w-3.5" />,
-    CANCELLED: <X className="h-3.5 w-3.5" />,
-  };
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const { updateStatus, processing } = useOrderStatus(order.id, {

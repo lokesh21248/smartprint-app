@@ -97,16 +97,6 @@ export function getPrintConfigLabel(
 
   return `${color} · ${order.page_count}pg · ${copies} ${copies > 1 ? "copies" : "copy"} · ${sides}`;
 }
-
-export function generateShortToken(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; 
-  let result = "";
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 export function calculateTotal(params: {
   pageCount: number;
   copies: number;

@@ -45,40 +45,49 @@ export async function getUserShop(userId: string): Promise<string | null> {
  * @param userId Clerk User ID
  * @param shopId Target Shop ID
  */
-export async function canManageShop(userId: string, shopId: string): Promise<boolean> {
+export async function canManageShop(
+  userId: string,
+  shopId: string,
+  clerkRole?: string
+): Promise<boolean> {
   if (!userId || !shopId) return false;
 
   // 1. Clerk session claims check first (fast path for admin)
-  const authObj = await auth();
-  const clerkRole = String(
-    (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
-  )
-    .trim()
-    .toLowerCase();
+  let resolvedClerkRole = clerkRole;
+  if (resolvedClerkRole === undefined) {
+    const authObj = await auth();
+    resolvedClerkRole = String(
+      (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
+    )
+      .trim()
+      .toLowerCase();
+  }
 
-  if (clerkRole === "admin") return true;
+  if (resolvedClerkRole === "admin") return true;
 
   const supabase = createAdminClient();
 
-  // 2. Database lookup
-  // Check if they are the owner of the shop
-  const { data: shop } = await supabase
-    .from("shops")
-    .select("clerk_owner_id")
-    .eq("id", shopId)
-    .maybeSingle();
+  // 2. Database lookup - Parallelized (FIX P1)
+  const [shopResult, staffResult] = await Promise.all([
+    supabase
+      .from("shops")
+      .select("clerk_owner_id")
+      .eq("id", shopId)
+      .maybeSingle(),
+    supabase
+      .from("shop_staff")
+      .select("role")
+      .eq("shop_id", shopId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  const shop = shopResult.data;
+  const staffRecord = staffResult.data;
 
   if (shop && shop.clerk_owner_id === userId) {
     return true;
   }
-
-  // Check if they are assigned staff or manager in shop_staff table
-  const { data: staffRecord } = await supabase
-    .from("shop_staff")
-    .select("role")
-    .eq("shop_id", shopId)
-    .eq("user_id", userId)
-    .maybeSingle();
 
   if (staffRecord) {
     const rawRole = String(staffRecord.role).trim().toLowerCase();

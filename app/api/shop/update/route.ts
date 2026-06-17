@@ -26,7 +26,8 @@ function generateShopCode(): string {
 export async function PATCH(request: Request) {
   try {
     // 1. Auth guard
-    const { userId } = await auth();
+    const authObj = await auth();
+    const userId = authObj.userId;
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -59,7 +60,13 @@ export async function PATCH(request: Request) {
       shopId = userShopId;
     }
 
-    const isAuthorized = await canManageShop(userId, shopId);
+    const clerkRole = String(
+      (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const isAuthorized = await canManageShop(userId, shopId, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json(
         { error: "Forbidden: Not authorized to manage this shop" },

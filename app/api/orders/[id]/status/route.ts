@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { OrderStatusUpdateSchema } from "@/lib/validators";
 import type { OrderStatus } from "@/types";
 import { canManageShop } from "@/lib/auth/shop-access";
+import { rateLimit } from "@/lib/ratelimit";
 
 const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PLACED: ["ACCEPTED", "CANCELLED"],
@@ -30,9 +31,15 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { userId } = await auth();
+    const authObj = await auth();
+    const userId = authObj.userId;
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { success } = rateLimit(`order_status_update_${userId}`, 60, 60);
+    if (!success) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
     const supabase = createAdminClient();
 
@@ -57,7 +64,13 @@ export async function PATCH(
     // ─── OWNERSHIP CHECK ─────────────────────────────────────────────────────
     // Verify the user is authorized to manage the shop associated with this order.
     // This supports owners, managers, staff, and admins.
-    const isAuthorized = await canManageShop(userId, order.shop_id);
+    const clerkRole = String(
+      (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const isAuthorized = await canManageShop(userId, order.shop_id, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

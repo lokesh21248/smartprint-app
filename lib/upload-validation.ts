@@ -8,6 +8,8 @@
  * Never trust client-reported MIME types or file sizes alone.
  */
 
+import { randomBytes } from "crypto";
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 /** Hard cap: 500 MB. Updated to support production-scale resumable chunked files. */
@@ -265,7 +267,7 @@ export function sanitizeFileName(raw: string): string {
  */
 export function generateStoragePath(shopId: string, extension: string): string {
   const timestamp = Date.now();
-  const random = Math.random().toString(36).slice(2, 10);
+  const random = randomBytes(4).toString("hex");
   return `orders/${shopId}/${timestamp}-${random}.${extension}`;
 }
 

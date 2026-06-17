@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createHash } from "crypto";
+import { createHash, randomInt } from "crypto";
 
 // A simple salt for OTP hashing (since they are only 6 digits)
 const OTP_SALT = process.env.OTP_SALT || "scan2paper-default-salt";
@@ -12,7 +12,7 @@ function hashOtp(code: string): string {
 
 export async function sendOtp(phone: string) {
   // Generate cryptographically random 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = randomInt(100000, 1000000).toString();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
   // In production, call MSG91 / Fast2SMS / Twilio here

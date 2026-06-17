@@ -114,8 +114,8 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     // Mark initialData as instantly stale so React Query always fires a
     // background refetch on mount — without this the SSR data never updates.
     initialDataUpdatedAt: 0,
-    staleTime: 0,
-    gcTime: 5 * 60 * 1_000,
+    staleTime: 60000,
+    gcTime: 300000,
     refetchOnMount: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,

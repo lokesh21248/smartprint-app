@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, Phone, Download, Printer,
@@ -34,16 +34,27 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
+  // Client-side signed URL cache (valid for the lifetime of this component)
+  const signedUrlCache = useRef(new Map<string, string>());
+
   const { updateStatus, processing } = useOrderStatus(order.id, {
     onSuccess: (newStatus) => setOrder((o) => ({ ...o, order_status: newStatus })),
   });
 
-  const loadPreview = async (path: string) => {
+  const loadPreview = useCallback(async (path: string) => {
     if (!path) return;
     setPreviewLoading(true);
     setPreviewError(null);
-    setPreviewUrl(null);
 
+    // Check client-side cache
+    if (signedUrlCache.current.has(path)) {
+      console.log(`[OrderDetailView] Cache hit for preview: ${path}`);
+      setPreviewUrl(signedUrlCache.current.get(path)!);
+      setPreviewLoading(false);
+      return;
+    }
+
+    setPreviewUrl(null);
     console.log(`[OrderDetailView] Starting preview load. Bucket: order-files, Path: ${path}`);
     console.time("signed-url");
     console.time("preview-load");
@@ -66,19 +77,8 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
 
       console.log(`[OrderDetailView] Signed URL generated successfully`);
 
-      // Verify file existence in storage bucket via HEAD check
-      try {
-        const fileCheck = await fetch(data.signedUrl, { method: "HEAD" });
-        if (!fileCheck.ok) {
-          throw new Error(`File not found in storage bucket (HTTP ${fileCheck.status})`);
-        }
-      } catch (checkErr) {
-        console.warn("[OrderDetailView] File existence check warning:", checkErr);
-        if (checkErr instanceof Error && checkErr.message.includes("HTTP 404")) {
-          throw checkErr;
-        }
-      }
-
+      // Cache it
+      signedUrlCache.current.set(path, data.signedUrl);
       setPreviewUrl(data.signedUrl);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown storage error";
@@ -88,28 +88,39 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       setPreviewLoading(false);
       console.timeEnd("preview-load");
     }
-  };
+  }, []);
 
-  const handleDownloadFile = async (path: string, fileName: string) => {
+  const handleDownloadFile = useCallback(async (path: string, fileName: string) => {
     if (!path) return;
     setDownloadingFileUrl(path);
     console.log(`[OrderDetailView] Starting download for path: ${path}`);
     console.time("download");
     try {
-      const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${path}`);
-      if (!res.ok) {
-        throw new Error(`Failed to generate download URL (HTTP ${res.status})`);
-      }
-      const data = await res.json();
-      if (!data.signedUrl) {
-        throw new Error(data.error || "No signed URL returned for download");
+      let downloadUrl = signedUrlCache.current.get(path);
+
+      if (!downloadUrl) {
+        const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${path}`);
+        if (!res.ok) {
+          throw new Error(`Failed to generate download URL (HTTP ${res.status})`);
+        }
+        const data = await res.json();
+        if (!data.signedUrl) {
+          throw new Error(data.error || "No signed URL returned for download");
+        }
+        downloadUrl = data.signedUrl as string;
+        signedUrlCache.current.set(path, downloadUrl);
+        console.log(`[OrderDetailView] Signed URL generated for download: success`);
+      } else {
+        console.log(`[OrderDetailView] Download Cache hit for: ${path}`);
       }
 
-      console.log(`[OrderDetailView] Signed URL generated for download: success`);
+      if (!downloadUrl) {
+        throw new Error("Download URL could not be resolved");
+      }
 
       // Trigger download using hidden anchor element
       const link = document.createElement("a");
-      link.href = data.signedUrl;
+      link.href = downloadUrl;
       link.download = fileName;
       link.target = "_blank";
       document.body.appendChild(link);
@@ -125,7 +136,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       setDownloadingFileUrl(null);
       console.timeEnd("download");
     }
-  };
+  }, []);
 
   // Trigger preview load when selected index or files list changes
   useEffect(() => {
@@ -139,27 +150,40 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       setPreviewError("No file URL available");
       setPreviewUrl(null);
     }
-  }, [previewIndex, order.files, order.file_s3_key, order.file_name, order.page_count]);
+  }, [previewIndex, order.files, order.file_s3_key, order.file_name, order.page_count, loadPreview]);
 
-  const handleOpenPdf = async (path?: string) => {
+  const handleOpenPdf = useCallback(async (path?: string) => {
     const s3Path = path || order.file_s3_key;
     if (!s3Path) return;
     setOpeningFileUrl(s3Path);
     try {
-      const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${s3Path}`);
-      const data = await res.json();
-      if (data.signedUrl) {
-        window.open(data.signedUrl, "_blank");
-      } else {
-        toast.error("Failed to get document access");
+      let docUrl = signedUrlCache.current.get(s3Path);
+
+      if (!docUrl) {
+        const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${s3Path}`);
+        const data = await res.json();
+        if (data.signedUrl) {
+          docUrl = data.signedUrl as string;
+          signedUrlCache.current.set(s3Path, docUrl);
+        } else {
+          toast.error("Failed to get document access");
+          return;
+        }
       }
+
+      if (!docUrl) {
+        toast.error("No document URL resolved");
+        return;
+      }
+
+      window.open(docUrl, "_blank");
     } catch (err) {
       console.error("[OrderDetailView] Signed URL fetch error:", err);
       toast.error("Error accessing document");
     } finally {
       setOpeningFileUrl(null);
     }
-  };
+  }, [order.file_s3_key]);
 
   const nextStatus = getNextStatus(order.order_status);
 

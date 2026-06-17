@@ -2,12 +2,19 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StaffInviteSchema } from "@/lib/validators";
+import { rateLimit } from "@/lib/ratelimit";
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await auth();
+    const authObj = await auth();
+    const userId = authObj.userId;
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { success } = rateLimit(`staff_invite_${userId}`, 10, 60);
+    if (!success) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
     const body = await request.json();
@@ -28,7 +35,13 @@ export async function POST(request: Request) {
     }
 
     // Verify user is authorized to manage staff for this shop
-    const isAuthorized = await canManageShop(userId, shopId);
+    const clerkRole = String(
+      (authObj.sessionClaims?.metadata as Record<string, unknown> | undefined)?.role ?? ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const isAuthorized = await canManageShop(userId, shopId, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json({ error: "Forbidden: Not authorized to invite staff to this shop" }, { status: 403 });
     }

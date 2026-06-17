@@ -260,19 +260,25 @@ function OrderUploadPageInner() {
   const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [uploaderResetKey] = useState(() => {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
+    if (typeof window !== "undefined" && window.crypto) {
+      if (window.crypto.randomUUID) return window.crypto.randomUUID();
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      return arr[0].toString(36);
     }
-    return Math.random().toString(36).substring(2, 15);
+    return "uploader-fallback-" + Date.now();
   });
   const [notes, setNotes] = useState("");
 
   // Pre-generate unique orderId for this session (for TUS folder structuring)
   const [orderId] = useState(() => {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
+    if (typeof window !== "undefined" && window.crypto) {
+      if (window.crypto.randomUUID) return window.crypto.randomUUID();
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      return "f-" + arr[0].toString(36) + "-" + Date.now();
     }
-    return "f" + Math.random().toString(36).substring(2, 15) + "-" + Date.now();
+    return "order-fallback-" + Date.now();
   });
 
   // Submission state

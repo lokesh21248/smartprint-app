@@ -8,11 +8,21 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * @param path      Object path within the bucket (e.g. "shop-id/order-id/file.pdf")
  * @param expiresIn Seconds until the signed URL expires (default: 1 hour)
  */
+const urlCache = new Map<string, { url: string; expiresAt: number }>();
+
 export async function createSignedUrl(
   bucket: string,
   path: string,
   expiresIn = 3600
 ): Promise<string> {
+  const cacheKey = `${bucket}:${path}`;
+  const cached = urlCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached && cached.expiresAt > now + 60_000) {
+    return cached.url;
+  }
+
   const admin = createAdminClient();
 
   const { data, error } = await admin.storage
@@ -24,6 +34,11 @@ export async function createSignedUrl(
       `Failed to generate signed URL for ${bucket}/${path}: ${error?.message ?? "unknown error"}`
     );
   }
+
+  urlCache.set(cacheKey, {
+    url: data.signedUrl,
+    expiresAt: now + expiresIn * 1000,
+  });
 
   return data.signedUrl;
 }

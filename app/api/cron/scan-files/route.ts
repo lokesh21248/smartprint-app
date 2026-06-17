@@ -18,8 +18,13 @@ export async function GET(request: Request) {
   // Vercel cron sends Authorization: Bearer <CRON_SECRET>.
   // Manual calls during testing must include the same header.
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
   const supabase = createAdminClient();

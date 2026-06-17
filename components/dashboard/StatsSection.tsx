@@ -21,6 +21,8 @@ export function StatsSection({ initialStats, shopId }: StatsSectionProps) {
     },
     initialData: initialStats,
     refetchInterval: 30000, // Poll every 30s as a fallback to realtime invalidation
+    staleTime: 60000,
+    gcTime: 300000,
   });
 
   return <StatsCards stats={stats || initialStats} />;

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     // 1. Strict Role Guard
-    const { authorized, response, userId } = await validateApiAccess([
+    const { authorized, response, userId, clerkRole } = await validateApiAccess([
       "admin",
       "shop_owner",
       "manager",
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     }
 
     // ─── OWNERSHIP/ROLE CHECK ────────────────────────────────────────────────
-    const isAuthorized = await canManageShop(userId, shopId);
+    const isAuthorized = await canManageShop(userId, shopId, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
     }
