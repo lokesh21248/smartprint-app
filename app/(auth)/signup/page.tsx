@@ -92,13 +92,11 @@ export default function SignupPage() {
     if (typeof window !== "undefined" && (window as any).turnstile) {
       try {
         const el = document.querySelector(".cf-turnstile") || document.getElementById("clerk-captcha");
-        if (el) {
+        if (el && (el.children.length > 0 || el.querySelector("iframe"))) {
           (window as any).turnstile.reset(el);
-        } else {
-          (window as any).turnstile.reset();
         }
       } catch (e) {
-        console.warn("Failed to reset Turnstile widget:", e);
+        // Silently ignore "Nothing to reset" errors to keep console clean
       }
     }
     setTurnstileToken("");
