@@ -32,9 +32,6 @@ export function AuthLayout({ icon, title, description, footer, children }: AuthL
 
       {/* Footer slot */}
       {footer}
-
-      {/* Clerk CAPTCHA */}
-      <div id="clerk-captcha" />
     </div>
   );
 }

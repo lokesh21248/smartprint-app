@@ -33,6 +33,8 @@ export default function SignupPage() {
     confirmPassword: "",
   });
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [isTurnstileActive, setIsTurnstileActive] = useState(false);
+  const [isCustomTurnstileVerified, setIsCustomTurnstileVerified] = useState(false);
 
   const isProduction = process.env.NODE_ENV === "production";
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
@@ -43,12 +45,15 @@ export default function SignupPage() {
 
     (window as any).onTurnstileSuccess = (token: string) => {
       setTurnstileToken(token);
+      setIsCustomTurnstileVerified(true);
     };
     (window as any).onTurnstileExpired = () => {
       setTurnstileToken("");
+      setIsCustomTurnstileVerified(false);
     };
     (window as any).onTurnstileError = () => {
       setTurnstileToken("");
+      setIsCustomTurnstileVerified(false);
     };
 
     return () => {
@@ -58,10 +63,35 @@ export default function SignupPage() {
     };
   }, [useTurnstile]);
 
+  useEffect(() => {
+    // Monitor if Turnstile is active inside the captcha container or custom class
+    const checkActive = setInterval(() => {
+      const captchaEl = document.getElementById("clerk-captcha");
+      const hasChildren = captchaEl && captchaEl.children.length > 0;
+      const hasCustomWidget = document.querySelector(".cf-turnstile");
+      setIsTurnstileActive(!!(hasChildren || hasCustomWidget));
+    }, 1000);
+
+    // Monitor Turnstile response value
+    const checkResponse = setInterval(() => {
+      const turnstileInput = document.getElementsByName("cf-turnstile-response")[0] as HTMLTextAreaElement;
+      if (turnstileInput && turnstileInput.value) {
+        setTurnstileToken(turnstileInput.value);
+      } else if (!isCustomTurnstileVerified) {
+        setTurnstileToken("");
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(checkActive);
+      clearInterval(checkResponse);
+    };
+  }, [isCustomTurnstileVerified]);
+
   const resetTurnstile = () => {
     if (typeof window !== "undefined" && (window as any).turnstile) {
       try {
-        const el = document.querySelector(".cf-turnstile");
+        const el = document.querySelector(".cf-turnstile") || document.getElementById("clerk-captcha");
         if (el) {
           (window as any).turnstile.reset(el);
         } else {
@@ -72,6 +102,7 @@ export default function SignupPage() {
       }
     }
     setTurnstileToken("");
+    setIsCustomTurnstileVerified(false);
   };
 
   // ── Timing instrumentation ───────────────────────────────────────────
@@ -151,7 +182,7 @@ export default function SignupPage() {
 
     setIsLoading(true);
     try {
-      if (useTurnstile) {
+      if (useTurnstile && isCustomTurnstileVerified) {
         if (!turnstileToken) {
           toast.error("Please complete the verification.");
           setIsLoading(false);
@@ -366,21 +397,24 @@ export default function SignupPage() {
             onChange={handleChange}
           />
 
-          {useTurnstile && (
-            <div className="flex justify-center my-4">
-              <div
-                className="cf-turnstile"
-                data-sitekey={siteKey}
-                data-callback="onTurnstileSuccess"
-                data-expired-callback="onTurnstileExpired"
-                data-error-callback="onTurnstileError"
-              />
+          {/* Turnstile / Clerk CAPTCHA Container */}
+          <div className="flex justify-center w-full min-h-[74px] my-4">
+            <div id="clerk-captcha" className="w-full flex justify-center">
+              {useTurnstile && (
+                <div
+                  className="cf-turnstile"
+                  data-sitekey={siteKey}
+                  data-callback="onTurnstileSuccess"
+                  data-expired-callback="onTurnstileExpired"
+                  data-error-callback="onTurnstileError"
+                />
+              )}
             </div>
-          )}
+          </div>
 
           <Button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || (isTurnstileActive && !turnstileToken)}
             className="w-full h-12 rounded-[10px] text-base font-semibold px-6 bg-[#16A34A] text-white shadow-sm hover:bg-[#15803D] hover:shadow-md active:scale-[0.98] transition-all duration-200 focus-visible:ring-[#16A34A] focus-visible:ring-offset-2"
           >
             {isLoading ? (
