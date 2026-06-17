@@ -96,9 +96,10 @@ export default function VerifyEmailPage() {
       }
     } catch (err: unknown) {
       console.error("Signup failed:", err);
-      const clerkErr = err as { errors?: Array<{ message?: string }> };
-      setError(clerkErr.errors?.[0]?.message || "Invalid code. Please try again.");
-      toast.error(clerkErr.errors?.[0]?.message || "Verification failed");
+      const clerkErr = err as { errors?: Array<{ message?: string; longMessage?: string }> };
+      const errorMessage = clerkErr.errors?.[0]?.longMessage || clerkErr.errors?.[0]?.message || "Invalid code. Please try again.";
+      setError(errorMessage);
+      toast.error(errorMessage);
       setCode(""); // Clear on error
     } finally {
       setIsLoading(false);

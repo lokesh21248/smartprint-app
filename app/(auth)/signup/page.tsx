@@ -246,8 +246,12 @@ export default function SignupPage() {
     } catch (err: unknown) {
       console.error("Signup failed:", err);
       resetTurnstile();
-      const clerkErr = err as { errors?: Array<{ message?: string }> };
-      const errorMessage = (err as Error).message || clerkErr.errors?.[0]?.message || "Something went wrong. Please try again.";
+      const clerkErr = err as { errors?: Array<{ message?: string; longMessage?: string }> };
+      const errorMessage =
+        clerkErr.errors?.[0]?.longMessage ||
+        clerkErr.errors?.[0]?.message ||
+        (err as Error).message ||
+        "Something went wrong. Please try again.";
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
