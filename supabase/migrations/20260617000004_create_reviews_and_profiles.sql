@@ -4,7 +4,7 @@
 -- 1. Create reviews table if not exists
 CREATE TABLE IF NOT EXISTS reviews (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  order_id UUID,
   customer_id TEXT,
   shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
   rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
