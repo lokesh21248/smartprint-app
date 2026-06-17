@@ -16,7 +16,7 @@ export const getShopByUserId = cache(async (userId: string): Promise<Shop | null
 
     const { data: shop, error } = await supabase
       .from("shops")
-      .select("id, name, slug, shop_code, clerk_owner_id, owner_name, owner_email, owner_phone, address_line1, is_open, price_bw_per_page, price_color_per_page, business_hours, updated_at")
+      .select("id, name, slug, shop_code, clerk_owner_id, owner_name, owner_email, owner_phone, address_line1, address_line2, city, state, pincode, is_open, price_bw_per_page, price_color_per_page, business_hours, updated_at")
       .eq("id", shopId)
       .limit(1)
       .maybeSingle();

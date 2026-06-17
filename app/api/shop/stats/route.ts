@@ -50,7 +50,15 @@ export async function GET(request: Request) {
     // queries. Each query returns only the rows needed for that specific metric,
     // capped at 500 rows. For high-volume shops, consider moving to a DB function
     // (get_shop_stats) to push aggregation fully into Postgres.
-    const [pendingResult, todayOrdersResult, completedResult] = await Promise.all([
+    // Also querying location, total orders count, and ratings.
+    const [
+      pendingResult,
+      todayOrdersResult,
+      completedResult,
+      shopResult,
+      totalCompletedResult,
+      reviewsResult
+    ] = await Promise.all([
       // Pending orders count (PLACED or NEW)
       supabase
         .from("orders")
@@ -74,6 +82,26 @@ export async function GET(request: Request) {
         .in("status", ["COMPLETED", "SUCCESS"])
         .gte("completed_at", todayIso)
         .limit(500),
+
+      // Shop details for name and location
+      supabase
+        .from("shops")
+        .select("name, address_line1, city, state")
+        .eq("id", shopId)
+        .maybeSingle(),
+
+      // Total completed orders count (all time)
+      supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("shop_id", shopId)
+        .in("status", ["COMPLETED", "SUCCESS"]),
+
+      // Shop reviews for average rating
+      supabase
+        .from("reviews")
+        .select("rating")
+        .eq("shop_id", shopId),
     ]);
 
     if (pendingResult.error || todayOrdersResult.error || completedResult.error) {
@@ -111,6 +139,24 @@ export async function GET(request: Request) {
     // Unique customers today (by phone number)
     const uniqueCustomers = new Set(todayOrders.map((o) => o.customer_phone)).size;
 
+    // ─── Calculate additional fields ──────────────────────────────────────
+    const shopData = shopResult?.data;
+    const location = shopData
+      ? [shopData.city, shopData.state].filter(Boolean).join(", ") || shopData.address_line1 || ""
+      : "";
+
+    const orderCount = totalCompletedResult?.count ?? 0;
+
+    let avgRating = 0.0;
+    if (reviewsResult?.error) {
+      console.warn("[shop/stats] reviews query error:", reviewsResult.error.message);
+    } else {
+      const ratings = reviewsResult?.data ?? [];
+      avgRating = ratings.length > 0
+        ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length
+        : 0.0;
+    }
+
     return NextResponse.json({
       pendingOrders: pendingResult.count ?? 0,
       ordersToday: todayOrders.length,
@@ -118,6 +164,10 @@ export async function GET(request: Request) {
       avgCompletionMins: Math.round(avgMins),
       activeCustomers: uniqueCustomers,
       completedToday: completed.length,
+      location,
+      rating: Number(avgRating.toFixed(1)),
+      order_count: orderCount,
+      shop_name: shopData?.name ?? "",
     });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
