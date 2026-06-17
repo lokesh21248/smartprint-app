@@ -61,7 +61,12 @@ export default function SignupPage() {
   const resetTurnstile = () => {
     if (typeof window !== "undefined" && (window as any).turnstile) {
       try {
-        (window as any).turnstile.reset();
+        const el = document.querySelector(".cf-turnstile");
+        if (el) {
+          (window as any).turnstile.reset(el);
+        } else {
+          (window as any).turnstile.reset();
+        }
       } catch (e) {
         console.warn("Failed to reset Turnstile widget:", e);
       }
