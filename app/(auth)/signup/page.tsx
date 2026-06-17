@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSignUp, useUser } from "@clerk/nextjs";
 import { Mail, Lock, User, Store, Phone, MapPin, Building2, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
@@ -104,14 +104,22 @@ export default function SignupPage() {
   };
 
   // ── Timing instrumentation ───────────────────────────────────────────
+  const hasEndedResolveTimer = useRef(false);
+
   useEffect(() => {
     console.time("signup-page:clerk-session-resolve");
-    return () => { console.timeEnd("signup-page:clerk-session-resolve"); };
+    return () => {
+      if (!hasEndedResolveTimer.current) {
+        console.timeEnd("signup-page:clerk-session-resolve");
+        hasEndedResolveTimer.current = true;
+      }
+    };
   }, []);
 
   useEffect(() => {
-    if (userLoaded) {
+    if (userLoaded && !hasEndedResolveTimer.current) {
       console.timeEnd("signup-page:clerk-session-resolve");
+      hasEndedResolveTimer.current = true;
       console.log(`[signup-page] Clerk resolved. isSignedIn=${!!user}`);
     }
   }, [userLoaded, user]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSignIn, useUser } from "@clerk/nextjs";
 import { Mail, Lock, LogIn, Store, Loader2, Eye, EyeOff } from "lucide-react";
@@ -26,17 +26,22 @@ function LoginForm() {
 
   // ── Timing instrumentation ─────────────────────────────────────────────
   // Measures how long Clerk takes to resolve the session on this page.
+  const hasEndedResolveTimer = useRef(false);
+
   useEffect(() => {
     console.time("login-page:clerk-session-resolve");
     return () => {
-      // Cleanup fires on unmount (after redirect or navigation away)
-      console.timeEnd("login-page:clerk-session-resolve");
+      if (!hasEndedResolveTimer.current) {
+        console.timeEnd("login-page:clerk-session-resolve");
+        hasEndedResolveTimer.current = true;
+      }
     };
   }, []);
 
   useEffect(() => {
-    if (userLoaded) {
+    if (userLoaded && !hasEndedResolveTimer.current) {
       console.timeEnd("login-page:clerk-session-resolve");
+      hasEndedResolveTimer.current = true;
       console.log(
         `[login-page] Clerk session resolved. isSignedIn=${!!user}, willRedirect=${!!user}`
       );
