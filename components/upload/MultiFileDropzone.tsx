@@ -135,7 +135,6 @@ export function MultiFileDropzone({ onFilesSelected, disabled = false }: MultiFi
           credits={false}
           disabled={disabled}
           onaddfile={handleAddFile}
-          allowImagePreview={false}
         />
       </div>
     </>
