@@ -38,7 +38,7 @@ export default function Home() {
   }));
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16 text-center">
+    <>
       <script
         dangerouslySetInnerHTML={{
           __html: `
@@ -53,48 +53,71 @@ export default function Home() {
       <style
         dangerouslySetInnerHTML={{
           __html: `
-            .js-redirecting {
+            .redirect-overlay {
+              display: none;
+            }
+            .js-redirecting .redirect-overlay {
+              display: flex !important;
+              position: fixed;
+              inset: 0;
+              background: linear-gradient(to bottom right, #f0fdf4, #ffffff, #eff6ff);
+              z-index: 99999;
+              align-items: center;
+              justify-content: center;
+              flex-direction: column;
+            }
+            .js-redirecting main {
               display: none !important;
             }
           `,
         }}
       />
-      {/* Client-side redirect for authenticated users — keeps this page static/CDN-cacheable */}
-      <HomeAuthRedirect />
-      <h1 className="text-4xl font-bold text-gray-900 mb-4">
-        Digital Print Shop Management
-      </h1>
-      <p className="text-lg text-gray-600 max-w-xl mb-8">
-        Scan2Paper helps print shop owners manage orders, documents, staff, and
-        revenue from one powerful dashboard. Customers can upload documents
-        online and collect their prints quickly and efficiently.
-      </p>
-      <div className="flex flex-wrap gap-4 justify-center">
-        <Link
-          href="/login"
-          className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition"
-        >
-          Sign In to Dashboard
-        </Link>
-        <Link
-          href="/features"
-          className="px-6 py-3 border border-emerald-600 text-emerald-700 rounded-xl font-semibold hover:bg-emerald-50 transition"
-        >
-          See Features
-        </Link>
+      <div className="redirect-overlay">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full border-4 border-emerald-100 border-t-emerald-600 animate-spin" />
+          <p className="text-gray-600 font-semibold text-base animate-pulse">
+            Redirecting you...
+          </p>
+        </div>
       </div>
+      <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16 text-center">
+        {/* Client-side redirect for authenticated users — keeps this page static/CDN-cacheable */}
+        <HomeAuthRedirect />
+        <h1 className="text-4xl font-bold text-gray-900 mb-4">
+          Digital Print Shop Management
+        </h1>
+        <p className="text-lg text-gray-600 max-w-xl mb-8">
+          Scan2Paper helps print shop owners manage orders, documents, staff, and
+          revenue from one powerful dashboard. Customers can upload documents
+          online and collect their prints quickly and efficiently.
+        </p>
+        <div className="flex flex-wrap gap-4 justify-center">
+          <Link
+            href="/login"
+            className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition"
+          >
+            Sign In to Dashboard
+          </Link>
+          <Link
+            href="/features"
+            className="px-6 py-3 border border-emerald-600 text-emerald-700 rounded-xl font-semibold hover:bg-emerald-50 transition"
+          >
+            See Features
+          </Link>
+        </div>
 
-      {/* Latest Articles Section with premium design & micro-animations */}
-      <LatestArticles posts={postsData} />
+        {/* Latest Articles Section with premium design & micro-animations */}
+        <LatestArticles posts={postsData} />
 
-      <nav aria-label="Site links" className="mt-10 flex flex-wrap gap-6 justify-center text-sm text-gray-500">
-        <Link href="/features" className="hover:text-emerald-700 transition">Features</Link>
-        <Link href="/pricing" className="hover:text-emerald-700 transition">Pricing</Link>
-        <Link href="/about" className="hover:text-emerald-700 transition">About</Link>
-        <Link href="/blog" className="hover:text-emerald-700 transition">Blog</Link>
-        <Link href="/contact" className="hover:text-emerald-700 transition">Contact</Link>
-      </nav>
-    </main>
+        <nav aria-label="Site links" className="mt-10 flex flex-wrap gap-6 justify-center text-sm text-gray-500">
+          <Link href="/features" className="hover:text-emerald-700 transition">Features</Link>
+          <Link href="/pricing" className="hover:text-emerald-700 transition">Pricing</Link>
+          <Link href="/about" className="hover:text-emerald-700 transition">About</Link>
+          <Link href="/blog" className="hover:text-emerald-700 transition">Blog</Link>
+          <Link href="/contact" className="hover:text-emerald-700 transition">Contact</Link>
+        </nav>
+      </main>
+    </>
   );
 }
 
