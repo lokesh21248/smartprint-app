@@ -39,6 +39,26 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16 text-center">
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            try {
+              if (localStorage.getItem('scan2paper_visited') || document.cookie.indexOf('__session') !== -1) {
+                document.documentElement.classList.add('js-redirecting');
+              }
+            } catch (e) {}
+          `,
+        }}
+      />
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            .js-redirecting {
+              display: none !important;
+            }
+          `,
+        }}
+      />
       {/* Client-side redirect for authenticated users — keeps this page static/CDN-cacheable */}
       <HomeAuthRedirect />
       <h1 className="text-4xl font-bold text-gray-900 mb-4">
