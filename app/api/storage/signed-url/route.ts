@@ -5,7 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { canManageShop } from "@/lib/auth/shop-access";
 import { getServerRole } from "@/lib/auth/role-guard";
 import { rateLimit, rateLimitHeaders } from "@/lib/ratelimit";
-import { getClientIp } from "@/lib/utils/ip";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +19,6 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 2. Rate limit (100 requests / minute) ──────────────────────────────────────
-  const ip = getClientIp(req);
   const rl = rateLimit(`signed_url_${userId}`, 100, 60);
   if (!rl.success) {
     return NextResponse.json(

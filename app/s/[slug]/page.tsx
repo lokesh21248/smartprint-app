@@ -1,11 +1,9 @@
 import { 
   AlertCircle, 
-  Store, 
   ShieldCheck,
   MapPin,
   Smartphone,
-  Sparkles,
-  Shield
+  Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";

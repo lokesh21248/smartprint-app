@@ -9,7 +9,7 @@
     "lint": "next lint",
     "push": "git add . && git commit -m \"feat: production push\" && git push -f",
     "verify:auth": "node scripts/verify-auth.js",
-    "check:admin-leak": "powershell -Command \"$found = Select-String -Path 'app/**/*.tsx','app/**/*.ts','components/**/*.tsx','components/**/*.ts' -Pattern 'createAdminClient|SUPABASE_SERVICE_ROLE_KEY' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Path -notmatch 'api.admin' }; if ($found) { Write-Host 'LEAK FOUND:'; $found | ForEach-Object { Write-Host $_.Path }; exit 1 } else { Write-Host 'OK - No service role leaks detected' }\"",
+    "check:admin-leak": "node scripts/check-admin-leak.js",
     "db:validate": "npx tsx scripts/validate-db.ts"
   },
   "dependencies": {

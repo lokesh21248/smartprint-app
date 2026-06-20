@@ -1190,8 +1190,6 @@ export class UploadQueueManager {
     startedAt: number
   ): Promise<"success" | "cancelled" | "error"> {
     return new Promise((resolve) => {
-      const execId = this._fileExecutionIds.get(id);
-
       const wrappedResolve = (res: "success" | "cancelled" | "error") => {
         if (initTimeout) clearTimeout(initTimeout);
         this._activeResolvers.delete(id);

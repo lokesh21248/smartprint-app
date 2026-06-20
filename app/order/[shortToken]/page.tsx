@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { 
   CheckCircle2, Clock, Printer, 
-  XCircle, ArrowLeft, Phone,
+  XCircle, Phone,
   FileText, RefreshCcw, AlertCircle, Store,
   Sparkles, Check, Navigation, Loader2
 } from "lucide-react";
