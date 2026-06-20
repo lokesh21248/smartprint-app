@@ -49,7 +49,6 @@ export function ScannerContainer() {
 
   // OCR/Tesseract status
   const [ocrInitialized, setOcrInitialized] = useState(false);
-  const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrWorker, setOcrWorker] = useState<any>(null);
   const [ocrProcessingPageId, setOcrProcessingPageId] = useState<string | null>(null);
 
@@ -159,40 +158,7 @@ export function ScannerContainer() {
     });
   };
 
-  // ── 3. Lazy-Load OCR Library (Tesseract.js) ─────────────────────────
-  const initOcr = useCallback(async () => {
-    if (ocrInitialized || ocrLoading) return;
-    setOcrLoading(true);
 
-    try {
-      console.log("[OCR] Lazy-loading Tesseract.js library dynamically...");
-      const { createWorker } = await import("tesseract.js");
-      
-      const worker = await createWorker("eng");
-      setOcrWorker(worker);
-      setOcrInitialized(true);
-
-      const ocrInitTime = Date.now();
-      setTimestamps((prev) => {
-        const start = prev.pageLoadStart || Date.now();
-        addPerfMetric("OCR initialized", ocrInitTime, start);
-        
-        // Log total startup time if camera is also ready
-        if (prev.cameraReady > 0) {
-          const maxReady = Math.max(prev.cameraReady, ocrInitTime);
-          addPerfMetric("Total startup time", maxReady, start);
-        }
-        
-        return { ...prev, ocrInit: ocrInitTime };
-      });
-      console.log("[OCR] Tesseract.js initialized and ready.");
-    } catch (e) {
-      console.error("[OCR] Initialization failed:", e);
-      toast.error("Failed to load OCR library. Text recognition will be unavailable.");
-    } finally {
-      setOcrLoading(false);
-    }
-  }, [ocrInitialized, ocrLoading]);
 
   // Terminate OCR worker on unmount if it was initialized
   useEffect(() => {
