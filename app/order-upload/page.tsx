@@ -297,16 +297,26 @@ function OrderUploadPageInner() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      // Check session storage first (for exact current session)
       const stored = sessionStorage.getItem(`order:${orderId}`);
       if (stored) {
         const { shortToken } = JSON.parse(stored) as { shortToken: string };
         if (shortToken) {
-          // Use replace so this redirect itself doesn't add to history either
+          router.replace(`/order/${shortToken}`);
+          return;
+        }
+      }
+
+      // Check local storage for any recently completed order to cover reload/back cases
+      const latestOrderRaw = localStorage.getItem("latestPlacedOrder");
+      if (latestOrderRaw) {
+        const { shortToken, ts } = JSON.parse(latestOrderRaw) as { shortToken: string; ts: number };
+        if (shortToken && ts && Date.now() - ts < 2 * 60 * 60 * 1000) { // 2 hours window
           router.replace(`/order/${shortToken}`);
         }
       }
     } catch {
-      // sessionStorage unavailable (private browsing / iframe) — silent fail
+      // Storage unavailable (private browsing / iframe) — silent fail
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
@@ -653,7 +663,7 @@ function OrderUploadPageInner() {
         tracker.markSuccess();
         persistUploadRef.current = true;
 
-        // Persist order token to sessionStorage so:
+        // Persist order token to sessionStorage and localStorage so:
         //  a) refreshing /order/[token] keeps the user on the tracking page
         //  b) navigating back to the upload page immediately redirects them forward again
         try {
@@ -661,8 +671,12 @@ function OrderUploadPageInner() {
             `order:${orderId}`,
             JSON.stringify({ shortToken: data.shortToken, shopSlug, ts: Date.now() })
           );
+          localStorage.setItem(
+            "latestPlacedOrder",
+            JSON.stringify({ shortToken: data.shortToken, shopSlug, ts: Date.now() })
+          );
         } catch {
-          // sessionStorage unavailable — silent fail
+          // Storage unavailable — silent fail
         }
 
         // Use replace() so the upload page is removed from the browser history stack.

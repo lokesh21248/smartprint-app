@@ -27,7 +27,7 @@ export default function OrderStatusPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      // Scan sessionStorage for an order entry that matches this shortToken
+      // 1. Scan sessionStorage for an order entry that matches this shortToken
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i);
         if (!key?.startsWith("order:")) continue;
@@ -36,13 +36,42 @@ export default function OrderStatusPage() {
         const entry = JSON.parse(raw) as { shortToken?: string; shopSlug?: string };
         if (entry.shortToken === shortToken && entry.shopSlug) {
           setBackHref(`/s/${entry.shopSlug}`);
-          break;
+          return;
+        }
+      }
+
+      // 2. Fallback to localStorage check
+      const latestOrderRaw = localStorage.getItem("latestPlacedOrder");
+      if (latestOrderRaw) {
+        const entry = JSON.parse(latestOrderRaw) as { shortToken?: string; shopSlug?: string };
+        if (entry.shortToken === shortToken && entry.shopSlug) {
+          setBackHref(`/s/${entry.shopSlug}`);
+          return;
         }
       }
     } catch {
-      // sessionStorage not available — silent fail, backHref stays '/'
+      // Storage not available — silent fail, backHref stays '/'
     }
   }, [shortToken]);
+
+  // Intercept physical/mobile browser back button navigation to keep users from going back to checkout/upload
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Push a dummy state to history so a back gesture/button click triggers popstate
+    window.history.pushState(null, "", window.location.href);
+
+    const handlePopState = () => {
+      // Push state again to keep the navigation boundary active
+      window.history.pushState(null, "", window.location.href);
+      router.replace(backHref);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [backHref, router]);
   
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -208,9 +237,9 @@ export default function OrderStatusPage() {
             <Button 
               onClick={() => router.replace(backHref)} 
               variant="outline"
-              className="w-full h-14 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition"
+              className="w-full h-14 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition flex items-center justify-center gap-2"
             >
-              Go Back
+              <Store className="w-4.5 h-4.5 text-slate-500" /> Back to Home
             </Button>
           </div>
         </motion.div>
@@ -231,9 +260,9 @@ export default function OrderStatusPage() {
           <p className="text-slate-500 mb-6 font-medium text-sm">We couldn&apos;t find an order with this link. It might have expired or been deleted.</p>
           <Button 
             onClick={() => router.replace(backHref)} 
-            className="w-full h-14 rounded-xl bg-slate-900 hover:bg-slate-950 text-white font-bold transition shadow-lg"
+            className="w-full h-14 rounded-xl bg-slate-900 hover:bg-slate-950 text-white font-bold transition shadow-lg flex items-center justify-center gap-2"
           >
-            Go Back
+            <Store className="w-4.5 h-4.5" /> Back to Home
           </Button>
         </motion.div>
       </div>
@@ -253,9 +282,11 @@ export default function OrderStatusPage() {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => router.replace(backHref)} 
-              className="p-2 hover:bg-slate-100 rounded-xl transition"
+              className="p-2 hover:bg-slate-100 rounded-xl transition flex items-center gap-1.5"
+              title="Back to Home"
             >
-              <ArrowLeft className="w-4 h-4 text-slate-600" />
+              <Store className="w-4 h-4 text-slate-600" />
+              <span className="text-xs font-bold text-slate-600 hidden sm:inline">Back to Home</span>
             </button>
             <div>
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Order ID</p>

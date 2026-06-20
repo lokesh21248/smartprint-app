@@ -360,6 +360,11 @@ export default function QRLandingPage() {
 
                   // 7. Redirect success
                   if (res.ok && data.success && data.sessionId) {
+                    try {
+                      localStorage.removeItem("latestPlacedOrder");
+                    } catch (e) {
+                      console.warn("localStorage not available:", e);
+                    }
                     router.push(
                       `/order-upload?shopSlug=${slug}&sessionId=${data.sessionId}&name=${encodeURIComponent(trimmedName)}`
                     );
