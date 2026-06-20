@@ -81,11 +81,10 @@ export const UploadProgressBar = memo(function UploadProgressBar({
                   isSuccess ? "text-emerald-600" : "text-slate-700"
                 }`}
               >
-                {phase === "compressing" && "Optimizing files for upload…"}
-                {phase === "uploading" &&
-                  `Uploading ${fileCount} file${fileCount !== 1 ? "s" : ""}…`}
-                {phase === "saving" && "Saving your order…"}
-                {phase === "success" && "Order placed successfully!"}
+                {phase === "compressing" && "Preparing…"}
+                {phase === "uploading" && `Uploading (${fileCount} file${fileCount !== 1 ? "s" : ""})…`}
+                {phase === "saving" && "Processing…"}
+                {phase === "success" && "Complete!"}
               </span>
             </div>
 

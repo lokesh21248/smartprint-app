@@ -1121,17 +1121,6 @@ export class UploadQueueManager {
     const entry = this._files.get(id);
     if (!entry || !entry.file) throw new Error("FILE_ACCESS_REVOKED");
 
-    // Point 4: Mobile Fetch Defense with AbortController and Timeout (60s on mobile, 15s on desktop)
-    const timeoutVal = this._isMobile ? 60000 : 15000;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, timeoutVal);
-
-    // Chain signals
-    const onAbort = () => controller.abort();
-    signal.addEventListener("abort", onAbort);
-
     try {
       const res = await fetch("/api/storage/presign", {
         method: "POST",
@@ -1143,10 +1132,10 @@ export class UploadQueueManager {
           fileSize: entry.file.size,
           mimeType: entry.file.type,
         }),
-        signal: controller.signal,
+        signal,
       });
 
-      // Point 7: Validate response JSON (Vercel HTML check)
+      // Validate response JSON (guard against Vercel HTML error pages)
       const contentType = res.headers.get("content-type");
       if (!contentType?.includes("application/json")) {
         throw new Error("Invalid API response format (expected JSON)");
@@ -1154,6 +1143,13 @@ export class UploadQueueManager {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
+        console.error("[PRESIGN_ERROR]", {
+          status: res.status,
+          fileName: entry.file.name,
+          fileSize: entry.file.size,
+          mimeType: entry.file.type,
+          error: body.error,
+        });
         throw new Error(body.error ?? `Server error (${res.status})`);
       }
 
@@ -1170,9 +1166,11 @@ export class UploadQueueManager {
       if (!data.token) throw new Error("Presign response missing token");
 
       return { alreadyExists: false, token: data.token, storagePath: data.storagePath };
-    } finally {
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", onAbort);
+    } catch (err) {
+      if (signal.aborted) {
+        throw err; // propagate abort
+      }
+      throw err;
     }
   }
 
@@ -1250,8 +1248,8 @@ export class UploadQueueManager {
         removeFingerprintOnSuccess: true, // Point 10
         storeFingerprintForResuming: true, // Point 10
         headers: {
-          authorization: `Bearer ${supabaseAnonKey}`, // Point 4
-          "x-upsert": "false" // Point 4
+          authorization: `Bearer ${supabaseAnonKey}`,
+          "x-upsert": "true"
         },
         metadata: {
           bucketName: "order-files",

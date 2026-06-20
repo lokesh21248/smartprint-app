@@ -3,7 +3,16 @@ import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
+import nextDynamic from "next/dynamic";
+
+const AnalyticsCharts = nextDynamic(() => import("@/components/dashboard/AnalyticsCharts"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-96 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center animate-pulse">
+      <div className="text-sm font-semibold text-slate-400">Loading charts...</div>
+    </div>
+  ),
+});
 
 export const metadata: Metadata = {
   title: "Analytics",

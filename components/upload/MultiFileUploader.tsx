@@ -587,11 +587,19 @@ const ReorderItemRow = memo(function ReorderItemRow({
                   <>
                     <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin shrink-0" />
                     <span className="text-emerald-700 font-extrabold animate-pulse">
-                      {isPdf && fileItem.pages === null ? "Counting pages…" : "Verifying upload…"}
+                      {isPdf && fileItem.pages === null ? "Processing (Counting pages)…" : "Processing…"}
                     </span>
                   </>
                 )}
-                {(fileItem.status === "queued" || fileItem.status === "preparing") && (
+                {fileItem.status === "preparing" && (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
+                    <span className="text-slate-700">
+                      {fileItem.error ? fileItem.error : "Preparing…"}
+                    </span>
+                  </>
+                )}
+                {fileItem.status === "queued" && (
                   <>
                     <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
                     <span className="text-slate-700">
@@ -637,7 +645,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
             className="flex items-center gap-1.5 text-[9px] font-bold text-emerald-700 px-1 mt-0.5"
           >
             <CheckCircle2 className="w-3 h-3 shrink-0" />
-            Upload complete
+            Complete
           </motion.div>
         )}
 

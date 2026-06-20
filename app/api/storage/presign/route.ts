@@ -5,6 +5,7 @@ import { getClientIp } from "@/lib/utils/ip";
 import {
   validateUploadRequest,
   generateStoragePath,
+  validateStoragePath,
   UPLOAD_BUCKET,
   UPLOAD_URL_TTL_SECONDS,
 } from "@/lib/upload-validation";
@@ -12,8 +13,6 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 10; // 10 seconds (max allowed on Vercel Hobby plan)
 export const dynamic = "force-dynamic";
-
-let isBucketConfigured = false;
 
 /**
  * POST /api/storage/presign
@@ -94,37 +93,6 @@ export async function POST(request: Request) {
     // 5. Confirm shop exists and is active (prevent orphan uploads)
     const supabase = createAdminClient();
 
-    // Programmatically ensure the bucket allows PDF and image MIME types — once per warm instance.
-    // FIX P8: skip the getBucket() health check entirely after first successful configuration.
-    // Previously, getBucket() was called on every warm request even when isBucketConfigured=true.
-    if (!isBucketConfigured) {
-      // Verify Supabase Storage bucket is accessible and online
-      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(UPLOAD_BUCKET);
-      if (bucketError || !bucketData) {
-        console.error("[UPLOAD_FAIL]", bucketError || new Error("Supabase storage bucket unavailable"));
-        return NextResponse.json(
-          { success: false, error: "Storage service is currently unavailable. Please contact support." },
-          { status: 503 }
-        );
-      }
-
-      try {
-        const { error: updateError } = await supabase.storage.updateBucket(UPLOAD_BUCKET, {
-          public: false,
-          allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"],
-          fileSizeLimit: 500 * 1024 * 1024,
-        });
-        if (updateError) {
-          console.warn("[presign] Failed to update bucket configuration:", updateError.message);
-        } else {
-          isBucketConfigured = true;
-          console.log("[presign] Bucket configured successfully");
-        }
-      } catch (err) {
-        console.error("[presign] Error while configuring bucket:", err);
-      }
-    }
-
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id, is_active")
@@ -150,6 +118,16 @@ export async function POST(request: Request) {
     const storagePath = orderId
       ? `orders/${orderId}/${validation.sanitizedName}`
       : generateStoragePath(shopId, validation.extension!);
+
+    // Validate the generated path before touching storage (defense-in-depth)
+    const pathCheck = validateStoragePath(storagePath);
+    if (!pathCheck.valid) {
+      console.error("[PRESIGN_ERROR] Invalid generated storage path", { storagePath, reason: pathCheck.error });
+      return NextResponse.json(
+        { success: false, error: "Invalid upload path. Please try again." },
+        { status: 400 }
+      );
+    }
 
     // Check if file already exists in storage and matches size
     if (orderId) {
@@ -178,7 +156,15 @@ export async function POST(request: Request) {
       .createSignedUploadUrl(storagePath, { upsert: true });
 
     if (signError || !signedData) {
-      console.error("[UPLOAD_FAIL]", signError || new Error("Failed to create signed URL"));
+      console.error("[PRESIGN_ERROR] Failed to create signed upload URL", {
+        storagePath,
+        shopId,
+        orderId: orderId ?? null,
+        fileName: validation.sanitizedName,
+        fileSize,
+        mimeType,
+        supabaseError: signError?.message ?? null,
+      });
       return NextResponse.json(
         { success: false, error: "Failed to create upload URL", details: signError?.message },
         { status: 500 }

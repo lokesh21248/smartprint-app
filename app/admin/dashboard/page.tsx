@@ -1,6 +1,18 @@
 import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { AdminOverviewClient } from "@/components/admin/AdminOverviewClient";
+import dynamic from "next/dynamic";
+
+const AdminOverviewClient = dynamic(
+  () => import("@/components/admin/AdminOverviewClient").then((m) => m.AdminOverviewClient),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-96 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center animate-pulse">
+        <div className="text-sm font-semibold text-slate-400">Loading admin dashboard...</div>
+      </div>
+    ),
+  }
+);
 
 export const metadata: Metadata = { title: "Overview | Admin" };
 
