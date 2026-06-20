@@ -21,27 +21,22 @@ export function AudioInitializer({ shopId }: AudioInitializerProps) {
   // 2. Register first-interaction event listeners to unlock audio playbacks (Chrome/Safari requirement)
   useEffect(() => {
     const unlockAudio = () => {
+      console.log("[AudioInitializer] 🔓 User interaction detected. Unlocking browser audio...");
       audioManager.unlock();
-      
-      // Clean up event listeners immediately after first interaction
-      cleanupListeners();
     };
 
-    const cleanupListeners = () => {
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("keydown", unlockAudio);
-    };
-
-    // Bind interaction triggers
-    document.addEventListener("click", unlockAudio);
-    document.addEventListener("touchstart", unlockAudio);
-    document.addEventListener("keydown", unlockAudio);
+    // Bind interaction triggers on window in the capture phase to bypass stopPropagation()
+    window.addEventListener("click", unlockAudio, { capture: true, once: true });
+    window.addEventListener("touchstart", unlockAudio, { capture: true, once: true });
+    window.addEventListener("keydown", unlockAudio, { capture: true, once: true });
 
     return () => {
-      cleanupListeners();
+      window.removeEventListener("click", unlockAudio, { capture: true });
+      window.removeEventListener("touchstart", unlockAudio, { capture: true });
+      window.removeEventListener("keydown", unlockAudio, { capture: true });
     };
   }, []);
 
   return null;
 }
+

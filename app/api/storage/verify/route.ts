@@ -65,7 +65,10 @@ export async function POST(request: Request) {
 
       if (!infoError && fileInfo) {
         if (fileInfo.size === expectedSize) {
-          await markUploaded(storagePath);
+          // Fire-and-forget — client only needs the verified=true signal, not the DB write result
+          markUploaded(storagePath).catch((err) =>
+            console.warn("[verify] markUploaded fire-and-forget failed:", err)
+          );
           return NextResponse.json({ success: true, verified: true, size: fileInfo.size });
         }
         return NextResponse.json({
@@ -115,7 +118,10 @@ export async function POST(request: Request) {
       });
     }
 
-    await markUploaded(storagePath);
+    // Fire-and-forget — don't block the verify response on DB side-effects
+    markUploaded(storagePath).catch((err) =>
+      console.warn("[verify] markUploaded fire-and-forget failed:", err)
+    );
     console.log("[SUPABASE_VERIFY_SUCCESS_LIST]", { path: storagePath, size: actualSize });
     return NextResponse.json({ success: true, verified: true, size: actualSize });
 

@@ -51,13 +51,16 @@ import {
 } from "@/lib/upload/uploadLogger";
 import type { UploadedFile, UploadStatus } from "@/types";
 import { toast } from "sonner";
+import { compressImage, isCompressible } from "@/lib/upload/imageCompressor";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Exponential backoff delays in ms. Length = max retries. */
-/** Exponential backoff delays in ms. Length = max retries. */
-const RETRY_DELAYS_MS = [0, 1000, 3000, 5000] as const;
-const MAX_RETRIES = 3;
+const RETRY_DELAYS_MS = [0, 1000, 3000, 5000, 10000] as const;
+/** Max retries for general upload errors. */
+const MAX_RETRIES = 4;
+/** Max retries specifically for network-type errors (more forgiving on bad connections). */
+const MAX_NETWORK_RETRIES = 5;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -74,7 +77,7 @@ async function withTimeout<T>(
 
 
 /** TUS watchdog — if no progress event fires for this long, restart the upload. */
-const WATCHDOG_STALL_MS = 20_000;
+const WATCHDOG_STALL_MS = 15_000;
 
 /** How often the watchdog polls. */
 const WATCHDOG_INTERVAL_MS = 5_000;
@@ -262,30 +265,30 @@ export class UploadQueueManager {
 
     console.log(`[QueueManager:Debug] addFiles called with ${rawFiles.length} file(s).`);
 
-    // 1. Prevent immediate upload on file select — mobile browsers need stabilization time
-    if (this._isMobile) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
-
     const hydratedFiles: File[] = [];
 
     for (const rawFile of rawFiles) {
       if (this._destroyed) return;
 
       try {
-        // Immediately clone file before any async operations to prevent Android Chrome reference corruption (Point 2)
+        // Immediately clone file before any async operations to prevent Android Chrome reference corruption
         const clonedFile = new File([rawFile], rawFile.name, {
           type: rawFile.type,
           lastModified: rawFile.lastModified,
         });
 
-        // 2. Add Mobile File Hydration and Rebuilding Validation
+        // Hydrate + validate file object
         const hydrated = await this._validateAndHydrateFile(clonedFile);
-        
-        // 3. Safe File Validation
-        await validateUploadFile(hydrated);
-        
-        hydratedFiles.push(hydrated);
+
+        // Compress images > 2MB using Canvas API before uploading (reduces upload time on mobile)
+        const finalFile = isCompressible(hydrated)
+          ? await compressImage(hydrated)
+          : hydrated;
+
+        // Safe File Validation
+        await validateUploadFile(finalFile);
+
+        hydratedFiles.push(finalFile);
       } catch (err) {
         console.error("UPLOAD_ERROR", {
           filename: rawFile.name,
@@ -634,8 +637,8 @@ export class UploadQueueManager {
    */
   private async _processFile(id: string): Promise<void> {
     console.log(`[QueueManager:Debug] Starting _processFile for file ${id}`);
-    
-    // Strict Lock Check: Prevent duplicate initialization of active slots (Point 3)
+
+    // Strict Lock Check: Prevent duplicate initialization of active slots
     if (this._runningProcesses.has(id)) {
       console.warn(`[QueueManager] Blocked duplicate processFile execution for ${id}`);
       this._activeFileIds.delete(id);
@@ -645,14 +648,6 @@ export class UploadQueueManager {
 
     const execId = (this._fileExecutionIds.get(id) ?? 0) + 1;
     this._fileExecutionIds.set(id, execId);
-
-    // Yield to the event loop/requestAnimationFrame to prevent UI thread blocking on mobile
-    if (typeof window !== "undefined" && window.requestAnimationFrame) {
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
-        return;
-      }
-    }
 
     let attempt = 0;
     try {
@@ -1015,8 +1010,10 @@ export class UploadQueueManager {
     const entry = this._files.get(id);
     if (!entry || !entry.file) return null;
 
-    const retries = 5;
-    const timeoutMs = this._isMobile ? 60_000 : 15_000;
+    const retries = this._isMobile ? MAX_NETWORK_RETRIES : 5;
+    // 15s timeout for presign on both mobile and desktop — the request is a tiny JSON call.
+    // 60s was excessive and masked real connectivity issues.
+    const timeoutMs = 15_000;
     let lastError: unknown = null;
 
     for (let i = 0; i < retries; i++) {
@@ -1373,29 +1370,11 @@ export class UploadQueueManager {
 
       const startUpload = async () => {
         try {
-          // Point 7: Resume flow lookup
-          const previousUploads = await withTimeout(upload.findPreviousUploads(), 15000);
-          
-          // Check execution ID and file state AFTER the async findPreviousUploads call!
-          if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
-            upload.abort(true).catch(() => {});
-            this._tusInstances.delete(id);
-            wrappedResolve("cancelled");
-            return;
-          }
-
-          const freshEntry = this._files.get(id)!;
-          if (freshEntry.state === "paused" || freshEntry.state === "cancelled" || freshEntry.state === "failed") {
-            upload.abort(true).catch(() => {});
-            this._tusInstances.delete(id);
-            wrappedResolve("cancelled");
-            return;
-          }
-
-          if (previousUploads && previousUploads.length > 0) {
-            console.log(`[QueueManager] Found previous upload for ${entry?.name}, resuming...`);
-            upload.resumeFromPreviousUpload(previousUploads[0]);
-          }
+          // Start the upload immediately — don't wait for resume lookup.
+          // This gets bytes flowing in < 100ms on mobile instead of blocking on
+          // findPreviousUploads() which can take 300-800ms.
+          console.log("[UPLOAD_START]");
+          upload.start();
 
           // 15-second startup timeout
           initTimeout = setTimeout(() => {
@@ -1403,7 +1382,7 @@ export class UploadQueueManager {
               console.error(`[QueueManager] TUS upload startup timed out for ${entry.name}`);
               upload.abort(true).catch(() => {});
               this._tusInstances.delete(id);
-              
+
               const err = new Error("INIT_TIMEOUT");
               console.error("[SUPABASE_UPLOAD_ERROR]", {
                 fileId: id,
@@ -1422,8 +1401,22 @@ export class UploadQueueManager {
             }
           }, 15000);
 
-          console.log("[UPLOAD_START]"); // Point 6 & 11 (Called ONLY ONCE)
-          upload.start();
+          // In parallel: look up any previous uploads so the NEXT retry can resume.
+          // We don't block the initial start on this — it's purely for resumability.
+          withTimeout(upload.findPreviousUploads(), 8000)
+            .then((previousUploads) => {
+              if (!initialized && previousUploads && previousUploads.length > 0) {
+                // Only apply if upload hasn't started progressing yet
+                const currentEntry = this._files.get(id);
+                if (currentEntry && currentEntry.state === "uploading" && currentEntry.progress === 0) {
+                  console.log(`[QueueManager] Found resumable upload for ${entry?.name}, applying resume offset...`);
+                  upload.resumeFromPreviousUpload(previousUploads[0]);
+                }
+              }
+            })
+            .catch(() => {
+              // Non-fatal — resume lookup failure doesn't affect the upload
+            });
         } catch (err) {
           console.error(`[QueueManager] Exception during TUS startup for "${entry.name}":`, err);
           upload.abort(true).catch(() => {});
@@ -1860,11 +1853,6 @@ export class UploadQueueManager {
   private async _validateAndHydrateFile(file: File): Promise<File> {
     if (!file || !(file instanceof File)) {
       throw new StructuredUploadError("ANDROID_FILE_HYDRATION_FAILED", "Invalid file object.");
-    }
-
-    // Android Chrome hydration delay fix
-    if (this._isMobile) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
     }
 
     const safeMimeType = this._getSafeMimeType(file);

@@ -20,6 +20,29 @@ export default function OrderStatusPage() {
   const params = useParams();
   const router = useRouter();
   const shortToken = params.shortToken as string;
+
+  // Derive the "go back" destination: if the user arrived from an upload flow,
+  // we stored the shopSlug in sessionStorage. Otherwise fall back to home.
+  const [backHref, setBackHref] = useState("/");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      // Scan sessionStorage for an order entry that matches this shortToken
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (!key?.startsWith("order:")) continue;
+        const raw = sessionStorage.getItem(key);
+        if (!raw) continue;
+        const entry = JSON.parse(raw) as { shortToken?: string; shopSlug?: string };
+        if (entry.shortToken === shortToken && entry.shopSlug) {
+          setBackHref(`/s/${entry.shopSlug}`);
+          break;
+        }
+      }
+    } catch {
+      // sessionStorage not available — silent fail, backHref stays '/'
+    }
+  }, [shortToken]);
   
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -183,11 +206,11 @@ export default function OrderStatusPage() {
               <RefreshCcw className="w-4.5 h-4.5" /> Try Again
             </Button>
             <Button 
-              onClick={() => router.push("/")} 
+              onClick={() => router.replace(backHref)} 
               variant="outline"
               className="w-full h-14 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition"
             >
-              Go Home
+              Go Back
             </Button>
           </div>
         </motion.div>
@@ -207,10 +230,10 @@ export default function OrderStatusPage() {
           <h1 className="text-2xl font-black text-slate-900 mb-2">Order Not Found</h1>
           <p className="text-slate-500 mb-6 font-medium text-sm">We couldn&apos;t find an order with this link. It might have expired or been deleted.</p>
           <Button 
-            onClick={() => router.push("/")} 
+            onClick={() => router.replace(backHref)} 
             className="w-full h-14 rounded-xl bg-slate-900 hover:bg-slate-950 text-white font-bold transition shadow-lg"
           >
-            Go Home
+            Go Back
           </Button>
         </motion.div>
       </div>
@@ -229,7 +252,7 @@ export default function OrderStatusPage() {
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => router.push("/")} 
+              onClick={() => router.replace(backHref)} 
               className="p-2 hover:bg-slate-100 rounded-xl transition"
             >
               <ArrowLeft className="w-4 h-4 text-slate-600" />

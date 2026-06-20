@@ -53,6 +53,16 @@ interface ShopDisplay {
   price_color_per_page?: number;
 }
 
+// ─── Module-level shop cache ──────────────────────────────────────────────────
+// Caches shop details in memory for 5 minutes so repeat visits within the same
+// browser session never pay a network round-trip.
+interface ShopCacheEntry {
+  data: ShopDisplay;
+  expiresAt: number;
+}
+const shopCache = new Map<string, ShopCacheEntry>();
+const SHOP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // ─── Generate idempotency key ─────────────────────────────────────────────────
 function generateIdempotencyKey(shopId: string, phone: string, fileNames: string): string {
   return `${shopId}:${phone}:${fileNames}:${Date.now().toString(36)}`;
@@ -281,6 +291,26 @@ function OrderUploadPageInner() {
     return "order-fallback-" + Date.now();
   });
 
+  // ── Guard: If this orderId already has a completed order, redirect now ─────────
+  // Prevents the upload form from showing again if the user navigates back
+  // after a successful order placement.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = sessionStorage.getItem(`order:${orderId}`);
+      if (stored) {
+        const { shortToken } = JSON.parse(stored) as { shortToken: string };
+        if (shortToken) {
+          // Use replace so this redirect itself doesn't add to history either
+          router.replace(`/order/${shortToken}`);
+        }
+      }
+    } catch {
+      // sessionStorage unavailable (private browsing / iframe) — silent fail
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
   // Submission state
   type OrderStatus = "idle" | "saving" | "success" | "failed";
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
@@ -390,6 +420,15 @@ function OrderUploadPageInner() {
     }
 
     const loadShop = async () => {
+      // Check module-level cache first — avoids network round-trip within same session
+      const now = Date.now();
+      const cached = shopCache.get(shopSlug);
+      if (cached && cached.expiresAt > now) {
+        setShop(cached.data);
+        setIsLoadingShop(false);
+        return;
+      }
+
       try {
         const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
         if (!res.ok) {
@@ -398,7 +437,7 @@ function OrderUploadPageInner() {
           return;
         }
         const data = await res.json();
-        setShop({
+        const shopData: ShopDisplay = {
           id: data.id,
           name: data.name,
           address: data.address,
@@ -406,7 +445,10 @@ function OrderUploadPageInner() {
           price_bw_per_page: data.price_bw_per_page,
           price_color_per_page: data.price_color_per_page,
           is_open: data.is_open,
-        });
+        };
+        // Store in module-level cache
+        shopCache.set(shopSlug, { data: shopData, expiresAt: now + SHOP_CACHE_TTL_MS });
+        setShop(shopData);
         setIsLoadingShop(false);
       } catch {
         toast.error("Failed to load shop. Check your connection.");
@@ -610,7 +652,23 @@ function OrderUploadPageInner() {
         setOrderStatus("success");
         tracker.markSuccess();
         persistUploadRef.current = true;
-        router.push(`/order/${data.shortToken}`);
+
+        // Persist order token to sessionStorage so:
+        //  a) refreshing /order/[token] keeps the user on the tracking page
+        //  b) navigating back to the upload page immediately redirects them forward again
+        try {
+          sessionStorage.setItem(
+            `order:${orderId}`,
+            JSON.stringify({ shortToken: data.shortToken, shopSlug, ts: Date.now() })
+          );
+        } catch {
+          // sessionStorage unavailable — silent fail
+        }
+
+        // Use replace() so the upload page is removed from the browser history stack.
+        // Pressing back from /order/[token] will go to the page BEFORE the upload form,
+        // not back to the (now stale) upload form itself.
+        router.replace(`/order/${data.shortToken}`);
       } else {
         throw new Error(data.message || data.error || "Order creation failed");
       }
@@ -642,7 +700,7 @@ function OrderUploadPageInner() {
       clearTimeout(timeoutId);
       isSubmittingRef.current = false;
     }
-  }, [files, shop, customerName, customerPhone, isOffline, notes, router, orderId]);
+  }, [files, shop, customerName, customerPhone, isOffline, notes, router, orderId, shopSlug]);
 
   // Loading Screen
   if (isLoadingShop) {
