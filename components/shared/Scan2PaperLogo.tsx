@@ -93,7 +93,7 @@ export function Scan2PaperLogo({
       {icon}
       <span
         style={{
-          fontFamily: "'Poppins', 'Inter', 'Segoe UI', Arial, sans-serif",
+          fontFamily: "var(--font-inter, 'Inter', 'Segoe UI', Arial, sans-serif)",
           fontWeight: 700,
           fontSize: `${fontSize}px`,
           letterSpacing: "-0.025em",

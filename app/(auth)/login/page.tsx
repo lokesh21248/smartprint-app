@@ -29,10 +29,10 @@ function LoginForm() {
   const hasEndedResolveTimer = useRef(false);
 
   useEffect(() => {
-    console.time("login-page:clerk-session-resolve");
+    if (process.env.NODE_ENV !== 'production') console.time("login-page:clerk-session-resolve");
     return () => {
       if (!hasEndedResolveTimer.current) {
-        console.timeEnd("login-page:clerk-session-resolve");
+        if (process.env.NODE_ENV !== 'production') console.timeEnd("login-page:clerk-session-resolve");
         hasEndedResolveTimer.current = true;
       }
     };
@@ -40,11 +40,15 @@ function LoginForm() {
 
   useEffect(() => {
     if (userLoaded && !hasEndedResolveTimer.current) {
-      console.timeEnd("login-page:clerk-session-resolve");
-      hasEndedResolveTimer.current = true;
-      console.log(
-        `[login-page] Clerk session resolved. isSignedIn=${!!user}, willRedirect=${!!user}`
-      );
+      if (process.env.NODE_ENV !== 'production') {
+        console.timeEnd("login-page:clerk-session-resolve");
+        hasEndedResolveTimer.current = true;
+        console.log(
+          `[login-page] Clerk session resolved. isSignedIn=${!!user}, willRedirect=${!!user}`
+        );
+      } else {
+        hasEndedResolveTimer.current = true;
+      }
     }
   }, [userLoaded, user]);
 
@@ -96,8 +100,10 @@ function LoginForm() {
       } else if (result.status === "needs_new_password") {
         setError("You need to set a new password. Please use 'Forgot password'.");
       } else {
-        // Log for debugging
-        console.error("Unexpected sign-in status:", result.status);
+        // Log for debugging in dev only
+        if (process.env.NODE_ENV !== 'production') {
+          console.error("Unexpected sign-in status:", result.status);
+        }
         setError(`Sign-in incomplete (status: ${result.status}). Please try again.`);
       }
     } catch (err: unknown) {
@@ -114,7 +120,9 @@ function LoginForm() {
       } else if (code === "form_param_nil" || code === "strategy_for_user_invalid") {
         setError("This account uses a different sign-in method (e.g. Google). Please try another way.");
       } else {
-        console.error("Clerk sign-in error:", code, message);
+        if (process.env.NODE_ENV !== 'production') {
+          console.error("Clerk sign-in error:", code, message);
+        }
         setError(message || "Unable to sign in. Please try again.");
       }
     } finally {

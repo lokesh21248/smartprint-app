@@ -20,7 +20,9 @@ export function HomeAuthRedirect() {
     // 3-second fallback timeout to prevent infinite loading
     const timer = setTimeout(() => {
       if (!hasCheckedRef.current) {
-        console.log("[HomeAuthRedirect] ⏰ Redirect timeout reached (3s). Removing 'js-redirecting' and showing homepage.");
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("[HomeAuthRedirect] ⏰ Redirect timeout reached (3s). Removing 'js-redirecting' and showing homepage.");
+        }
         document.documentElement.classList.remove('js-redirecting');
         setRedirectTimedOut(true);
       }
@@ -31,29 +33,41 @@ export function HomeAuthRedirect() {
 
   useEffect(() => {
     if (redirectTimedOut) {
-      console.log("[HomeAuthRedirect] Skip redirect check: already timed out.");
+      if (process.env.NODE_ENV !== 'production') {
+        console.log("[HomeAuthRedirect] Skip redirect check: already timed out.");
+      }
       return;
     }
     if (hasCheckedRef.current) {
       return;
     }
 
-    console.log("[HomeAuthRedirect] Auth status check: isLoaded =", isLoaded, ", isSignedIn =", isSignedIn);
-    
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("[HomeAuthRedirect] Auth status check: isLoaded =", isLoaded, ", isSignedIn =", isSignedIn);
+    }
+
     if (isLoaded) {
       hasCheckedRef.current = true;
       if (isSignedIn) {
-        console.log("[HomeAuthRedirect] User is signed in. Redirecting to /dashboard.");
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("[HomeAuthRedirect] User is signed in. Redirecting to /dashboard.");
+        }
         router.replace('/dashboard');
       } else {
         const hasVisited = localStorage.getItem("scan2paper_visited");
-        console.log("[HomeAuthRedirect] User is signed out. localStorage 'scan2paper_visited' =", hasVisited);
-        
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("[HomeAuthRedirect] User is signed out. localStorage 'scan2paper_visited' =", hasVisited);
+        }
+
         if (hasVisited) {
-          console.log("[HomeAuthRedirect] Returning visitor. Redirecting to /login.");
+          if (process.env.NODE_ENV !== 'production') {
+            console.log("[HomeAuthRedirect] Returning visitor. Redirecting to /login.");
+          }
           router.replace('/login');
         } else {
-          console.log("[HomeAuthRedirect] First-time visitor. Showing homepage immediately.");
+          if (process.env.NODE_ENV !== 'production') {
+            console.log("[HomeAuthRedirect] First-time visitor. Showing homepage immediately.");
+          }
           document.documentElement.classList.remove('js-redirecting');
           localStorage.setItem("scan2paper_visited", "true");
         }

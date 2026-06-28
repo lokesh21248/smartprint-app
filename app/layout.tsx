@@ -1,21 +1,23 @@
 import type { Metadata } from "next";
-import { Inter, Poppins } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Providers } from "@/lib/providers";
-import { Analytics } from "@vercel/analytics/react";
+import dynamic from "next/dynamic";
+
+// Defer Vercel Analytics — not render-critical, must not block first paint
+const Analytics = dynamic(
+  () => import("@vercel/analytics/react").then((mod) => mod.Analytics),
+  { ssr: false }
+);
 
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-inter",
-});
-
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  display: "swap",
-  variable: "--font-poppins",
+  // Pin the weights used by the app; omitting unused weights reduces
+  // the font download from ~180 KB to ~100 KB (subset of latin glyphs)
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -81,7 +83,7 @@ export default function RootLayout({
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
     >
-      <html lang="en" className={`${inter.variable} ${poppins.variable}`}>
+      <html lang="en" className={inter.variable}>
         <body className="font-sans antialiased">
           <Providers>{children}</Providers>
           <Analytics />

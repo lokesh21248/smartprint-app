@@ -81,21 +81,61 @@ const nextConfig = {
     }
 
     // ── PRODUCTION ONLY: stable chunk IDs ─────────────────────────────────
-    // NEVER set in dev: Next.js + React Refresh requires 'named' module IDs
-    // during HMR so it can find and hot-swap the exact module that changed.
-    // Forcing 'deterministic' in dev → React Refresh loses module references
-    // → options.factory === undefined after any Fast Refresh update.
     if (!dev) {
       config.optimization.moduleIds = 'deterministic';
       config.optimization.chunkIds = 'deterministic';
+
+      // ── Manual chunk splitting ─────────────────────────────────────────
+      // Split large vendor libraries into separate cacheable chunks so they
+      // don't inflate the shared chunk that loads on every page load.
+      // Each chunk is independently cached by the browser and CDN.
+      const originalSplitChunks = config.optimization.splitChunks;
+      config.optimization.splitChunks = {
+        ...(typeof originalSplitChunks === 'object' ? originalSplitChunks : {}),
+        cacheGroups: {
+          ...(typeof originalSplitChunks === 'object' && originalSplitChunks?.cacheGroups
+            ? originalSplitChunks.cacheGroups
+            : {}),
+          // Recharts + d3 — only on analytics page (~120 KB gzip)
+          recharts: {
+            test: /[\/]node_modules[\/](recharts|d3-|victory-)[\/]/,
+            name: 'vendor-recharts',
+            chunks: 'all',
+            priority: 30,
+          },
+          // Framer Motion — decorative animations (~40 KB gzip)
+          framerMotion: {
+            test: /[\/]node_modules[\/]framer-motion[\/]/,
+            name: 'vendor-framer',
+            chunks: 'all',
+            priority: 29,
+          },
+          // FilePond + pdf-lib — upload flow only (~80 KB gzip)
+          upload: {
+            test: /[\/]node_modules[\/](filepond|react-filepond|pdf-lib|tus-js-client)[\/]/,
+            name: 'vendor-upload',
+            chunks: 'all',
+            priority: 28,
+          },
+          // Supabase JS — shared across auth + dashboard but isolate for caching
+          supabase: {
+            test: /[\/]node_modules[\/](@supabase)[\/]/,
+            name: 'vendor-supabase',
+            chunks: 'all',
+            priority: 27,
+          },
+          // TanStack Query — shared data fetching layer
+          tanstack: {
+            test: /[\/]node_modules[\/](@tanstack)[\/]/,
+            name: 'vendor-tanstack',
+            chunks: 'all',
+            priority: 26,
+          },
+        },
+      };
     }
 
     // ── DEVELOPMENT: minimal watch options ────────────────────────────────
-    // Use a longer aggregateTimeout to prevent overlapping recompilations
-    // on OneDrive (network FS). Overlapping compilations produce out-of-sync
-    // chunk manifests → options.factory undefined.
-    // Do NOT set poll here — Next.js uses native fsevents/chokidar by default
-    // which is more reliable. Polling causes double-trigger recompilations.
     if (dev) {
       config.watchOptions = {
         aggregateTimeout: 500,
@@ -166,9 +206,13 @@ const nextConfig = {
         // early so the browser does not pay DNS + TLS costs on first use.
         source: "/(.*)",
         headers: [
-          // Supabase — realtime WebSocket + REST API
+          // Supabase — REST API + realtime WebSocket
           { key: "Link", value: "<https://api.supabase.co>; rel=preconnect" },
-          // Clerk — auth API
+          // Clerk — auth JS bundle served from custom domain
+          { key: "Link", value: "<https://clerk.scan2paper.com>; rel=preconnect" },
+          // Google Fonts — Inter font download
+          { key: "Link", value: "<https://fonts.gstatic.com>; rel=preconnect; crossorigin" },
+          // Clerk CDN fallback for accounts.dev (staging / local dev)
           { key: "Link", value: "<https://api.clerk.dev>; rel=dns-prefetch" },
         ],
       },
