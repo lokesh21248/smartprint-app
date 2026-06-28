@@ -295,7 +295,9 @@ export function useRealtimeOrders(shopId: string | null) {
     const activeShopId = shopId;
     if (!batch.length || !activeShopId) return;
 
-    console.log(`[Realtime] 📦 Flushing batch of ${batch.length} order events...`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Realtime] 📦 Flushing batch of ${batch.length} order events...`);
+    }
 
     batch.forEach((order) => {
       if (playedOrderIds.has(order.id)) {

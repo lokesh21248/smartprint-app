@@ -55,6 +55,9 @@ import { compressImage, isCompressible } from "@/lib/upload/imageCompressor";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+/** Dev-only flag — tree-shaken to `false` in production builds. */
+const __DEV__ = process.env.NODE_ENV !== "production";
+
 /** Exponential backoff delays in ms. Length = max retries. */
 const RETRY_DELAYS_MS = [0, 1000, 3000, 5000, 10000] as const;
 /** Max retries for general upload errors. */
@@ -263,7 +266,7 @@ export class UploadQueueManager {
   async addFiles(rawFiles: File[]): Promise<void> {
     if (this._destroyed) return;
 
-    console.log(`[QueueManager:Debug] addFiles called with ${rawFiles.length} file(s).`);
+    if (__DEV__) console.log(`[QueueManager:Debug] addFiles called with ${rawFiles.length} file(s).`);
 
     const hydratedFiles: File[] = [];
 
@@ -329,7 +332,7 @@ export class UploadQueueManager {
         progress: 0,
       };
 
-      console.log(`[QueueManager:Debug] Registering file: ${file.name} (id: ${id}, size: ${file.size} bytes).`);
+      if (__DEV__) console.log(`[QueueManager:Debug] Registering file: ${file.name} (id: ${id}, size: ${file.size} bytes).`);
 
       this._files.set(id, entry);
       this._emit({ type: "FILE_ADDED", file: this._toUploadedFile(entry) });
@@ -388,7 +391,7 @@ export class UploadQueueManager {
 
   /** Cancel all active uploads cleanly. */
   cancelAll(): void {
-    console.log("[QueueManager] cancelAll() called.");
+    if (__DEV__) console.log("[QueueManager] cancelAll() called.");
     for (const id of this._files.keys()) {
       const currentExecId = this._fileExecutionIds.get(id) ?? 0;
       this._fileExecutionIds.set(id, currentExecId + 1);
@@ -405,7 +408,7 @@ export class UploadQueueManager {
 
   /** Clear all state and data. */
   clear(): void {
-    console.log("[QueueManager] clear() called.");
+    if (__DEV__) console.log("[QueueManager] clear() called.");
     this.clearSession();
   }
 
@@ -588,7 +591,7 @@ export class UploadQueueManager {
   private async _drainQueue(): Promise<void> {
     if (this._draining || this._destroyed) return;
     if (!this._online) {
-      console.log("[QueueManager:Debug] Drain queued skipped: Offline.");
+      if (__DEV__) console.log("[QueueManager:Debug] Drain queued skipped: Offline.");
       return; // Wait for online event
     }
 
@@ -596,7 +599,7 @@ export class UploadQueueManager {
     try {
       const activeCount = this._activeFileIds.size;
       const slotsAvailable = this._concurrencyLimit - activeCount;
-      console.log(`[QueueManager:Debug] _drainQueue: Active: ${activeCount}/${this._concurrencyLimit}. Available: ${slotsAvailable}.`);
+      if (__DEV__) console.log(`[QueueManager:Debug] _drainQueue: Active: ${activeCount}/${this._concurrencyLimit}. Available: ${slotsAvailable}.`);
       
       if (slotsAvailable <= 0) return;
 
@@ -614,7 +617,7 @@ export class UploadQueueManager {
         }
       }
 
-      console.log(`[QueueManager:Debug] _drainQueue: Starting ${toStart.length} file(s).`);
+      if (__DEV__) console.log(`[QueueManager:Debug] _drainQueue: Starting ${toStart.length} file(s).`);
 
       for (const entry of toStart) {
         this._activeFileIds.add(entry.id);
@@ -636,7 +639,7 @@ export class UploadQueueManager {
    * ALWAYS removes from _activeFileIds in finally.
    */
   private async _processFile(id: string): Promise<void> {
-    console.log(`[QueueManager:Debug] Starting _processFile for file ${id}`);
+    if (__DEV__) console.log(`[QueueManager:Debug] Starting _processFile for file ${id}`);
 
     // Strict Lock Check: Prevent duplicate initialization of active slots
     if (this._runningProcesses.has(id)) {
@@ -653,11 +656,11 @@ export class UploadQueueManager {
     try {
       const entry = this._files.get(id);
       if (!entry || entry.state === "completed" || entry.state === "failed" || entry.state === "cancelled") {
-        console.log(`[QueueManager:Debug] _processFile: File ${id} already finished or removed. Releasing slot.`);
+        if (__DEV__) console.log(`[QueueManager:Debug] _processFile: File ${id} already finished or removed. Releasing slot.`);
         return;
       }
 
-      console.log("[UPLOAD_START]", {
+      if (__DEV__) console.log("[UPLOAD_START]", {
         fileId: id,
         fileName: entry.name,
         fileSize: entry.size,
@@ -676,7 +679,7 @@ export class UploadQueueManager {
       // ── Step 1: Ensure binary file is loaded ──────────────────────────────
       let fileToUpload = entry.file;
       if (!fileToUpload) {
-        console.log(`[QueueManager:Debug] File binary not in memory, attempting IndexedDB load for "${entry.name}"`);
+        if (__DEV__) console.log(`[QueueManager:Debug] File binary not in memory, attempting IndexedDB load for "${entry.name}"`);
         const dbFile = await Promise.race([
           indexedDbStore.getFile(id),
           new Promise<null>((_, reject) =>
@@ -738,7 +741,7 @@ export class UploadQueueManager {
 
         // Check if manually cancelled or paused
         if (currentEntry.state === "paused" || currentEntry.state === "failed" || currentEntry.state === "completed" || currentEntry.state === "cancelled") {
-          console.log(`[QueueManager:Debug] Exiting _processFile loop for "${currentEntry.name}" due to state: ${currentEntry.state}`);
+          if (__DEV__) console.log(`[QueueManager:Debug] Exiting _processFile loop for "${currentEntry.name}" due to state: ${currentEntry.state}`);
           return;
         }
 

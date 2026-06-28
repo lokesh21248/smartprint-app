@@ -135,14 +135,16 @@ export const MultiFileUploader = memo(
         });
 
       if (changed) {
-        console.log("[MultiFileUploader] Syncing file config to parent:", queueFiles.map(f => ({
-          name: f.name,
-          copies: f.copies,
-          color: f.color,
-          doubleSided: f.doubleSided,
-          pages: f.pages,
-          status: f.status,
-        })));
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[MultiFileUploader] Syncing file config to parent:", queueFiles.map(f => ({
+            name: f.name,
+            copies: f.copies,
+            color: f.color,
+            doubleSided: f.doubleSided,
+            pages: f.pages,
+            status: f.status,
+          })));
+        }
         onChange(queueFiles);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps

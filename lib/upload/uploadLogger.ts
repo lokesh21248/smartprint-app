@@ -28,6 +28,10 @@ const LOG_PREFIX = "[SmartPrint:Upload]";
 const IS_DEV = process.env.NODE_ENV !== "production";
 
 function emit(level: LogLevel, payload: UploadLogPayload): void {
+  // In production: only emit errors and warnings — all info/debug telemetry is silent.
+  // This eliminates 30+ console.log calls per file upload without losing actionable errors.
+  if (!IS_DEV && (level === "info" || level === "debug")) return;
+
   const ts = new Date().toISOString();
   const msg = `${LOG_PREFIX} [${ts}] ${payload.event}${payload.fileName ? ` — ${payload.fileName}` : ""}`;
 
@@ -44,14 +48,15 @@ function emit(level: LogLevel, payload: UploadLogPayload): void {
     logFn(msg, payload);
   } else {
     // Production: single JSON line — easy to grep / forward to Sentry / Datadog
+    // Only error/warn reach this point (info/debug are filtered above)
     const line = JSON.stringify({ level, ...payload, ts });
     if (level === "error") console.error(line);
     else if (level === "warn") console.warn(line);
-    else console.log(line);
   }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+
 
 /** Called when a file enters the upload pipeline. */
 export function logUploadStart(fileName: string, fileSizeBytes: number, attempt = 1): void {

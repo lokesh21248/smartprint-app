@@ -21,7 +21,9 @@ export function AudioInitializer({ shopId }: AudioInitializerProps) {
   // 2. Register first-interaction event listeners to unlock audio playbacks (Chrome/Safari requirement)
   useEffect(() => {
     const unlockAudio = () => {
-      console.log("[AudioInitializer] 🔓 User interaction detected. Unlocking browser audio...");
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[AudioInitializer] 🔓 User interaction detected. Unlocking browser audio...");
+      }
       audioManager.unlock();
     };
 

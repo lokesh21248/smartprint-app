@@ -21,13 +21,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!shopId) return;
     set({ isLoading: true });
     try {
-      console.log(`[SettingsStore] Fetching settings for shop: "${shopId}"`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[SettingsStore] Fetching settings for shop: "${shopId}"`);
+      }
       const response = await fetch(`/api/shop/settings?shopId=${shopId}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch settings: status ${response.status}`);
       }
       const data = await response.json();
-      console.log("[SettingsStore] ✅ Settings loaded successfully:", data);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log("[SettingsStore] ✅ Settings loaded successfully:", data);
+      }
       set({
         soundEnabled: data.soundEnabled ?? true,
         notificationSound: (data.notificationSound as NotificationSound) ?? "whatsapp",

@@ -49,7 +49,9 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
 
     // Check client-side cache
     if (signedUrlCache.current.has(path)) {
-      console.log(`[OrderDetailView] Cache hit for preview: ${path}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[OrderDetailView] Cache hit for preview: ${path}`);
+      }
       setPreviewUrl(signedUrlCache.current.get(path)!);
       setPreviewLoading(false);
       return;
