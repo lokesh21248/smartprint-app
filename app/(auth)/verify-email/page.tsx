@@ -79,11 +79,12 @@ export default function VerifyEmailPage() {
               const data = await res.json().catch(() => ({}));
               throw new Error(data.error || "Failed to create shop record");
             }
-          } catch (shopErr: any) {
+          } catch (shopErr: unknown) {
+            const msg = shopErr instanceof Error ? shopErr.message : "Failed to set up shop details. Please try again.";
             console.error("Signup failed:", shopErr);
             setIsSuccess(false);
-            toast.error(shopErr.message || "Failed to set up shop details. Please try again.");
-            setError(shopErr.message || "Failed to set up shop details. Please try again.");
+            toast.error(msg);
+            setError(msg);
             return;
           }
         }

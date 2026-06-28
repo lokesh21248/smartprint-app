@@ -40,6 +40,27 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png?v=2",
   },
   manifest: "/manifest.json",
+  // Default Open Graph — overridden per-page; acts as fallback for social sharing
+  openGraph: {
+    type: "website",
+    siteName: "Scan2Paper",
+    title: "Scan2Paper — Digital Print Shop Management",
+    description: "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
+    images: [
+      {
+        url: "/logo.webp",
+        width: 512,
+        height: 512,
+        alt: "Scan2Paper logo",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "Scan2Paper — Digital Print Shop Management",
+    description: "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
+    images: ["/logo.webp"],
+  },
   robots: {
     index: true,
     follow: true,

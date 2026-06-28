@@ -11,7 +11,11 @@ import Link from 'next/link';
 export default function FindShopPage() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [shops, setShops] = useState<any[]>([]);
+
+  // Typed shape matching the Supabase select query
+  type ShopEntry = { name: string; slug: string; address_line1: string; city: string };
+  const [shops, setShops] = useState<ShopEntry[]>([]);
+
   const router = useRouter();
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Bell, Menu, User, Settings, LogOut, Loader2, ChevronDown } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useShopStore } from "@/stores/shopStore";
@@ -40,10 +40,10 @@ export function Header() {
   const { shop, notificationCount } = useShopStore();
   const { pendingCount } = useOrderStore();
   const { signOut } = useClerk();
-  const title = getPageTitle(pathname);
+  const title = useMemo(() => getPageTitle(pathname), [pathname]);
   const shopName = shop?.name || "Shop Owner";
 
-  const [greeting, setGreeting] = useState("Hello");
+  const greetingRef = useRef("Hello");
   const [mounted, setMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -52,11 +52,9 @@ export function Header() {
   const avatarBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    setMounted(true);
     const hour = new Date().getHours();
-    setGreeting(
-      hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
-    );
+    greetingRef.current = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    setMounted(true);
   }, []);
 
   // Close dropdown on outside click or Escape
@@ -125,7 +123,7 @@ export function Header() {
             <div className="h-4 flex items-center mt-0.5">
               {mounted ? (
                 <p className="text-[11px] font-bold text-slate-400 truncate animate-fade-in leading-none">
-                  {greeting}, {shopName} 👋
+                  {greetingRef.current}, {shopName} 👋
                 </p>
               ) : (
                 <div className="h-2.5 w-24 bg-slate-100 rounded animate-pulse" />

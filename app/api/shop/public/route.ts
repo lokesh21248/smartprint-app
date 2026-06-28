@@ -63,7 +63,13 @@ export async function GET(request: Request) {
     }
 
     // Build a clean response — don't expose internal fields
-    const bh = data.business_hours as Record<string, any> | null;
+    type BusinessHours = {
+      opening_time?: string;
+      closing_time?: string;
+      services?: string[];
+      working_days?: string[];
+    };
+    const bh = data.business_hours as BusinessHours | null;
     const shop = {
       id: data.id,
       name: data.name,

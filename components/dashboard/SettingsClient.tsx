@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useShopStore } from "@/stores/shopStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import type { NotificationSound } from "@/stores/settingsStore";
 import { audioManager } from "@/lib/audioManager";
 import { useClerk } from "@clerk/nextjs";
 import { useState, useEffect } from "react";
@@ -161,7 +162,7 @@ export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: Se
                   <button
                     key={sound.id}
                     onClick={async () => {
-                      await setNotificationSound(sound.id as any, shopId);
+                      await setNotificationSound(sound.id as NotificationSound, shopId);
                       audioManager.play(sound.id);
                     }}
                     className={`relative flex items-start text-left p-4 rounded-xl border text-sm transition-all duration-300 ${

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import type { DashboardStats, Order, Shop } from "@/types";
@@ -46,7 +46,8 @@ async function getDashboardData(userId: string): Promise<{
         .from("orders")
         .select("total_amount, status, created_at, updated_at, completed_at, customer_phone")
         .eq("shop_id", shop.id)
-        .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`),
+        .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`)
+        .limit(200), // Cap to prevent unbounded payload on high-volume shops
       supabase
         .from("orders")
         .select("id, short_token, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, status_history, created_at, updated_at")
@@ -122,15 +123,10 @@ async function getDashboardData(userId: string): Promise<{
 }
 
 export default async function DashboardPage() {
-  // Parallelize auth and user fetching to avoid waterfall
-  const [authData, user] = await Promise.all([
-    auth(),
-    currentUser()
-  ]);
+  // Parallelize auth — single auth() call, no currentUser() needed
+  const { userId } = await auth();
   
-  const { userId } = authData;
-  
-  const data = userId && user
+  const data = userId
     ? await getDashboardData(userId)
     : { stats: { pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }, newOrders: [], shop: null };
 

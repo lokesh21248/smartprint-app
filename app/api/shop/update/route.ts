@@ -115,7 +115,13 @@ export async function PATCH(request: Request) {
         .eq("id", shopId)
         .maybeSingle();
 
-      const existingHours = (existingShop?.business_hours as Record<string, any>) || {};
+      type BusinessHoursData = {
+        opening_time?: string;
+        closing_time?: string;
+        working_days?: string[];
+        services?: string[];
+      };
+      const existingHours = (existingShop?.business_hours as BusinessHoursData) || {};
 
       payload.business_hours = {
         opening_time: hasOpening ? patch.opening_time : existingHours.opening_time,

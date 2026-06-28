@@ -110,8 +110,14 @@ const nextConfig = {
     fetches: { fullUrl: true },
   },
 
-  // optimizePackageImports causes options.factory / mountLazyComponent crashes.
-  experimental: {},
+  // optimizePackageImports: enabled for safe ES-module packages only.
+  // These packages (lucide-react, date-fns, sonner) have clean named exports
+  // and do NOT trigger the options.factory/mountLazyComponent HMR crash.
+  // DO NOT add: recharts, filepond, pdf-lib, qrcode.react — these use CJS/UMD
+  // interop that can misalign chunk IDs during Hot Module Replacement.
+  experimental: {
+    optimizePackageImports: ["lucide-react", "date-fns", "sonner"],
+  },
 
   reactStrictMode: true,
 
@@ -153,6 +159,17 @@ const nextConfig = {
           // Belt-and-suspenders: nosniff is already on the global rule but repeating
           // it here ensures this specific rule always wins for CSS paths.
           { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
+        // Resource hints: establish connections to critical third-party origins
+        // early so the browser does not pay DNS + TLS costs on first use.
+        source: "/(.*)",
+        headers: [
+          // Supabase — realtime WebSocket + REST API
+          { key: "Link", value: "<https://api.supabase.co>; rel=preconnect" },
+          // Clerk — auth API
+          { key: "Link", value: "<https://api.clerk.dev>; rel=dns-prefetch" },
         ],
       },
       {

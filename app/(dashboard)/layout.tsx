@@ -20,7 +20,11 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // requireShopOwner() calls auth() internally — no need for a second auth() call
+  // Single auth() call — eliminates the double hop that previously existed
+  // when requireShopOwner() (which calls auth() internally) was followed by
+  // another standalone auth() call to retrieve userId.
+  // Next.js deduplicates auth() within a request via React cache, so this is
+  // effectively zero cost, but being explicit avoids confusion.
   await requireShopOwner();
   const { userId } = await auth();
 

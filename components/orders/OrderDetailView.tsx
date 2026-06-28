@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowLeft, FileText, Phone, Download, Printer,
   Check, Package, Circle, X, AlertTriangle, IndianRupee,
@@ -55,13 +56,17 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
     }
 
     setPreviewUrl(null);
-    console.log(`[OrderDetailView] Starting preview load. Bucket: order-files, Path: ${path}`);
-    console.time("signed-url");
-    console.time("preview-load");
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[OrderDetailView] Starting preview load. Bucket: order-files, Path: ${path}`);
+      console.time("signed-url");
+      console.time("preview-load");
+    }
 
     try {
       const extension = path.split(".").pop()?.toLowerCase() || "";
-      console.log(`[OrderDetailView] File type identified: ${extension}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[OrderDetailView] File type identified: ${extension}`);
+      }
 
       // Generate signed URL (expires in 1 hour)
       const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${path}`);
@@ -69,13 +74,17 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
         throw new Error(`Failed to generate signed URL (HTTP ${res.status})`);
       }
       const data = await res.json();
-      console.timeEnd("signed-url");
+      if (process.env.NODE_ENV !== "production") {
+        console.timeEnd("signed-url");
+      }
 
       if (!data.signedUrl) {
         throw new Error(data.error || "No signed URL returned from server");
       }
 
-      console.log(`[OrderDetailView] Signed URL generated successfully`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[OrderDetailView] Signed URL generated successfully`);
+      }
 
       // Cache it
       signedUrlCache.current.set(path, data.signedUrl);
@@ -86,15 +95,19 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       setPreviewError(errMsg);
     } finally {
       setPreviewLoading(false);
-      console.timeEnd("preview-load");
+      if (process.env.NODE_ENV !== "production") {
+        console.timeEnd("preview-load");
+      }
     }
   }, []);
 
   const handleDownloadFile = useCallback(async (path: string, fileName: string) => {
     if (!path) return;
     setDownloadingFileUrl(path);
-    console.log(`[OrderDetailView] Starting download for path: ${path}`);
-    console.time("download");
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[OrderDetailView] Starting download for path: ${path}`);
+      console.time("download");
+    }
     try {
       let downloadUrl = signedUrlCache.current.get(path);
 
@@ -109,9 +122,13 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
         }
         downloadUrl = data.signedUrl as string;
         signedUrlCache.current.set(path, downloadUrl);
-        console.log(`[OrderDetailView] Signed URL generated for download: success`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[OrderDetailView] Signed URL generated for download: success`);
+        }
       } else {
-        console.log(`[OrderDetailView] Download Cache hit for: ${path}`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[OrderDetailView] Download Cache hit for: ${path}`);
+        }
       }
 
       if (!downloadUrl) {
@@ -127,14 +144,18 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       link.click();
       document.body.removeChild(link);
 
-      console.log(`[OrderDetailView] Download initiated for: ${fileName}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[OrderDetailView] Download initiated for: ${fileName}`);
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown download error";
       console.error("[OrderDetailView] Download error:", errMsg);
       toast.error(`Error downloading file: ${errMsg}`);
     } finally {
       setDownloadingFileUrl(null);
-      console.timeEnd("download");
+      if (process.env.NODE_ENV !== "production") {
+        console.timeEnd("download");
+      }
     }
   }, []);
 
@@ -491,12 +512,18 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                       if (["png", "jpg", "jpeg", "webp"].includes(ext)) {
                         return (
                           <div className="w-full h-full flex items-center justify-center relative bg-white rounded-lg p-2 border border-[#E5E7EB]">
-                            <img
+                            <Image
                               src={previewUrl}
                               alt={currentFile?.name || "Image preview"}
-                              className="max-h-full max-w-full object-contain"
-                              onLoad={() => console.log(`[OrderDetailView] Image preview rendered successfully`)}
+                              fill
+                              className="object-contain rounded-lg"
+                              onLoad={() => {
+                                if (process.env.NODE_ENV !== "production") {
+                                  console.log(`[OrderDetailView] Image preview rendered successfully`);
+                                }
+                              }}
                               onError={() => setPreviewError("Failed to render image")}
+                              unoptimized
                             />
                           </div>
                         );
@@ -507,7 +534,11 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                               src={`${previewUrl}#toolbar=0`}
                               className="w-full h-full border-0"
                               title="PDF Preview"
-                              onLoad={() => console.log(`[OrderDetailView] PDF preview iframe loaded`)}
+                              onLoad={() => {
+                                if (process.env.NODE_ENV !== "production") {
+                                  console.log(`[OrderDetailView] PDF preview iframe loaded`);
+                                }
+                              }}
                             />
                           </div>
                         );

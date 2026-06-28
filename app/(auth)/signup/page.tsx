@@ -12,6 +12,14 @@ import { validateEmail } from "@/lib/utils/index";
 import Link from "next/link";
 import Script from "next/script";
 
+// Extend Window to include Cloudflare Turnstile and its vendor callbacks
+interface WindowWithTurnstile extends Window {
+  turnstile?: { reset: (el: Element) => void };
+  onTurnstileSuccess?: (token: string) => void;
+  onTurnstileExpired?: () => void;
+  onTurnstileError?: () => void;
+}
+
 export default function SignupPage() {
   const { isLoaded, signUp } = useSignUp();
   const { user, isLoaded: userLoaded } = useUser();
@@ -43,23 +51,23 @@ export default function SignupPage() {
   useEffect(() => {
     if (!useTurnstile) return;
 
-    (window as any).onTurnstileSuccess = (token: string) => {
+    (window as WindowWithTurnstile).onTurnstileSuccess = (token: string) => {
       setTurnstileToken(token);
       setIsCustomTurnstileVerified(true);
     };
-    (window as any).onTurnstileExpired = () => {
+    (window as WindowWithTurnstile).onTurnstileExpired = () => {
       setTurnstileToken("");
       setIsCustomTurnstileVerified(false);
     };
-    (window as any).onTurnstileError = () => {
+    (window as WindowWithTurnstile).onTurnstileError = () => {
       setTurnstileToken("");
       setIsCustomTurnstileVerified(false);
     };
 
     return () => {
-      delete (window as any).onTurnstileSuccess;
-      delete (window as any).onTurnstileExpired;
-      delete (window as any).onTurnstileError;
+      delete (window as WindowWithTurnstile).onTurnstileSuccess;
+      delete (window as WindowWithTurnstile).onTurnstileExpired;
+      delete (window as WindowWithTurnstile).onTurnstileError;
     };
   }, [useTurnstile]);
 
@@ -89,13 +97,13 @@ export default function SignupPage() {
   }, [isCustomTurnstileVerified]);
 
   const resetTurnstile = () => {
-    if (typeof window !== "undefined" && (window as any).turnstile) {
+    if (typeof window !== "undefined" && (window as WindowWithTurnstile).turnstile) {
       try {
         const el = document.querySelector(".cf-turnstile") || document.getElementById("clerk-captcha");
         if (el && (el.children.length > 0 || el.querySelector("iframe"))) {
-          (window as any).turnstile.reset(el);
+          (window as WindowWithTurnstile).turnstile!.reset(el);
         }
-      } catch (e) {
+      } catch {
         // Silently ignore "Nothing to reset" errors to keep console clean
       }
     }

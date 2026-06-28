@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar,
@@ -27,6 +27,16 @@ const DATE_RANGES = [
   { label: "This Month", value: "month" },
 ];
 
+// Module-level constants — defined once, not recreated on each render
+const STATUS_COLORS: Record<string, string> = {
+  PLACED: "#3B82F6",
+  ACCEPTED: "#8B5CF6",
+  PRINTING: "#F59E0B",
+  READY: "#10B981",
+  COMPLETED: "#059669",
+  CANCELLED: "#EF4444",
+};
+
 const toLocalDateString = (date: Date) => {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -47,143 +57,132 @@ const formatChartDate = (dateStr: string) => {
 export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
   const [dateRange, setDateRange] = useState("7d");
 
-  // Determine local date range boundaries
-  const now = new Date();
-  let startDate = new Date();
-
-  if (dateRange === "7d") {
-    startDate.setDate(now.getDate() - 6); // Last 7 days, including today
-    startDate.setHours(0, 0, 0, 0);
-  } else if (dateRange === "30d") {
-    startDate.setDate(now.getDate() - 29); // Last 30 days, including today
-    startDate.setHours(0, 0, 0, 0);
-  } else if (dateRange === "month") {
-    startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0); // Start of current month
-  }
-
-  // Filter orders by local creation date
-  const filteredOrders = orders.filter((o) => {
-    const createdDate = new Date(o.created_at);
-    return createdDate >= startDate;
-  });
-
-  const completedOrders = filteredOrders.filter((o) => {
-    const s = o.status?.toUpperCase();
-    return s === "COMPLETED" || s === "SUCCESS";
-  });
-
-  const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-  const totalOrders = filteredOrders.length;
-
-  // Corrected AOV formula: Completed Revenue / Completed Orders Count
-  const avgOrderValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
-
-  // Average completion time calculation (only for completed orders)
-  let totalCompletionMins = 0;
-  let completionCount = 0;
-  for (const o of completedOrders) {
-    const createdTime = new Date(o.created_at).getTime();
-    const completedTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
-    const diff = (completedTime - createdTime) / 60000;
-    if (diff >= 0) {
-      totalCompletionMins += diff;
-      completionCount++;
+  // ── Date range boundaries (memoized) ─────────────────────────────────────
+  const { startDate } = useMemo(() => {
+    const now = new Date();
+    let start = new Date();
+    if (dateRange === "7d") {
+      start.setDate(now.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+    } else if (dateRange === "30d") {
+      start.setDate(now.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+    } else if (dateRange === "month") {
+      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     }
-  }
-  const avgCompletionMins = completionCount > 0 ? Math.round(totalCompletionMins / completionCount) : 0;
+    return { startDate: start };
+  }, [dateRange]);
 
-  // Generate calendar days for gap-filling
-  const datesList: string[] = [];
-  const tempDate = new Date(startDate);
-  const todayStr = toLocalDateString(now);
-  while (toLocalDateString(tempDate) <= todayStr) {
-    datesList.push(toLocalDateString(tempDate));
-    tempDate.setDate(tempDate.getDate() + 1);
-    if (datesList.length > 100) break; // safeguard
-  }
+  // ── Filtered orders (memoized) ────────────────────────────────────────────
+  const filteredOrders = useMemo(
+    () => orders.filter((o) => new Date(o.created_at) >= startDate),
+    [orders, startDate]
+  );
 
-  // Group revenue and order count by local creation date
-  const revenueByDate: Record<string, { revenue: number; orders: number }> = {};
-  for (const dateStr of datesList) {
-    revenueByDate[dateStr] = { revenue: 0, orders: 0 };
-  }
+  const completedOrders = useMemo(
+    () =>
+      filteredOrders.filter((o) => {
+        const s = o.status?.toUpperCase();
+        return s === "COMPLETED" || s === "SUCCESS";
+      }),
+    [filteredOrders]
+  );
 
-  for (const o of filteredOrders) {
-    const createdDateStr = toLocalDateString(new Date(o.created_at));
-    if (revenueByDate[createdDateStr]) {
-      revenueByDate[createdDateStr].orders++;
-      const s = o.status?.toUpperCase();
-      if (s === "COMPLETED" || s === "SUCCESS") {
-        revenueByDate[createdDateStr].revenue += Number(o.total_amount) || 0;
+  // ── Summary stats (memoized) ──────────────────────────────────────────────
+  const { totalRevenue, totalOrders, avgOrderValue, avgCompletionMins } = useMemo(() => {
+    const revenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+    const aov = completedOrders.length > 0 ? revenue / completedOrders.length : 0;
+    let totalMins = 0;
+    let count = 0;
+    for (const o of completedOrders) {
+      const createdTime = new Date(o.created_at).getTime();
+      const completedTime = o.completed_at
+        ? new Date(o.completed_at).getTime()
+        : new Date(o.updated_at).getTime();
+      const diff = (completedTime - createdTime) / 60000;
+      if (diff >= 0) { totalMins += diff; count++; }
+    }
+    return {
+      totalRevenue: revenue,
+      totalOrders: filteredOrders.length,
+      avgOrderValue: aov,
+      avgCompletionMins: count > 0 ? Math.round(totalMins / count) : 0,
+    };
+  }, [completedOrders, filteredOrders.length]);
+
+  // ── Revenue trend (memoized) ──────────────────────────────────────────────
+  const revenueTrend = useMemo(() => {
+    const now = new Date();
+    const datesList: string[] = [];
+    const tempDate = new Date(startDate);
+    const todayStr = toLocalDateString(now);
+    while (toLocalDateString(tempDate) <= todayStr) {
+      datesList.push(toLocalDateString(tempDate));
+      tempDate.setDate(tempDate.getDate() + 1);
+      if (datesList.length > 100) break;
+    }
+    const revenueByDate: Record<string, { revenue: number; orders: number }> = {};
+    for (const d of datesList) revenueByDate[d] = { revenue: 0, orders: 0 };
+    for (const o of filteredOrders) {
+      const ds = toLocalDateString(new Date(o.created_at));
+      if (revenueByDate[ds]) {
+        revenueByDate[ds].orders++;
+        const s = o.status?.toUpperCase();
+        if (s === "COMPLETED" || s === "SUCCESS") revenueByDate[ds].revenue += Number(o.total_amount) || 0;
       }
     }
-  }
+    return Object.entries(revenueByDate)
+      .map(([ds, data]) => ({ date: formatChartDate(ds), revenue: data.revenue, orders: data.orders, rawDate: ds }))
+      .sort((a, b) => a.rawDate.localeCompare(b.rawDate));
+  }, [filteredOrders, startDate]);
 
-  const revenueTrend = Object.entries(revenueByDate)
-    .map(([dateStr, data]) => ({
-      date: formatChartDate(dateStr),
-      revenue: data.revenue,
-      orders: data.orders,
-      rawDate: dateStr,
-    }))
-    .sort((a, b) => a.rawDate.localeCompare(b.rawDate));
-
-  // Status Breakdown
-  const STATUS_COLORS: Record<string, string> = {
-    PLACED: "#3B82F6",
-    ACCEPTED: "#8B5CF6",
-    PRINTING: "#F59E0B",
-    READY: "#10B981",
-    COMPLETED: "#059669",
-    CANCELLED: "#EF4444",
-  };
-  const statusCount: Record<string, number> = {
-    PLACED: 0,
-    ACCEPTED: 0,
-    PRINTING: 0,
-    READY: 0,
-    COMPLETED: 0,
-    CANCELLED: 0,
-  };
-  for (const o of filteredOrders) {
-    const status = (o.status || "PLACED").toUpperCase();
-    const chartStatus = status === "NEW" ? "PLACED" : status;
-    if (statusCount[chartStatus] !== undefined) {
-      statusCount[chartStatus]++;
+  // ── Status breakdown (memoized) ───────────────────────────────────────────
+  const statusBreakdown = useMemo(() => {
+    const statusCount: Record<string, number> = {
+      PLACED: 0, ACCEPTED: 0, PRINTING: 0, READY: 0, COMPLETED: 0, CANCELLED: 0,
+    };
+    for (const o of filteredOrders) {
+      const status = (o.status || "PLACED").toUpperCase();
+      const chartStatus = status === "NEW" ? "PLACED" : status;
+      if (statusCount[chartStatus] !== undefined) statusCount[chartStatus]++;
     }
-  }
-  const statusBreakdown = Object.entries(statusCount)
-    .filter(([, count]) => count > 0)
-    .map(([status, count]) => ({
-      name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
-      value: count,
-      color: STATUS_COLORS[status] || "#9CA3AF",
-    }));
+    return Object.entries(statusCount)
+      .filter(([, count]) => count > 0)
+      .map(([status, count]) => ({
+        name: status.charAt(0).toUpperCase() + status.slice(1).toLowerCase(),
+        value: count,
+        color: STATUS_COLORS[status] || "#9CA3AF",
+      }));
+  }, [filteredOrders]);
 
-  // Peak Hours
-  const peakHoursCount: Record<string, number> = {};
-  for (const o of filteredOrders) {
-    const hour = new Date(o.created_at).getHours();
-    const hourStr = `${hour.toString().padStart(2, "0")}:00`;
-    peakHoursCount[hourStr] = (peakHoursCount[hourStr] || 0) + 1;
-  }
-  const peakHours = Object.entries(peakHoursCount)
-    .map(([hour, count]) => ({ hour, orders: count }))
-    .sort((a, b) => a.hour.localeCompare(b.hour));
+  // ── Peak hours (memoized) ─────────────────────────────────────────────────
+  const peakHours = useMemo(() => {
+    const peakHoursCount: Record<string, number> = {};
+    for (const o of filteredOrders) {
+      const hour = new Date(o.created_at).getHours();
+      const hourStr = `${hour.toString().padStart(2, "0")}:00`;
+      peakHoursCount[hourStr] = (peakHoursCount[hourStr] || 0) + 1;
+    }
+    return Object.entries(peakHoursCount)
+      .map(([hour, count]) => ({ hour, orders: count }))
+      .sort((a, b) => a.hour.localeCompare(b.hour));
+  }, [filteredOrders]);
 
-  // Top Services
-  let bwCount = 0;
-  let colorCount = 0;
-  for (const o of filteredOrders) {
-    if (o.is_color) colorCount++;
-    else bwCount++;
-  }
-  const services = [
-    { name: "B&W Printing", count: bwCount },
-    { name: "Color Printing", count: colorCount },
-  ]
-    .filter((s) => s.count > 0)
-    .sort((a, b) => b.count - a.count);
+  // ── Top services (memoized) ───────────────────────────────────────────────
+  const services = useMemo(() => {
+    let bwCount = 0;
+    let colorCount = 0;
+    for (const o of filteredOrders) {
+      if (o.is_color) colorCount++;
+      else bwCount++;
+    }
+    return ([
+      { name: "B&W Printing", count: bwCount },
+      { name: "Color Printing", count: colorCount },
+    ] as const)
+      .filter((s) => s.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [filteredOrders]);
 
   return (
     <div className="space-y-6">

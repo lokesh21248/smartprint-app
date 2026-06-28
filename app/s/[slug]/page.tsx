@@ -46,7 +46,8 @@ export default async function QRLandingPage({ params }: PageProps) {
     );
   }
 
-  const bh = rawShop.business_hours as Record<string, any> | null;
+  type BusinessHours = { opening_time?: string; closing_time?: string; services?: string[]; working_days?: string[] };
+  const bh = rawShop.business_hours as BusinessHours | null;
   const shop = {
     id: rawShop.id,
     name: rawShop.name,

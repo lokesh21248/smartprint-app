@@ -20,9 +20,12 @@ export function StatsSection({ initialStats, shopId }: StatsSectionProps) {
       return res.json() as Promise<DashboardStats>;
     },
     initialData: initialStats,
-    refetchInterval: 30000, // Poll every 30s as a fallback to realtime invalidation
-    staleTime: 60000,
-    gcTime: 300000,
+    // Realtime subscriptions invalidate stats on every INSERT/UPDATE.
+    // 120s is a safety-net for reconnection scenarios only.
+    refetchInterval: 120_000,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+    gcTime: 300_000,
   });
 
   return <StatsCards stats={stats || initialStats} />;

@@ -96,6 +96,47 @@ export function Sidebar() {
     setCollapsed((prev) => !prev);
   }, []);
 
+  const renderNavItems = (isMobile = false) => {
+    const isCollapsed = !isMobile && collapsed;
+    return navItems.map((item) => {
+      const isActive =
+        pathname === item.href ||
+        (item.href !== "/dashboard" && pathname.startsWith(item.href));
+      const Icon = item.icon;
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={cn(
+            "sidebar-link",
+            isActive && "active",
+            isCollapsed && "justify-center px-0"
+          )}
+          title={isCollapsed ? item.label : undefined}
+          aria-current={isActive ? "page" : undefined}
+        >
+          <div className="relative flex-shrink-0">
+            <Icon className="h-5 w-5" aria-hidden="true" />
+            {item.badge && pendingCount > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white"
+                aria-label={!isMobile && isCollapsed ? `${pendingCount} pending orders` : undefined}
+              >
+                {pendingCount > 9 ? "9+" : pendingCount}
+              </span>
+            )}
+          </div>
+          {!isCollapsed && <span>{item.label}</span>}
+          {!isCollapsed && item.badge && pendingCount > 0 && (
+            <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FEE2E2] px-1 text-[11px] font-bold text-[#B91C1C]">
+              {pendingCount}
+            </span>
+          )}
+        </Link>
+      );
+    });
+  };
+
   const sidebarContent = (
     <aside
       className={cn(
@@ -160,43 +201,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto mt-2" aria-label="Main navigation">
-        {navItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "sidebar-link",
-                isActive && "active",
-                collapsed && "justify-center px-0"
-              )}
-              title={collapsed ? item.label : undefined}
-              aria-current={isActive ? "page" : undefined}
-            >
-              <div className="relative flex-shrink-0">
-                <Icon className="h-5 w-5" aria-hidden="true" />
-                {item.badge && pendingCount > 0 && (
-                  <span
-                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white"
-                    aria-label={`${pendingCount} pending orders`}
-                  >
-                    {pendingCount > 9 ? "9+" : pendingCount}
-                  </span>
-                )}
-              </div>
-              {!collapsed && <span>{item.label}</span>}
-              {!collapsed && item.badge && pendingCount > 0 && (
-                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FEE2E2] px-1 text-[11px] font-bold text-[#B91C1C]">
-                  {pendingCount}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+        {renderNavItems(false)}
       </nav>
 
       {/* Bottom: Notifications */}
@@ -279,35 +284,7 @@ export function Sidebar() {
 
                 {/* Nav */}
                 <nav className="flex-1 p-3 space-y-1 overflow-y-auto mt-2" aria-label="Mobile main navigation">
-                  {navItems.map((item) => {
-                    const isActive =
-                      pathname === item.href ||
-                      (item.href !== "/dashboard" && pathname.startsWith(item.href));
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={cn("sidebar-link", isActive && "active")}
-                        aria-current={isActive ? "page" : undefined}
-                      >
-                        <div className="relative flex-shrink-0">
-                          <Icon className="h-5 w-5" aria-hidden="true" />
-                          {item.badge && pendingCount > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white">
-                              {pendingCount > 9 ? "9+" : pendingCount}
-                            </span>
-                          )}
-                        </div>
-                        <span>{item.label}</span>
-                        {item.badge && pendingCount > 0 && (
-                          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FEE2E2] px-1 text-[11px] font-bold text-[#B91C1C]">
-                            {pendingCount}
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
+                  {renderNavItems(true)}
                 </nav>
 
                 {/* Bottom */}

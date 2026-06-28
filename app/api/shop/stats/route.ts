@@ -97,11 +97,12 @@ export async function GET(request: Request) {
         .eq("shop_id", shopId)
         .in("status", ["COMPLETED", "SUCCESS"]),
 
-      // Shop reviews for average rating
+      // Shop reviews for average rating (cap at 100 — sufficient for avg)
       supabase
         .from("reviews")
         .select("rating")
-        .eq("shop_id", shopId),
+        .eq("shop_id", shopId)
+        .limit(100),
     ]);
 
     if (pendingResult.error || todayOrdersResult.error || completedResult.error) {
@@ -157,7 +158,7 @@ export async function GET(request: Request) {
         : 0.0;
     }
 
-    return NextResponse.json({
+    const statsResponse = NextResponse.json({
       pendingOrders: pendingResult.count ?? 0,
       ordersToday: todayOrders.length,
       revenueToday,
@@ -169,6 +170,10 @@ export async function GET(request: Request) {
       order_count: orderCount,
       shop_name: shopData?.name ?? "",
     });
+    // Allow edge/CDN to serve stale stats for up to 30s while revalidating;
+    // client-side realtime invalidation makes polling redundant within that window.
+    statsResponse.headers.set("Cache-Control", "private, s-maxage=30, stale-while-revalidate=60");
+    return statsResponse;
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

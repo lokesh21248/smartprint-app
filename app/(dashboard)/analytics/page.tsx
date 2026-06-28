@@ -54,7 +54,27 @@ export default async function AnalyticsPage() {
     .order("created_at", { ascending: false })
     .limit(1500); // slightly increased cap to accommodate up to 1500 orders
 
-  const rawOrders = (ordersData ?? []) as any[];
+  // Minimal shape required by AnalyticsCharts — avoids `any[]`
+  // updated_at must be string (non-nullable) to match the AnalyticsCharts.RawOrder interface
+  type RawOrder = {
+    total_amount: number;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+    customer_phone: string | null;
+    is_color: boolean;
+  };
+
+  const rawOrders: RawOrder[] = (ordersData ?? []).map((o) => ({
+    total_amount: Number(o.total_amount) || 0,
+    status: (o.status as string) || "PLACED",
+    created_at: (o.created_at as string) || "",
+    updated_at: (o.updated_at as string) || (o.created_at as string) || "",
+    completed_at: (o.completed_at as string | null) ?? null,
+    customer_phone: (o.customer_phone as string | null) ?? null,
+    is_color: Boolean(o.is_color),
+  }));
 
   return <AnalyticsCharts orders={rawOrders} />;
 }

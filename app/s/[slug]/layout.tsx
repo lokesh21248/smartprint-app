@@ -119,7 +119,8 @@ export default async function ShopLayout({ children, params }: LayoutProps) {
       .maybeSingle();
     
     if (data) {
-      const bh = data.business_hours as Record<string, any> | null;
+      type BusinessHours = { opening_time?: string; closing_time?: string };
+      const bh = data.business_hours as BusinessHours | null;
       shopData = {
         name: data.name,
         address_line1: data.address_line1,

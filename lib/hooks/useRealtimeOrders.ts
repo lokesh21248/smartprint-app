@@ -21,12 +21,14 @@ const playedOrderIds = new Set<string>();
 function playNotificationSound() {
   try {
     const { soundEnabled, notificationSound } = useSettingsStore.getState();
-    console.log(
-      `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}, Choice="${notificationSound}"`
-    );
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}, Choice="${notificationSound}"`
+      );
+    }
     if (soundEnabled) {
       audioManager.play(notificationSound);
-    } else {
+    } else if (process.env.NODE_ENV !== "production") {
       console.log("[Realtime] 🔇 playNotificationSound: Alert sound skipped (merchant sound toggle is off)");
     }
   } catch (err) {
@@ -80,8 +82,20 @@ let isReconnecting = false;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000;
 
+// Supabase realtime channel exposes internal state not in the public types; use a narrow interface instead of any
+interface ChannelWithState {
+  state: string;
+}
+
+// Payload type from Supabase postgres_changes events
+type RealtimePayload = {
+  eventType: "INSERT" | "UPDATE" | "DELETE";
+  new: Record<string, unknown>;
+  old: Record<string, unknown>;
+};
+
 // Set of active event handlers across all mounted hook instances
-const activeHandlers = new Set<(payload: any) => void>();
+const activeHandlers = new Set<(payload: RealtimePayload) => void>();
 
 // Centralized reconnect helper with exponential backoff
 function handleReconnect(
@@ -98,13 +112,17 @@ function handleReconnect(
   reconnectAttempts++;
   const delay = Math.min(INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), 30000);
 
-  console.log(`[Realtime] 🔄 Scheduling reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} for shop "${shopId}" in ${delay}ms...`);
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[Realtime] 🔄 Scheduling reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} for shop "${shopId}" in ${delay}ms...`);
+  }
 
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(async () => {
     isReconnecting = false;
     try {
-      console.log(`[Realtime] 🚀 Executing scheduled reconnect attempt ${reconnectAttempts} for shop "${shopId}"...`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] 🚀 Executing scheduled reconnect attempt ${reconnectAttempts} for shop "${shopId}"...`);
+      }
       // Ensure we remove the channel before establishing a new one
       if (activeChannel) {
         const channelToCleanup = activeChannel;
@@ -127,12 +145,16 @@ async function initSubscription(
 ) {
   // If we are already subscribed to this shopId, reuse the channel if it's active!
   if (activeChannel && activeChannelShopId === shopId) {
-    const state = (activeChannel as any).state;
+    const state = (activeChannel as unknown as ChannelWithState).state;
     if (state === "joined" || state === "joining") {
-      console.log(`[Realtime] 🛡️ Channel already exists and is active (${state}) for shop ${shopId}. Reusing active channel.`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] 🛡️ Channel already exists and is active (${state}) for shop ${shopId}. Reusing active channel.`);
+      }
       return;
     } else {
-      console.log(`[Realtime] 🔄 Channel exists but is in "${state}" state. Re-initializing.`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] 🔄 Channel exists but is in "${state}" state. Re-initializing.`);
+      }
       const oldChannel = activeChannel;
       activeChannel = null;
       const supabase = createClient();
@@ -146,7 +168,9 @@ async function initSubscription(
 
   // Cleanup old channel if shopId changed
   if (activeChannel && activeChannelShopId !== shopId) {
-    console.log(`[Realtime] 🔌 Shop ID changed from ${activeChannelShopId} to ${shopId}. Cleaning up old channel.`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Realtime] 🔌 Shop ID changed from ${activeChannelShopId} to ${shopId}. Cleaning up old channel.`);
+    }
     const oldChannel = activeChannel;
     activeChannel = null;
     activeChannelShopId = null;
@@ -164,23 +188,29 @@ async function initSubscription(
     .find((c) => c.topic === channelTopic);
 
   if (existingChannel) {
-    console.log(`[Realtime] 🗑️ Removing duplicate channel from Supabase registry: ${channelName}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Realtime] 🗑️ Removing duplicate channel from Supabase registry: ${channelName}`);
+    }
     await supabase.removeChannel(existingChannel).catch(() => {});
   }
 
-  console.log("[Realtime] Subscribing:", shopId);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[Realtime] Subscribing:", shopId);
+  }
 
   const channel = supabase
     .channel(channelName)
     .on(
-      "postgres_changes" as any,
+      // Cast through unknown to satisfy the overloaded `.on()` signature without
+      // a self-referential `channel` variable (which would cause TS7022).
+      "postgres_changes" as unknown as "system",
       {
         event: "*",
         schema: "public",
         table: "orders",
         filter: `shop_id=eq.${shopId}`,
       },
-      (payload: any) => {
+      (payload: RealtimePayload) => {
         // Dispatch to all active handlers across hook instances
         activeHandlers.forEach((handler) => handler(payload));
       }
@@ -188,7 +218,9 @@ async function initSubscription(
 
   channel.subscribe((status: string, err?: Error) => {
     if (status === "SUBSCRIBED") {
-      console.log(`[Realtime] ✅ Connected: listening to public.orders for shop "${shopId}"`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] ✅ Connected: listening to public.orders for shop "${shopId}"`);
+      }
       reconnectAttempts = 0;
       isReconnecting = false;
       if (reconnectTimer) {
@@ -219,7 +251,9 @@ async function terminateSubscription(
   isReconnecting = false;
 
   if (activeChannel) {
-    console.log("[Realtime] Unsubscribing:", shopId);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Realtime] Unsubscribing:", shopId);
+    }
     const channelToCleanup = activeChannel;
     activeChannel = null;
     activeChannelShopId = null;
@@ -265,7 +299,9 @@ export function useRealtimeOrders(shopId: string | null) {
 
     batch.forEach((order) => {
       if (playedOrderIds.has(order.id)) {
-        console.log(`[Realtime] 🛡️ Duplicate event detected for order: "${order.id}". Skipping audio chime.`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Realtime] 🛡️ Duplicate event detected for order: "${order.id}". Skipping audio chime.`);
+        }
         return;
       }
       
@@ -349,13 +385,17 @@ export function useRealtimeOrders(shopId: string | null) {
 
       if (payload.eventType === "INSERT") {
         const order = mapRawToOrder(payload.new);
-        console.log(`[Realtime] 📥 Order INSERT event received: ID="${order.id}"`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Realtime] 📥 Order INSERT event received: ID="${order.id}"`);
+        }
         pendingInserts.current.push(order);
         if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
         batchTimerRef.current = setTimeout(flushInsertBatch, 300);
       } else if (payload.eventType === "UPDATE") {
         const updated = mapRawToOrder(payload.new);
-        console.log(`[Realtime] 📥 Order UPDATE event received: ID="${updated.id}", status="${updated.order_status}"`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Realtime] 📥 Order UPDATE event received: ID="${updated.id}", status="${updated.order_status}"`);
+        }
         qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) =>
           (prev ?? []).map((o) =>
             o.id === updated.id ? { ...o, ...updated } : o
@@ -369,7 +409,9 @@ export function useRealtimeOrders(shopId: string | null) {
         qClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
       } else if (payload.eventType === "DELETE") {
         const id = (payload.old as { id: string }).id;
-        console.log(`[Realtime] 📥 Order DELETE event received: ID="${id}"`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Realtime] 📥 Order DELETE event received: ID="${id}"`);
+        }
         qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) =>
           (prev ?? []).filter((o) => o.id !== id)
         );
@@ -383,7 +425,7 @@ export function useRealtimeOrders(shopId: string | null) {
 
   // Register event handler with global listener set
   useEffect(() => {
-    const handler = (payload: any) => handleRealtimeEvent(payload);
+    const handler = (payload: RealtimePayload) => handleRealtimeEvent(payload);
     activeHandlers.add(handler);
     return () => {
       activeHandlers.delete(handler);
@@ -395,13 +437,17 @@ export function useRealtimeOrders(shopId: string | null) {
     if (!shopId) return;
 
     subscriberCount++;
-    console.log(`[Realtime] Hook instance mounted for shop: ${shopId}. Total active subscribers: ${subscriberCount}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Realtime] Hook instance mounted for shop: ${shopId}. Total active subscribers: ${subscriberCount}`);
+    }
 
     initSubscription(shopId, setRealtimeChannel);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        console.log(`[Realtime] Visibility visible: Refreshing queries for shop: ${shopId} to fetch background updates...`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Realtime] Visibility visible: Refreshing queries for shop: ${shopId} to fetch background updates...`);
+        }
         queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
         queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
       }
@@ -411,7 +457,9 @@ export function useRealtimeOrders(shopId: string | null) {
 
     return () => {
       subscriberCount--;
-      console.log(`[Realtime] Hook instance unmounted for shop: ${shopId}. Remaining active subscribers: ${subscriberCount}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] Hook instance unmounted for shop: ${shopId}. Remaining active subscribers: ${subscriberCount}`);
+      }
 
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (batchTimerRef.current) clearTimeout(batchTimerRef.current);

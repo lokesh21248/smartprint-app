@@ -20,6 +20,15 @@ interface LatestArticlesProps {
   posts: LatestArticle[];
 }
 
+// Static lookup — defined once, not recreated on every render or map iteration
+const CATEGORY_COLORS: Record<string, string> = {
+  "Print Shop Management": "bg-blue-50 text-blue-700 border-blue-100",
+  "Online Printing": "bg-emerald-50 text-emerald-700 border-emerald-100",
+  "Business Growth": "bg-amber-50 text-amber-700 border-amber-100",
+  "QR Ordering": "bg-purple-50 text-purple-700 border-purple-100",
+  "Customer Experience": "bg-rose-50 text-rose-700 border-rose-100",
+};
+
 export function LatestArticles({ posts }: LatestArticlesProps) {
   const [showArticles, setShowArticles] = useState(false);
 
@@ -48,15 +57,8 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-none mx-auto text-left">
-        {posts.map((post) => {
-          const categoryColors: Record<string, string> = {
-            "Print Shop Management": "bg-blue-50 text-blue-700 border-blue-100",
-            "Online Printing": "bg-emerald-50 text-emerald-700 border-emerald-100",
-            "Business Growth": "bg-amber-50 text-amber-700 border-amber-100",
-            "QR Ordering": "bg-purple-50 text-purple-700 border-purple-100",
-            "Customer Experience": "bg-rose-50 text-rose-700 border-rose-100",
-          };
-          const badgeColor = categoryColors[post.category] || "bg-gray-50 text-gray-700 border-gray-100";
+        {posts.map((post, index) => {
+          const badgeColor = CATEGORY_COLORS[post.category] || "bg-gray-50 text-gray-700 border-gray-100";
 
           return (
             <article
@@ -70,6 +72,9 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
                   fill
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  // Only the first card is above-the-fold; rest load lazily
+                  priority={index === 0}
+                  loading={index === 0 ? "eager" : "lazy"}
                 />
                 <div className="absolute inset-0 bg-black/5 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
               </Link>

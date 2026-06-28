@@ -6,6 +6,12 @@
  * Web Audio API synthesizer fallback for guaranteed, offline-safe 
  * audio alert delivery on all mobile and desktop browsers.
  */
+
+// Extend Window to cover vendor-prefixed AudioContext without `any`
+interface WindowWithWebkitAudio extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
 class AudioManager {
   private audioCache: Record<string, HTMLAudioElement> = {};
   private unlocked = false;
@@ -70,7 +76,7 @@ class AudioManager {
 
     // 2. Warm up and initialize client-side Web Audio API Context
     try {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtxClass = window.AudioContext || (window as WindowWithWebkitAudio).webkitAudioContext;
       if (AudioCtxClass) {
         this.audioCtx = new AudioCtxClass();
         if (this.audioCtx.state === "suspended") {
@@ -113,10 +119,10 @@ class AudioManager {
         await audio.play();
         console.log(`[AudioManager] ✅ Audio element playing: "${targetSound}"`);
         return;
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.warn(
           `[AudioManager] ⚠️ HTML5 play failed for "${targetSound}" (Autoplay block or missing codec). Error:`,
-          err.message || err
+          err instanceof Error ? err.message : err
         );
       }
     }
@@ -132,7 +138,7 @@ class AudioManager {
    */
   private playSynthesizedSound(sound: string) {
     try {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtxClass = window.AudioContext || (window as WindowWithWebkitAudio).webkitAudioContext;
       if (!this.audioCtx && AudioCtxClass) {
         this.audioCtx = new AudioCtxClass();
       }
