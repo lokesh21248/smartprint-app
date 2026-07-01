@@ -161,9 +161,11 @@ export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: Se
                 return (
                   <button
                     key={sound.id}
-                    onClick={async () => {
-                      await setNotificationSound(sound.id as NotificationSound, shopId);
+                    onClick={() => {
+                      // Fire sound instantly (sync) to satisfy mobile autoplay policies!
+                      // If we await the network request first, iOS Safari will block the audio.
                       audioManager.play(sound.id);
+                      setNotificationSound(sound.id as NotificationSound, shopId);
                     }}
                     className={`relative flex items-start text-left p-4 rounded-xl border text-sm transition-all duration-300 ${
                       isSelected
