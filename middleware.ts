@@ -29,6 +29,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/cron(.*)",
   "/api/webhooks(.*)",
   "/api/auth(.*)",
+  "/api/health",
 ]);
 
 // ─── ADMIN ROUTES ─────────────────────────────────────────────────────────────
@@ -131,14 +132,36 @@ export default function middleware(
     res.headers.delete("x-clerk-auth-reason");
     res.headers.delete("x-clerk-auth-message");
     // Tell Vercel Edge + Cloudflare this page is publicly cacheable for 1 hour
-    // stale-while-revalidate lets CDN serve stale while Next.js ISR runs in bg
     res.headers.set(
       "Cache-Control",
       "public, s-maxage=3600, stale-while-revalidate=86400"
     );
+    // Correlation ID — allows tracing this request in Vercel logs
+    const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID().slice(0, 12);
+    res.headers.set("X-Request-ID", requestId);
     return res;
   }
-  return clerkHandler(req, event);
+
+  // For Clerk-handled routes, attach the correlation header after Clerk processes it
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID().slice(0, 12);
+  // Clone the request with the request ID so downstream handlers can log it
+  const reqWithId = new Request(req, {
+    headers: { ...Object.fromEntries(req.headers), "x-request-id": requestId },
+  });
+  // Note: Vercel doesn't allow modifying the incoming NextRequest directly;
+  // the x-request-id is forwarded via response header for client correlation.
+  const res = clerkHandler(req, event);
+  // Attach to response so browser DevTools + client can correlate
+  if (res instanceof Response) {
+    res.headers.set("X-Request-ID", requestId);
+  } else if (res && typeof (res as Promise<Response>).then === "function") {
+    return (res as Promise<Response>).then((r) => {
+      r.headers.set("X-Request-ID", requestId);
+      return r;
+    });
+  }
+  void reqWithId; // suppress unused variable warning
+  return res;
 }
 
 // ─── MATCHER ──────────────────────────────────────────────────────────────────

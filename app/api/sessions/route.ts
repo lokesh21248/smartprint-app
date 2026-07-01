@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   if (!rl.success) {
     return NextResponse.json(
       { error: "Too many requests. Please wait a moment and try again." },
-      { status: 429, headers: rateLimitHeaders(rl) }
+      { status: 429, headers: rateLimitHeaders(rl, rl.limit) }
     );
   }
 

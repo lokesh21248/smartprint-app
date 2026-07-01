@@ -89,60 +89,56 @@ export function rateLimit(
   }
 }
 
-// ─── Named presets ────────────────────────────────────────────────────────────
-// Centralised limits — change here, applies everywhere.
 
 /**
- * POST /api/orders — 15 requests per 60 seconds per IP.
- * Generous enough for real customers, tight enough to block spam.
- */
-export function rateLimitOrders(ip: string): RateLimitResult {
-  return rateLimit(`orders_post_${ip}`, 15, 60);
-}
-
-/**
- * GET /api/orders — 30 requests per 60 seconds per IP.
- * Customers poll for order status updates.
- */
-export function rateLimitOrdersGet(ip: string): RateLimitResult {
-  return rateLimit(`orders_get_${ip}`, 30, 60);
-}
-
-/**
- * POST /api/sessions — 10 requests per 60 seconds per IP.
- * Aggressive: one session per customer visit is normal.
- */
-export function rateLimitSessions(ip: string): RateLimitResult {
-  return rateLimit(`sessions_post_${ip}`, 10, 60);
-}
-
-/**
- * POST /api/storage/presign — 20 uploads per hour per IP.
- * Each order typically needs 1-3 files. 20/hr covers legitimate use.
- */
-export function rateLimitPresign(ip: string): RateLimitResult {
-  return rateLimit(`presign_post_${ip}`, 20, 3600);
-}
-
-/**
- * /api/auth/* — 10 requests per 5 minutes per IP.
- * OTP and callback endpoints — aggressive throttle.
- */
-export function rateLimitAuth(ip: string): RateLimitResult {
-  return rateLimit(`auth_${ip}`, 10, 300);
-}
-
-// ─── Response helper ──────────────────────────────────────────────────────────
-
-/**
- * Returns standard rate-limit headers to attach to 429 responses.
+ * Returns standard rate-limit response headers (RFC 6585).
+ * Attach to 429 responses so clients can implement proper backoff.
  *
  * Usage:
- *   return NextResponse.json({ error: "..." }, { status: 429, headers: rateLimitHeaders(result) });
+ *   return NextResponse.json({ error: "..." }, {
+ *     status: 429,
+ *     headers: rateLimitHeaders(result, 15),
+ *   });
  */
-export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {
+export function rateLimitHeaders(
+  result: RateLimitResult,
+  limit: number
+): Record<string, string> {
   return {
-    "Retry-After": String(result.retryAfter),
+    "Retry-After":           String(result.retryAfter),
+    "X-RateLimit-Limit":     String(limit),
     "X-RateLimit-Remaining": String(result.remaining),
   };
+}
+
+// ─── Typed preset results ─────────────────────────────────────────────────────
+// Each named function returns both the result and the limit so callers can
+// pass both to rateLimitHeaders() without hard-coding the number twice.
+
+export interface RateLimitPresetResult extends RateLimitResult {
+  limit: number;
+}
+
+function wrapPreset(result: RateLimitResult, limit: number): RateLimitPresetResult {
+  return { ...result, limit };
+}
+
+export function rateLimitOrders(ip: string): RateLimitPresetResult {
+  return wrapPreset(rateLimit(`orders_post_${ip}`, 15, 60), 15);
+}
+
+export function rateLimitOrdersGet(ip: string): RateLimitPresetResult {
+  return wrapPreset(rateLimit(`orders_get_${ip}`, 30, 60), 30);
+}
+
+export function rateLimitSessions(ip: string): RateLimitPresetResult {
+  return wrapPreset(rateLimit(`sessions_post_${ip}`, 10, 60), 10);
+}
+
+export function rateLimitPresign(ip: string): RateLimitPresetResult {
+  return wrapPreset(rateLimit(`presign_post_${ip}`, 20, 3600), 20);
+}
+
+export function rateLimitAuth(ip: string): RateLimitPresetResult {
+  return wrapPreset(rateLimit(`auth_${ip}`, 10, 300), 10);
 }

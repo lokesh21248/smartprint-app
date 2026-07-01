@@ -5,6 +5,8 @@ import { rateLimitOrders, rateLimitOrdersGet, rateLimitHeaders } from "@/lib/rat
 import { OrderCreateSchema } from "@/lib/validators";
 import { enqueueBackgroundTasks } from "@/lib/queue/background-tasks";
 import { getClientIp } from "@/lib/utils/ip";
+import { redisGet, redisSet } from "@/lib/redis";
+import { invalidateShopPricingCache } from "@/lib/cache/pricing";
 
 // ─── Runtime Config ──────────────────────────────────────────────────────────
 // Node.js runtime: required for Supabase client (uses Node crypto internals).
@@ -52,34 +54,41 @@ function setIdempotencyEntry(key: string, value: Omit<IdempotencyEntry, "expires
 }
 
 // ─── Shop Pricing Cache ───────────────────────────────────────────────────────
-// Caches pricing + clerk_owner_id to eliminate a DB round-trip AND avoid
-// the JOIN that was previously on the INSERT .select() call.
+// Primary:  Redis (shared across Vercel instances, invalidated on shop update)
+// Fallback: In-memory Map (per-instance, used when Redis env vars not set)
 // TTL: 60 seconds. Shops rarely change pricing mid-session.
-interface PricingEntry {
-  price_bw_per_page: number;
-  price_color_per_page: number;
-  clerk_owner_id: string | null;
-  expiresAt: number;
-}
-const pricingCache = new Map<string, PricingEntry>();
+import { pricingCacheMap, PricingEntry } from "@/lib/cache/pricing";
 const PRICING_TTL_MS = 60 * 1000;
+const PRICING_TTL_S  = 60;
 
 async function getShopPricing(
   shopId: string
 ): Promise<{ price_bw_per_page: number; price_color_per_page: number; clerk_owner_id: string | null } | null> {
-  const now = Date.now();
-  const cached = pricingCache.get(shopId);
-  if (cached && cached.expiresAt > now) {
+  const redisCacheKey = `pricing:${shopId}`;
+
+  // 1. Try Redis first (shared cache, invalidation-safe)
+  const redisHit = await redisGet<PricingEntry>(redisCacheKey);
+  if (redisHit) {
     return {
-      price_bw_per_page: cached.price_bw_per_page,
-      price_color_per_page: cached.price_color_per_page,
-      clerk_owner_id: cached.clerk_owner_id,
+      price_bw_per_page:   redisHit.price_bw_per_page,
+      price_color_per_page: redisHit.price_color_per_page,
+      clerk_owner_id:      redisHit.clerk_owner_id,
     };
   }
 
+  // 2. Fall back to per-instance Map
+  const now = Date.now();
+  const cached = pricingCacheMap.get(shopId);
+  if (cached && cached.expiresAt > now) {
+    return {
+      price_bw_per_page:   cached.price_bw_per_page,
+      price_color_per_page: cached.price_color_per_page,
+      clerk_owner_id:      cached.clerk_owner_id,
+    };
+  }
+
+  // 3. DB fetch — single flat query (no JOIN)
   const supabase = createAdminClient();
-  // ✅ FIX: Single flat query — no JOIN, no nested select.
-  // We fetch clerk_owner_id here (once, cached 60s) instead of joining on INSERT.
   const { data: shop, error } = await supabase
     .from("shops")
     .select("price_bw_per_page, price_color_per_page, is_active, clerk_owner_id")
@@ -89,15 +98,25 @@ async function getShopPricing(
   if (error || !shop) return null;
   if (!shop.is_active) return null;
 
-  const entry: PricingEntry = {
-    price_bw_per_page: shop.price_bw_per_page ?? 0,
+  const entry = {
+    price_bw_per_page:   shop.price_bw_per_page ?? 0,
     price_color_per_page: shop.price_color_per_page ?? 0,
-    clerk_owner_id: shop.clerk_owner_id ?? null,
-    expiresAt: now + PRICING_TTL_MS,
+    clerk_owner_id:      shop.clerk_owner_id ?? null,
+    expiresAt:           now + PRICING_TTL_MS,
   };
-  pricingCache.set(shopId, entry);
-  return entry;
+
+  // Write to both caches
+  pricingCacheMap.set(shopId, entry);
+  void redisSet(redisCacheKey, entry, PRICING_TTL_S);
+
+  return {
+    price_bw_per_page:   entry.price_bw_per_page,
+    price_color_per_page: entry.price_color_per_page,
+    clerk_owner_id:      entry.clerk_owner_id,
+  };
 }
+
+
 
 /**
  * POST /api/orders — Create a new print order (public/guest endpoint)
@@ -129,7 +148,7 @@ export async function POST(request: Request) {
       console.timeEnd("[orders:POST:total]");
       return NextResponse.json(
         { error: "Too many requests. Please slow down and try again shortly." },
-        { status: 429, headers: rateLimitHeaders(rl) }
+        { status: 429, headers: rateLimitHeaders(rl, rl.limit) }
       );
     }
 
@@ -177,17 +196,14 @@ export async function POST(request: Request) {
 
     const parsed = OrderCreateSchema.safeParse(rawBody);
     if (!parsed.success) {
-      console.error(
-        "[orders:POST] validation failed:",
-        JSON.stringify(parsed.error.flatten().fieldErrors, null, 2)
-      );
+      const errorDetails = parsed.error.flatten();
       console.timeEnd("[orders:POST:total]");
       return NextResponse.json(
         {
           error: "Validation failed",
-          details: parsed.error.flatten().fieldErrors,
+          details: errorDetails.fieldErrors,
           message:
-            Object.values(parsed.error.flatten().fieldErrors).flat()[0] ||
+            Object.values(errorDetails.fieldErrors).flat()[0] ||
             "Invalid order details",
         },
         { status: 400 }
@@ -210,22 +226,26 @@ export async function POST(request: Request) {
       files = [],
     } = parsed.data;
 
-    // Debug log: verify copies are received correctly from the client
-    console.log("[orders:POST] Incoming order payload:", JSON.stringify({
-      copies,
-      color,
-      doubleSided,
-      filesCount: files.length,
-      filesCopies: files.map(f => ({ name: f.name, copies: f.copies, color: f.color })),
-    }));
+    // Debug log: only in development — avoid leaking order payload to production logs
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[orders:POST] Incoming order payload:", JSON.stringify({
+        copies,
+        color,
+        doubleSided,
+        filesCount: files?.length ?? 0,
+        filesCopies: files?.map(f => ({ name: f.name, copies: f.copies, color: f.color })),
+      }));
+    }
 
     // ── 3.5. Security: Block Invalid Types ─────────
-    if (files.length > 0) {
-      console.log("FILE SECURITY CHECK", files.map(f => ({
-        name: f.name,
-        scanStatus: f.scanStatus,
-        securityStatus: f.securityStatus
-      })));
+    if (files && files.length > 0) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("FILE SECURITY CHECK", files.map(f => ({
+          name: f.name,
+          scanStatus: f.scanStatus,
+          securityStatus: f.securityStatus
+        })));
+      }
 
       const hasInvalidType = files.some(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
@@ -540,7 +560,7 @@ export async function GET(request: Request) {
     if (!rl.success) {
       return NextResponse.json(
         { error: "Too many requests. Please try again shortly." },
-        { status: 429, headers: rateLimitHeaders(rl) }
+        { status: 429, headers: rateLimitHeaders(rl, rl.limit) }
       );
     }
 

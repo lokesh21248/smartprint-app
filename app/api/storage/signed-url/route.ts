@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   if (!rl.success) {
     return NextResponse.json(
       { error: "Too many requests" },
-      { status: 429, headers: rateLimitHeaders(rl) }
+      { status: 429, headers: rateLimitHeaders(rl, 100) }
     );
   }
 

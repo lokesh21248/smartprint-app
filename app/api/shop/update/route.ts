@@ -3,22 +3,10 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopProfileSchema } from "@/lib/validators";
 import { rateLimit } from "@/lib/ratelimit";
-import { randomBytes } from "crypto";
+import { generateShopCode } from "@/lib/utils/crypto";
 import { canManageShop, getUserShop } from "@/lib/auth/shop-access";
+import { invalidateShopPricingCache } from "@/lib/cache/pricing";
 
-/**
- * Generates a cryptographically random 6-char shop code.
- * Uses an unambiguous character set (no O, 0, I, 1 confusion).
- *
- * FIX S6: replaced Math.random() with crypto.randomBytes.
- */
-function generateShopCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(6);
-  return Array.from(bytes)
-    .map((b) => chars[b % chars.length])
-    .join("");
-}
 
 // ─── PATCH /api/shop/update ───────────────────────────────────────────────────
 // Accepts the full shop profile body validated by ShopProfileSchema.
@@ -99,8 +87,11 @@ export async function PATCH(request: Request) {
     if (patch.price_bw_per_page !== undefined) payload.price_bw_per_page = patch.price_bw_per_page;
     if (patch.price_color_per_page !== undefined) payload.price_color_per_page = patch.price_color_per_page;
 
-    const finalShopCode: string = patch.shop_code ?? generateShopCode();
-    payload.shop_code = finalShopCode;
+    // Only update shop_code if explicitly provided — never auto-generate on every PATCH.
+    // Auto-generating silently changes QR codes and customer-facing shop codes.
+    if (patch.shop_code !== undefined) {
+      payload.shop_code = patch.shop_code;
+    }
 
     // Check if any business_hours fields are explicitly passed
     const hasOpening = body.opening_time !== undefined;
@@ -150,7 +141,16 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, shopId: updatedShop.id });
+    // Invalidate the pricing cache so the next order sees updated prices immediately
+    // (affects both Redis and the per-instance Map fallback)
+    if (patch.price_bw_per_page !== undefined || patch.price_color_per_page !== undefined) {
+      void invalidateShopPricingCache(shopId);
+    }
+
+    return NextResponse.json(
+      { success: true, shopId: updatedShop.id },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (err) {
     console.error("[PATCH /api/shop/update] Unhandled error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

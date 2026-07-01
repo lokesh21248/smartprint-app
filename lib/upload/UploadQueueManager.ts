@@ -392,7 +392,7 @@ export class UploadQueueManager {
   /** Cancel all active uploads cleanly. */
   cancelAll(): void {
     if (__DEV__) console.log("[QueueManager] cancelAll() called.");
-    for (const id of this._files.keys()) {
+    for (const id of Array.from(this._files.keys())) {
       const currentExecId = this._fileExecutionIds.get(id) ?? 0;
       this._fileExecutionIds.set(id, currentExecId + 1);
       this._abortFileUpload(id);
@@ -433,7 +433,7 @@ export class UploadQueueManager {
 
   /** Retry all failed files. */
   retryAll(): void {
-    for (const [id, entry] of this._files) {
+    for (const [id, entry] of Array.from(this._files.entries())) {
       if (entry.state === "failed" || entry.state === "cancelled") this.retryFile(id);
     }
   }
@@ -536,7 +536,7 @@ export class UploadQueueManager {
   /** Clear all state, abort all uploads, wipe IndexedDB + localStorage. */
   clearSession(): void {
     // Abort all active uploads
-    for (const id of this._files.keys()) {
+    for (const id of Array.from(this._files.keys())) {
       this._abortFileUpload(id);
     }
     this._files.clear();
@@ -563,12 +563,12 @@ export class UploadQueueManager {
       this._watchdogInterval = null;
     }
 
-    for (const t of this._tusRetryTimeouts.values()) {
+    for (const t of Array.from(this._tusRetryTimeouts.values())) {
       clearTimeout(t);
     }
     this._tusRetryTimeouts.clear();
 
-    for (const id of this._files.keys()) {
+    for (const id of Array.from(this._files.keys())) {
       this._abortFileUpload(id);
     }
 
@@ -1435,7 +1435,7 @@ export class UploadQueueManager {
 
     const now = Date.now();
 
-    for (const [id, entry] of this._files) {
+    for (const [id, entry] of Array.from(this._files.entries())) {
       // Stuck preparing / queued / requesting_url safety timeout (20s limit, Fix 10)
       if ((entry.state === "preparing" || entry.state === "queued" || entry.state === "requesting_url") && this._activeFileIds.has(id)) {
         const activeTime = this._lastProgressAt.get(id) ?? now;
@@ -1497,7 +1497,7 @@ export class UploadQueueManager {
   /** Pause all active/queued uploads. */
   pauseAll(): void {
     console.log("[QueueManager] pauseAll() called.");
-    for (const [id, entry] of this._files) {
+    for (const [id, entry] of Array.from(this._files.entries())) {
       if (
         entry.state === "uploading" ||
         entry.state === "requesting_url" ||
@@ -1518,7 +1518,7 @@ export class UploadQueueManager {
   /** Resume all paused uploads. */
   resumeAll(): void {
     console.log("[QueueManager] resumeAll() called.");
-    for (const [id, entry] of this._files) {
+    for (const [id, entry] of Array.from(this._files.entries())) {
       if (entry.state === "paused") {
         this._patch(id, {
           state: "preparing",
@@ -1536,7 +1536,7 @@ export class UploadQueueManager {
 
     // Reset watchdog baselines so we don't false-abort uploads that were paused
     const now = Date.now();
-    for (const id of this._activeFileIds) {
+    for (const id of Array.from(this._activeFileIds)) {
       this._lastProgressAt.set(id, now);
     }
 
@@ -1559,7 +1559,7 @@ export class UploadQueueManager {
       console.log("[QueueManager] App visible — resuming all suspended uploads.");
       // Reset watchdog baselines — tab may have been hidden for >20s
       const now = Date.now();
-      for (const id of this._activeFileIds) {
+      for (const id of Array.from(this._activeFileIds)) {
         this._lastProgressAt.set(id, now);
       }
       this.resumeAll();
@@ -1819,7 +1819,7 @@ export class UploadQueueManager {
   };
 
   private _emit(event: QueueEvent): void {
-    for (const listener of this._listeners) {
+    for (const listener of Array.from(this._listeners)) {
       try {
         listener(event);
       } catch (err) {

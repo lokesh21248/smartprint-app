@@ -2,52 +2,8 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopCreateSchema } from "@/lib/validators";
-import { randomBytes } from "crypto";
+import { generateSlug, slugWithSuffix, generateShopCode } from "@/lib/utils/crypto";
 
-/**
- * Converts a shop name to a URL-safe slug.
- * Max 60 chars, lowercase, hyphens instead of spaces.
- */
-function generateSlug(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "") // remove special chars
-    .replace(/\s+/g, "-") // spaces → hyphens
-    .replace(/-+/g, "-") // collapse multiple hyphens
-    .replace(/^-+|-+$/g, "") // trim leading/trailing hyphens
-    .slice(0, 60);
-}
-
-/**
- * Appends a cryptographically random 4-char suffix to make a slug unique.
- *
- * FIX S6: replaced Math.random() with crypto.randomBytes — Math.random() is
- * NOT cryptographically secure and produces predictable sequences that can
- * be guessed or brute-forced.
- */
-function slugWithSuffix(base: string): string {
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  const bytes = randomBytes(4);
-  const suffix = Array.from(bytes)
-    .map((b) => chars[b % chars.length])
-    .join("");
-  return `${base}-${suffix}`;
-}
-
-/**
- * Generates a cryptographically random 6-char shop code.
- * Uses an unambiguous character set (no O, 0, I, 1 confusion).
- *
- * FIX S6: replaced Math.random() with crypto.randomBytes.
- */
-function generateShopCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(6);
-  return Array.from(bytes)
-    .map((b) => chars[b % chars.length])
-    .join("");
-}
 
 export async function POST(req: Request) {
   // Run auth() + currentUser() in parallel — currentUser() is a Clerk API

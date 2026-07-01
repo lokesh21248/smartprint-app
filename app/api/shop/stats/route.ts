@@ -2,13 +2,23 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/ratelimit";
 import { validateApiAccess } from "@/lib/auth/role-guard";
-import { getClientIp } from "@/lib/utils/ip";
 import { canManageShop } from "@/lib/auth/shop-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 10;
 export const dynamic = "force-dynamic";
 
+/**
+ * GET /api/shop/stats
+ *
+ * Returns real-time dashboard stats for a shop.
+ *
+ * PERFORMANCE OPTIMIZATION (FIX H1):
+ * Before: 6 parallel Supabase queries → fetch up to 1,500 raw rows → JS Array.reduce()
+ * After:  1 get_shop_stats() RPC call  → all aggregation in Postgres → 0 raw rows transferred
+ *
+ * Prerequisite: run supabase/migrations/20260701_performance_optimizations.sql
+ */
 export async function GET(request: Request) {
   try {
     // 1. Strict Role Guard
@@ -27,13 +37,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "shopId required" }, { status: 400 });
     }
 
-    const ip = getClientIp(request);
+    // 2. Rate limit: 20 requests / 60s per user
     const { success } = rateLimit(`shop_stats_${userId}`, 20, 60);
     if (!success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
-    // ─── OWNERSHIP/ROLE CHECK ────────────────────────────────────────────────
+    // 3. Ownership/role check
     const isAuthorized = await canManageShop(userId, shopId, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json({ error: "Shop not found or access denied" }, { status: 404 });
@@ -45,131 +55,65 @@ export async function GET(request: Request) {
     today.setHours(0, 0, 0, 0);
     const todayIso = today.toISOString();
 
-    // ── Parallelise: targeted stats queries ────────────────────────
-    // FIX P4: replaced the unbounded "fetch all orders" approach with 3 targeted
-    // queries. Each query returns only the rows needed for that specific metric,
-    // capped at 500 rows. For high-volume shops, consider moving to a DB function
-    // (get_shop_stats) to push aggregation fully into Postgres.
-    // Also querying location, total orders count, and ratings.
-    const [
-      pendingResult,
-      todayOrdersResult,
-      completedResult,
-      shopResult,
-      totalCompletedResult,
-      reviewsResult
-    ] = await Promise.all([
-      // Pending orders count (PLACED or NEW)
-      supabase
-        .from("orders")
-        .select("*", { count: "exact", head: true })
-        .eq("shop_id", shopId)
-        .in("status", ["PLACED", "NEW"]),
-
-      // Today's created orders (for ordersToday count + unique customer count)
-      supabase
-        .from("orders")
-        .select("customer_phone, status, total_amount, created_at, updated_at, completed_at")
-        .eq("shop_id", shopId)
-        .gte("created_at", todayIso)
-        .limit(500), // generous cap — prevents unbounded payload on busy days
-
-      // Today's completed orders (for revenue + avg completion time)
-      supabase
-        .from("orders")
-        .select("total_amount, created_at, completed_at, updated_at")
-        .eq("shop_id", shopId)
-        .in("status", ["COMPLETED", "SUCCESS"])
-        .gte("completed_at", todayIso)
-        .limit(500),
-
-      // Shop details for name and location
+    // 4. Single RPC call — all aggregation happens inside Postgres.
+    //    Replaces 6 parallel queries + 3 Array.reduce() calls.
+    //    Shop details still need a separate query (not part of stats RPC scope).
+    const [statsResult, shopResult] = await Promise.all([
+      supabase.rpc("get_shop_stats", {
+        p_shop_id: shopId,
+        p_today: todayIso,
+      }),
       supabase
         .from("shops")
         .select("name, address_line1, city, state")
         .eq("id", shopId)
         .maybeSingle(),
-
-      // Total completed orders count (all time)
-      supabase
-        .from("orders")
-        .select("id", { count: "exact", head: true })
-        .eq("shop_id", shopId)
-        .in("status", ["COMPLETED", "SUCCESS"]),
-
-      // Shop reviews for average rating (cap at 100 — sufficient for avg)
-      supabase
-        .from("reviews")
-        .select("rating")
-        .eq("shop_id", shopId)
-        .limit(100),
     ]);
 
-    if (pendingResult.error || todayOrdersResult.error || completedResult.error) {
-      console.error("[shop/stats] Query error:", {
-        pending: pendingResult.error?.message,
-        today: todayOrdersResult.error?.message,
-        completed: completedResult.error?.message,
+    if (statsResult.error) {
+      console.error("[shop/stats] RPC error:", {
+        message: statsResult.error.message,
+        hint:    statsResult.error.hint,
         shopId,
-        ip,
       });
       return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
     }
 
-    const todayOrders = todayOrdersResult.data ?? [];
-    const completed = completedResult.data ?? [];
+    const stats = statsResult.data as {
+      pending_orders:     number;
+      orders_today:       number;
+      unique_customers:   number;
+      revenue_today:      number;
+      avg_completion_min: number;
+      completed_today:    number;
+      total_completed:    number;
+      avg_rating:         number;
+    } | null;
 
-    // Revenue: sum of today's completed orders
-    const revenueToday = completed.reduce(
-      (sum, o) => sum + (Number(o.total_amount) || 0),
-      0
-    );
-
-    // Average completion time in minutes
-    const avgMins =
-      completed.length > 0
-        ? completed.reduce((sum, o) => {
-            const compTime = o.completed_at
-              ? new Date(o.completed_at).getTime()
-              : new Date(o.updated_at).getTime();
-            const diff = (compTime - new Date(o.created_at).getTime()) / 60_000;
-            return sum + diff;
-          }, 0) / completed.length
-        : 0;
-
-    // Unique customers today (by phone number)
-    const uniqueCustomers = new Set(todayOrders.map((o) => o.customer_phone)).size;
-
-    // ─── Calculate additional fields ──────────────────────────────────────
-    const shopData = shopResult?.data;
-    const location = shopData
-      ? [shopData.city, shopData.state].filter(Boolean).join(", ") || shopData.address_line1 || ""
-      : "";
-
-    const orderCount = totalCompletedResult?.count ?? 0;
-
-    let avgRating = 0.0;
-    if (reviewsResult?.error) {
-      console.warn("[shop/stats] reviews query error:", reviewsResult.error.message);
-    } else {
-      const ratings = reviewsResult?.data ?? [];
-      avgRating = ratings.length > 0
-        ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length
-        : 0.0;
+    if (!stats) {
+      return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
     }
 
+    const shopData = shopResult.data;
+    const location = shopData
+      ? [shopData.city, shopData.state].filter(Boolean).join(", ") ||
+        shopData.address_line1 ||
+        ""
+      : "";
+
     const statsResponse = NextResponse.json({
-      pendingOrders: pendingResult.count ?? 0,
-      ordersToday: todayOrders.length,
-      revenueToday,
-      avgCompletionMins: Math.round(avgMins),
-      activeCustomers: uniqueCustomers,
-      completedToday: completed.length,
+      pendingOrders:    Number(stats.pending_orders),
+      ordersToday:      Number(stats.orders_today),
+      revenueToday:     Number(stats.revenue_today),
+      avgCompletionMins: Math.round(Number(stats.avg_completion_min)),
+      activeCustomers:  Number(stats.unique_customers),
+      completedToday:   Number(stats.completed_today),
+      order_count:      Number(stats.total_completed),
+      rating:           Number(Number(stats.avg_rating).toFixed(1)),
       location,
-      rating: Number(avgRating.toFixed(1)),
-      order_count: orderCount,
-      shop_name: shopData?.name ?? "",
+      shop_name:        shopData?.name ?? "",
     });
+
     // Allow edge/CDN to serve stale stats for up to 30s while revalidating;
     // client-side realtime invalidation makes polling redundant within that window.
     statsResponse.headers.set("Cache-Control", "private, s-maxage=30, stale-while-revalidate=60");

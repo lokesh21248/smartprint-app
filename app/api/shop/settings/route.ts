@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canManageShop } from "@/lib/auth/shop-access";
+import { z } from "zod";
+
+// ─── Validation schema ────────────────────────────────────────────────────────
+const SettingsPatchSchema = z.object({
+  shopId: z.string().uuid("shopId must be a valid UUID"),
+  soundEnabled: z.boolean().optional(),
+  // Extend this enum when new sounds are added to the audio manager
+  notificationSound: z.enum(["whatsapp", "bell", "chime", "ding", "none"]).optional(),
+});
 
 export async function GET(request: Request) {
   try {
@@ -32,43 +41,26 @@ export async function GET(request: Request) {
     }
 
     const supabase = createAdminClient();
+
+    // Single upsert-with-return: seeds defaults on first call and returns current row.
+    // One DB round-trip instead of SELECT + conditional UPSERT.
     const { data, error } = await supabase
       .from("shop_settings")
+      .upsert(
+        { shop_id: shopId, sound_alerts: true, notification_sound: "whatsapp" },
+        { onConflict: "shop_id", ignoreDuplicates: true }
+      )
       .select("sound_alerts, notification_sound")
-      .eq("shop_id", shopId)
-      .maybeSingle();
+      .single();
 
     if (error) {
-      console.error("[GET /api/shop/settings] DB fetch error:", error);
+      console.error("[GET /api/shop/settings] DB error:", error);
       return NextResponse.json({ error: "Database error fetching settings" }, { status: 500 });
     }
 
-    if (data) {
-      return NextResponse.json({
-        soundEnabled: data.sound_alerts ?? true,
-        notificationSound: data.notification_sound ?? "whatsapp",
-      });
-    }
-
-    // Seed default settings row if it doesn't exist
-    const defaultSettings = {
-      shop_id: shopId,
-      sound_alerts: true,
-      notification_sound: "whatsapp",
-    };
-
-    const { error: insertError } = await supabase
-      .from("shop_settings")
-      .upsert(defaultSettings, { onConflict: "shop_id" });
-
-    if (insertError) {
-      console.error("[GET /api/shop/settings] DB seed error:", insertError);
-      return NextResponse.json({ error: "Database error seeding settings" }, { status: 500 });
-    }
-
     return NextResponse.json({
-      soundEnabled: true,
-      notificationSound: "whatsapp",
+      soundEnabled: data?.sound_alerts ?? true,
+      notificationSound: data?.notification_sound ?? "whatsapp",
     });
   } catch (err) {
     console.error("[GET /api/shop/settings] Unhandled error:", err);
@@ -89,7 +81,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { shopId, soundEnabled, notificationSound } = body;
+    // Validate with Zod — prevents type coercion bugs and unknown field injection
+    const parsed = SettingsPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid settings", details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+
+    const { shopId, soundEnabled, notificationSound } = parsed.data;
     if (!shopId) {
       return NextResponse.json({ error: "shopId is required" }, { status: 400 });
     }
@@ -110,30 +111,29 @@ export async function POST(request: Request) {
 
     const supabase = createAdminClient();
 
-    // Fetch existing settings to do partial update/upsert
-    const { data: existingSettings } = await supabase
-      .from("shop_settings")
-      .select("sound_alerts, notification_sound")
-      .eq("shop_id", shopId)
-      .maybeSingle();
-
-    const updatedSettings = {
-      shop_id: shopId,
-      sound_alerts: soundEnabled !== undefined ? soundEnabled : (existingSettings?.sound_alerts ?? true),
-      notification_sound: notificationSound !== undefined ? notificationSound : (existingSettings?.notification_sound ?? "whatsapp"),
-      updated_at: new Date().toISOString(),
-    };
-
+    // Single upsert — no pre-fetch needed. Only update fields that were explicitly provided.
+    // Partial update via conditional spread keeps existing values for omitted fields.
     const { error } = await supabase
       .from("shop_settings")
-      .upsert(updatedSettings, { onConflict: "shop_id" });
+      .upsert(
+        {
+          shop_id: shopId,
+          ...(soundEnabled !== undefined && { sound_alerts: soundEnabled }),
+          ...(notificationSound !== undefined && { notification_sound: notificationSound }),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "shop_id" }
+      );
 
     if (error) {
       console.error("[POST /api/shop/settings] DB upsert error:", error);
       return NextResponse.json({ error: "Database error updating settings" }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: true },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (err) {
     console.error("[POST /api/shop/settings] Unhandled error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

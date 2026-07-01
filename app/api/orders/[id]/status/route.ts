@@ -5,6 +5,8 @@ import { OrderStatusUpdateSchema } from "@/lib/validators";
 import type { OrderStatus } from "@/types";
 import { canManageShop } from "@/lib/auth/shop-access";
 import { rateLimit } from "@/lib/ratelimit";
+// Static import — eliminates dynamic module-resolution overhead on every status change
+import { NotificationService } from "@/lib/notifications";
 
 const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PLACED: ["ACCEPTED", "CANCELLED"],
@@ -117,10 +119,6 @@ export async function PATCH(
     }
 
     // Send notification to customer — fire-and-forget (void return, never blocks response)
-    // FIX Fix12: removed incorrect `await` — sendStatusUpdate() is void and runs
-    // its DB insert in the background via Promise.resolve(). The await was misleading
-    // and didn't actually wait for anything meaningful.
-    const { NotificationService } = await import("@/lib/notifications");
     NotificationService.sendStatusUpdate({
       orderId: order.id,
       phone: order.customer_phone,
@@ -129,7 +127,10 @@ export async function PATCH(
       shortToken: order.short_token,
     });
 
-    return NextResponse.json({ success: true, order_status: newStatus });
+    return NextResponse.json(
+      { success: true, order_status: newStatus },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

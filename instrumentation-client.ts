@@ -43,7 +43,9 @@ Sentry.init({
   replaysOnErrorSampleRate: 1.0,
 
   // ── PII ───────────────────────────────────────────────────────────────────
-  sendDefaultPii: true,
+  // PII must NOT be sent automatically — complies with India DPDP Act + GDPR.
+  // Attach safe identifiers manually via Sentry.setUser({ id: userId }) in auth flows.
+  sendDefaultPii: false,
 
   // ── Environment ───────────────────────────────────────────────────────────
   environment: process.env.NODE_ENV || "development",

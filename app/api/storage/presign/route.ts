@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       console.error("[PRESIGN_ERROR] Rate limit exceeded");
       return NextResponse.json(
         { success: false, error: "Too many upload requests. Please wait before uploading again." },
-        { status: 429, headers: rateLimitHeaders(rl) }
+        { status: 429, headers: rateLimitHeaders(rl, rl.limit) }
       );
     }
 
@@ -171,9 +171,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Track upload in upload_sessions table for production staging lifecycle & daily pg_cron cleanup
-    const expiresAt = new Date(Date.now() + 30 * 60 * 60 * 1000).toISOString(); // Staging expiration: 30 hours
-    await supabase
+    // 8. Track upload in upload_sessions table for staging lifecycle & pg_cron cleanup.
+    //    Fire-and-forget: bookkeeping only — client doesn't need to wait for this.
+    const expiresAt = new Date(Date.now() + 30 * 60 * 60 * 1000).toISOString();
+    void supabase
       .from("upload_sessions")
       .insert({
         bucket_name: UPLOAD_BUCKET,
