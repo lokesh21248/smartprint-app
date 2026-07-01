@@ -42,26 +42,26 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    // Single upsert-with-return: seeds defaults on first call and returns current row.
-    // One DB round-trip instead of SELECT + conditional UPSERT.
+    // Use maybeSingle() — if no settings exist, it returns null without throwing an error.
+    // We don't need to UPSERT on GET; we can just return defaults if no row exists.
     const { data, error } = await supabase
       .from("shop_settings")
-      .upsert(
-        { shop_id: shopId, sound_alerts: true, notification_sound: "whatsapp" },
-        { onConflict: "shop_id", ignoreDuplicates: true }
-      )
       .select("sound_alerts, notification_sound")
-      .single();
+      .eq("shop_id", shopId)
+      .maybeSingle();
 
     if (error) {
       console.error("[GET /api/shop/settings] DB error:", error);
       return NextResponse.json({ error: "Database error fetching settings" }, { status: 500 });
     }
 
-    return NextResponse.json({
-      soundEnabled: data?.sound_alerts ?? true,
-      notificationSound: data?.notification_sound ?? "whatsapp",
-    });
+    return NextResponse.json(
+      {
+        soundEnabled: data?.sound_alerts ?? true,
+        notificationSound: data?.notification_sound ?? "whatsapp",
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (err) {
     console.error("[GET /api/shop/settings] Unhandled error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
