@@ -8,6 +8,11 @@
  * For true global rate limiting: add Upstash Redis (one extra env var).
  *
  * Performance: 0 DB calls, O(1) lookup, < 0.1ms per check.
+ *
+ * Memory safety: H3 FIX — removed unreliable setInterval.
+ * setInterval is not guaranteed to fire in frozen serverless instances.
+ * Replaced with lazy eviction: expired entries are evicted at write time
+ * when the store grows beyond MAX_STORE_SIZE entries. O(1) amortized.
  */
 
 interface WindowEntry {
@@ -18,19 +23,10 @@ interface WindowEntry {
 // Module-level store — lives for the lifetime of the serverless function instance
 const store = new Map<string, WindowEntry>();
 
-// Prune expired entries every 5 minutes to prevent unbounded memory growth
-let pruneTimer: ReturnType<typeof setInterval> | null = null;
-function ensurePruner() {
-  if (pruneTimer) return;
-  pruneTimer = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of Array.from(store.entries())) {
-      if (entry.resetAt <= now) store.delete(key);
-    }
-  }, 5 * 60 * 1000);
-  // Don't block Node.js process shutdown
-  if (pruneTimer.unref) pruneTimer.unref();
-}
+// Hard cap — prevents OOM under a flood of unique IPs (e.g. DDoS with spoofed IPs)
+const MAX_STORE_SIZE = 10_000;
+// Number of expired entries to evict per cleanup pass (amortized cost)
+const EVICT_BATCH = 1_000;
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
@@ -58,13 +54,29 @@ export function rateLimit(
   windowSecs: number
 ): RateLimitResult {
   try {
-    ensurePruner();
-
     const now = Date.now();
     const existing = store.get(identifier);
 
     // Window expired or first request — start a fresh window
     if (!existing || existing.resetAt <= now) {
+      // Lazy eviction: when the store is full, sweep expired entries before adding new ones.
+      // This is O(EVICT_BATCH) amortized — avoids unbounded Map growth under unique-IP floods.
+      if (store.size >= MAX_STORE_SIZE) {
+        let evicted = 0;
+        for (const [k, v] of store) {
+          if (v.resetAt <= now) {
+            store.delete(k);
+            if (++evicted >= EVICT_BATCH) break;
+          }
+        }
+        // If we still can't fit (all entries are live — genuine traffic spike),
+        // fail open and let the request through rather than crashing.
+        if (store.size >= MAX_STORE_SIZE) {
+          console.warn("[rateLimit] Store at capacity; eviction found no expired entries. Failing open.");
+          return { success: true, remaining: 1, retryAfter: 0 };
+        }
+      }
+
       const resetAt = now + windowSecs * 1000;
       store.set(identifier, { count: 1, resetAt });
       return { success: true, remaining: limit - 1, retryAfter: 0 };
@@ -88,6 +100,7 @@ export function rateLimit(
     return { success: true, remaining: 1, retryAfter: 0 };
   }
 }
+
 
 
 /**

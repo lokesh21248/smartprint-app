@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimit, rateLimitHeaders } from "@/lib/ratelimit";
 import { validateApiAccess } from "@/lib/auth/role-guard";
 import { canManageShop } from "@/lib/auth/shop-access";
 
@@ -38,9 +38,12 @@ export async function GET(request: Request) {
     }
 
     // 2. Rate limit: 20 requests / 60s per user
-    const { success } = rateLimit(`shop_stats_${userId}`, 20, 60);
-    if (!success) {
-      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    const rlResult = rateLimit(`shop_stats_${userId}`, 20, 60);
+    if (!rlResult.success) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: rateLimitHeaders(rlResult, 20) }
+      );
     }
 
     // 3. Ownership/role check

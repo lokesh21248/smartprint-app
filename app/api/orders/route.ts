@@ -7,6 +7,8 @@ import { enqueueBackgroundTasks } from "@/lib/queue/background-tasks";
 import { getClientIp } from "@/lib/utils/ip";
 import { redisGet, redisSet } from "@/lib/redis";
 import { invalidateShopPricingCache } from "@/lib/cache/pricing";
+import { NotificationService } from "@/lib/notifications";
+import { perfStart, perfEnd } from "@/lib/utils/perf";
 
 // ─── Runtime Config ──────────────────────────────────────────────────────────
 // Node.js runtime: required for Supabase client (uses Node crypto internals).
@@ -16,13 +18,16 @@ export const runtime = "nodejs";
 export const maxDuration = 10;
 export const dynamic = "force-dynamic";
 
-// ─── In-memory Idempotency Cache ─────────────────────────────────────────────
+// ─── Idempotency Cache (Redis-primary, Map fallback) ─────────────────────────
 // Prevents duplicate orders from rapid double-taps or frontend retries.
-// Key: idempotency key from X-Idempotency-Key header (or derived from payload).
-// Value: { orderId, shortToken, expiresAt }
-// TTL: 5 minutes — enough to cover any realistic retry window.
-// Note: This is per-instance; across Vercel instances the DB unique constraint
-//       provides the second layer of protection.
+// H1 FIX: Redis is now the primary store for cross-instance protection.
+// Without this, two simultaneous requests hitting different Vercel instances
+// would both miss the Map cache and race to the DB, triggering the 23505 path
+// and 2 extra sequential DB queries per conflict.
+//
+// Key: `idem:<x-idempotency-key header value>`
+// TTL: 5 minutes — covers any realistic retry window
+// Fallback: in-memory Map (used when Redis env vars are not configured)
 interface IdempotencyEntry {
   orderId: string;
   shortToken: string;
@@ -31,27 +36,39 @@ interface IdempotencyEntry {
 }
 const idempotencyCache = new Map<string, IdempotencyEntry>();
 const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+const IDEMPOTENCY_TTL_S  = 5 * 60;
 
-function getIdempotencyEntry(key: string): IdempotencyEntry | null {
-  const entry = idempotencyCache.get(key);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
+async function getIdempotencyEntry(key: string): Promise<IdempotencyEntry | null> {
+  const now = Date.now();
+  // 1. Local Map — zero latency (warm instance)
+  const local = idempotencyCache.get(key);
+  if (local) {
+    if (now <= local.expiresAt) return local;
     idempotencyCache.delete(key);
-    return null;
   }
-  return entry;
+  // 2. Redis — cross-instance protection
+  const remote = await redisGet<IdempotencyEntry>(`idem:${key}`);
+  if (remote) {
+    idempotencyCache.set(key, remote); // populate local for subsequent hits
+    return remote;
+  }
+  return null;
 }
 
 function setIdempotencyEntry(key: string, value: Omit<IdempotencyEntry, "expiresAt">): void {
-  // Evict expired entries every ~100 inserts to prevent unbounded growth
+  const entry: IdempotencyEntry = { ...value, expiresAt: Date.now() + IDEMPOTENCY_TTL_MS };
+  // Local Map: evict stale entries every ~100 inserts
   if (idempotencyCache.size > 100) {
     const now = Date.now();
     for (const [k, v] of idempotencyCache) {
       if (v.expiresAt < now) idempotencyCache.delete(k);
     }
   }
-  idempotencyCache.set(key, { ...value, expiresAt: Date.now() + IDEMPOTENCY_TTL_MS });
+  idempotencyCache.set(key, entry);
+  // Redis: cross-instance protection (fire-and-forget — never block the response)
+  void redisSet(`idem:${key}`, entry, IDEMPOTENCY_TTL_S);
 }
+
 
 // ─── Shop Pricing Cache ───────────────────────────────────────────────────────
 // Primary:  Redis (shared across Vercel instances, invalidated on shop update)
@@ -135,7 +152,7 @@ async function getShopPricing(
  * ⚠️ PARTITION NOTE: INSERT routes to correct month partition automatically.
  */
 export async function POST(request: Request) {
-  console.time("[orders:POST:total]");
+  perfStart("[orders:POST:total]");
 
   try {
     const { userId } = await auth();
@@ -145,7 +162,7 @@ export async function POST(request: Request) {
     const ip = getClientIp(request);
     const rl = rateLimitOrders(ip);
     if (!rl.success) {
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json(
         { error: "Too many requests. Please slow down and try again shortly." },
         { status: 429, headers: rateLimitHeaders(rl, rl.limit) }
@@ -155,10 +172,10 @@ export async function POST(request: Request) {
     // ── 2. Idempotency Key Check ──────────────────────────────────────────────
     const idempotencyKey = request.headers.get("x-idempotency-key");
     if (idempotencyKey) {
-      const existing = getIdempotencyEntry(idempotencyKey);
+      const existing = await getIdempotencyEntry(idempotencyKey);
       if (existing) {
-        console.log("[orders:POST] idempotency hit — returning cached response");
-        console.timeEnd("[orders:POST:total]");
+        if (process.env.NODE_ENV !== "production") console.log("[orders:POST] idempotency hit — returning cached response");
+        perfEnd("[orders:POST:total]");
         return NextResponse.json({
           success: true,
           orderId: existing.orderId,
@@ -175,7 +192,7 @@ export async function POST(request: Request) {
       rawBody = await request.json();
     } catch (err) {
       console.error("[orders:POST] JSON parse error:", err);
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json(
         { success: false, error: "Invalid JSON request body" },
         { status: 400 }
@@ -186,7 +203,7 @@ export async function POST(request: Request) {
     const phone = String(rawBody.customerPhone || "").replace(/\D/g, "");
     const cleanPhone = phone.length >= 10 ? phone.slice(-10) : phone;
     if (!/^\d{10}$/.test(cleanPhone)) {
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json(
         { error: "Invalid phone number. Must be 10 digits." },
         { status: 400 }
@@ -197,7 +214,7 @@ export async function POST(request: Request) {
     const parsed = OrderCreateSchema.safeParse(rawBody);
     if (!parsed.success) {
       const errorDetails = parsed.error.flatten();
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json(
         {
           error: "Validation failed",
@@ -261,7 +278,7 @@ export async function POST(request: Request) {
           ip: ip,
           timestamp: new Date().toISOString()
         }));
-        console.timeEnd("[orders:POST:total]");
+        perfEnd("[orders:POST:total]");
         return NextResponse.json(
           { error: "Invalid file type. Only PDF, JPG, and PNG are allowed." },
           { status: 400 }
@@ -271,7 +288,7 @@ export async function POST(request: Request) {
 
     // ── 4+5. Duplicate Detection + Pricing (parallelized) ──────────────────────
     // Run both in parallel — saves ~200-300ms vs sequential on mobile networks.
-    console.time("[orders:POST:dedup+pricing]");
+    perfStart("[orders:POST:dedup+pricing]");
     const dedupeFileName = files.length > 0 ? files[0].name : (fileName ?? null);
     const [dedupResult, shopPricing] = await Promise.all([
       // Dedup check (covered by composite index: idx_orders_dedup)
@@ -290,11 +307,11 @@ export async function POST(request: Request) {
       // Pricing lookup (cached, usually 0 DB cost after first request)
       getShopPricing(shopId),
     ]);
-    console.timeEnd("[orders:POST:dedup+pricing]");
+    perfEnd("[orders:POST:dedup+pricing]");
 
     const existingOrder = dedupResult.data;
     if (existingOrder) {
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json({
         success: true,
         orderId: existingOrder.id,
@@ -304,7 +321,7 @@ export async function POST(request: Request) {
     }
 
     if (!shopPricing) {
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json({ error: "Shop not found" }, { status: 404 });
     }
 
@@ -325,7 +342,7 @@ export async function POST(request: Request) {
     }
 
     if (totalAmount <= 0) {
-      console.timeEnd("[orders:POST:total]");
+      perfEnd("[orders:POST:total]");
       return NextResponse.json(
         { error: "Shop pricing is not configured or total amount is zero" },
         { status: 422 }
@@ -357,13 +374,13 @@ export async function POST(request: Request) {
       status: "PLACED",
     };
 
-    console.time("[orders:POST:insert]");
+    perfStart("[orders:POST:insert]");
     const { data, error } = await supabase
       .from("orders")
       .insert(orderInsertPayload)
       .select("id, short_token, customer_name, total_amount")
       .single();
-    console.timeEnd("[orders:POST:insert]");
+    perfEnd("[orders:POST:insert]");
 
     if (error) {
       console.error("[orders:POST] INSERT ERROR:", {
@@ -397,7 +414,7 @@ export async function POST(request: Request) {
           existing = data;
         }
 
-        console.timeEnd("[orders:POST:total]");
+        perfEnd("[orders:POST:total]");
         return NextResponse.json(
           {
             success: true,
@@ -410,14 +427,11 @@ export async function POST(request: Request) {
         );
       }
 
-      console.timeEnd("[orders:POST:total]");
+      // S2 FIX: Log full DB error server-side, return generic message to client.
+      // Never expose raw Supabase error.message / error.details to the client.
+      perfEnd("[orders:POST:total]");
       return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-          details: error.details,
-          code: error.code,
-        },
+        { success: false, error: "Order creation failed. Please try again." },
         { status: 500 }
       );
     }
@@ -489,8 +503,9 @@ export async function POST(request: Request) {
         ? [
             {
               name: "notify-owner",
+              // M2 FIX: NotificationService is now a static import at the top of this file.
+              // Dynamic import() forced a Promise microtask + V8 module re-evaluation per order.
               fn: async () => {
-                const { NotificationService } = await import("@/lib/notifications");
                 NotificationService.alertNewOrder(clerkOwnerId, {
                   customer_name: data.customer_name,
                   total_amount: data.total_amount,
@@ -516,7 +531,7 @@ export async function POST(request: Request) {
       },
     ]);
 
-    console.timeEnd("[orders:POST:total]");
+    perfEnd("[orders:POST:total]");
 
     // ── 9. Instant success response ───────────────────────────────────────────────
     return NextResponse.json({
@@ -527,7 +542,7 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("[orders:POST] Unexpected error:", err);
-    console.timeEnd("[orders:POST:total]");
+    perfEnd("[orders:POST:total]");
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

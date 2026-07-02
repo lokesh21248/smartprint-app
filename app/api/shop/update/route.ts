@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopProfileSchema } from "@/lib/validators";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimit, rateLimitHeaders } from "@/lib/ratelimit";
 import { generateShopCode } from "@/lib/utils/crypto";
 import { canManageShop, getUserShop } from "@/lib/auth/shop-access";
 import { invalidateShopPricingCache } from "@/lib/cache/pricing";
@@ -22,11 +22,11 @@ export async function PATCH(request: Request) {
 
     // 2. Rate limit — keyed on userId (authenticated write endpoint)
     //    10 updates / 60s is generous for real users, blocks automated abuse.
-    const { success: rateLimitOk } = rateLimit(`shop_update_${userId}`, 10, 60);
-    if (!rateLimitOk) {
+    const rlResult = rateLimit(`shop_update_${userId}`, 10, 60);
+    if (!rlResult.success) {
       return NextResponse.json(
         { error: "Too many requests. Please wait a moment and try again." },
-        { status: 429 }
+        { status: 429, headers: rateLimitHeaders(rlResult, 10) }
       );
     }
 
