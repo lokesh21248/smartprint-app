@@ -17,17 +17,21 @@ import { getClientIp } from "@/lib/utils/ip";
  * Uses admin client server-side to bypass RLS cleanly.
  */
 export async function GET(request: Request) {
+  // Extract dynamic properties OUTSIDE the try-catch block!
+  // Next.js uses an internal Error (DYNAMIC_SERVER_USAGE) to abort static rendering
+  // and mark the route as dynamic. If this is inside the try-catch, we swallow the
+  // bailout error and fail the Next.js build process.
+  const ip = getClientIp(request);
+  const { searchParams } = new URL(request.url);
+  const slugParam = searchParams.get("slug")?.trim().toLowerCase();
+  const id = searchParams.get("id")?.trim();
+
   try {
     // Rate limit: 100 requests per minute per IP
-    const ip = getClientIp(request);
     const { success } = rateLimit(`shop_public_${ip}`, 100, 60);
     if (!success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
-
-    const { searchParams } = new URL(request.url);
-    const slugParam = searchParams.get("slug")?.trim().toLowerCase();
-    const id = searchParams.get("id")?.trim();
 
     if (!slugParam && !id) {
       return NextResponse.json({ error: "slug or id is required" }, { status: 400 });
