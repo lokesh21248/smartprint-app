@@ -19,29 +19,27 @@
  * per-instance pricing cache continue as fallbacks — no errors thrown.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RedisClient = { get: (key: string) => Promise<unknown>; set: (key: string, value: unknown, opts?: { ex?: number }) => Promise<unknown>; del: (key: string) => Promise<unknown> };
+import { Redis } from "@upstash/redis";
 
-let _redis: RedisClient | null = null;
+let _redis: Redis | null = null;
 let _initialized = false;
 
-function getRedis(): RedisClient | null {
+function getRedis(): Redis | null {
   if (_initialized) return _redis;
   _initialized = true;
 
-  const url   = process.env.UPSTASH_REDIS_REST_URL;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-  if (!url || !token) return null;
+  if (!url || !token) {
+    console.warn("[redis] UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not set. Using in-memory fallback.");
+    return null;
+  }
 
   try {
-    // Dynamic require — avoids hard build failure when @upstash/redis is not installed yet
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Redis } = require("@upstash/redis") as { Redis: new (opts: { url: string; token: string }) => RedisClient };
     _redis = new Redis({ url, token });
-  } catch {
-    // Package not yet installed — fail silently, in-memory fallback will be used
-    console.warn("[redis] @upstash/redis not installed. Run: npm install @upstash/redis");
+  } catch (err) {
+    console.warn("[redis] Failed to initialize Upstash Redis client:", err);
   }
 
   return _redis;
