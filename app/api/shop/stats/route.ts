@@ -82,7 +82,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
     }
 
-    const stats = statsResult.data as {
+    const rawStats = Array.isArray(statsResult.data) ? statsResult.data[0] : statsResult.data;
+    
+    const stats = rawStats as {
       pending_orders:     number;
       orders_today:       number;
       unique_customers:   number;
