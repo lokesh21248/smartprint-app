@@ -57,15 +57,20 @@ function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
 // ── Route Handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
+  // Move dynamic headers and URL reading OUTSIDE the try-catch!
+  // Next.js uses an internal DYNAMIC_SERVER_USAGE error to bailout. 
+  // Swallowing it causes fatal API errors on Vercel.
+  const { searchParams } = new URL(request.url);
+  const { authorized, response, userId, clerkRole } = await validateApiAccess([
+    "admin",
+    "shop_owner",
+    "manager",
+    "staff",
+  ]);
+
+  if (!authorized) return response;
+
   try {
-    // 1. Auth + role guard
-    const { authorized, response, userId, clerkRole } = await validateApiAccess([
-      "admin",
-      "shop_owner",
-      "manager",
-      "staff",
-    ]);
-    if (!authorized) return response;
 
     // 2. Rate limit: 200 req / 60s per user
     const { success } = rateLimit(`orders_list_${userId}`, 200, 60);

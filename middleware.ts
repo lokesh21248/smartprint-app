@@ -144,10 +144,6 @@ export default function middleware(
 
   // For Clerk-handled routes, attach the correlation header after Clerk processes it
   const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID().slice(0, 12);
-  // Clone the request with the request ID so downstream handlers can log it
-  const reqWithId = new Request(req, {
-    headers: { ...Object.fromEntries(req.headers), "x-request-id": requestId },
-  });
   // Note: Vercel doesn't allow modifying the incoming NextRequest directly;
   // the x-request-id is forwarded via response header for client correlation.
   const res = clerkHandler(req, event);
@@ -160,7 +156,6 @@ export default function middleware(
       return r;
     });
   }
-  void reqWithId; // suppress unused variable warning
   return res;
 }
 
