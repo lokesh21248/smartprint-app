@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OrderCardSkeleton } from "@/components/ui/skeleton";
 import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
+import { useOrderStore } from "@/stores/orderStore";
+import { useShopStore } from "@/stores/shopStore";
 import { toast } from "sonner";
 import { TimeAgo } from "./TimeAgo";
 import { FileText, Phone, Check, X, Printer, ShieldAlert, ShieldCheck, Clock } from "lucide-react";
@@ -82,6 +84,8 @@ interface NewOrdersFeedProps {
 export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
   const queryClient = useQueryClient();
   const [processing, setProcessing] = useState<Record<string, boolean>>({});
+  const { decrementPending } = useOrderStore();
+  const { clearNotifications } = useShopStore();
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["new-orders", shopId],
@@ -103,10 +107,12 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
   ) => {
     setProcessing((p) => ({ ...p, [orderId]: true }));
 
-    // Optimistic remove from list
+    // Optimistic updates — instant badge feedback
     queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
       (prev ?? []).filter((o) => o.id !== orderId)
     );
+    decrementPending();   // ← drop bell/sidebar badge immediately
+    clearNotifications(); // ← clear the secondary notification dot
 
     try {
       const res = await fetch(`/api/orders/${orderId}/status`, {
@@ -121,7 +127,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
     } catch {
-      // Rollback
+      // Rollback — re-fetch to restore correct state
       queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
       toast.error("Action failed. Please try again.");
     } finally {

@@ -2,10 +2,13 @@ import { create } from "zustand";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { Order } from "@/types";
 
+export type RealtimeStatus = "connected" | "disconnected" | "reconnecting";
+
 interface OrderState {
   pendingCount: number;
   newOrders: Order[]; // latest unread new orders for notification feed
   realtimeChannel: RealtimeChannel | null;
+  realtimeStatus: RealtimeStatus;
 
   setPendingCount: (count: number) => void;
   incrementPending: () => void;
@@ -17,12 +20,15 @@ interface OrderState {
   setRealtimeChannel: (channel: RealtimeChannel | null) => void;
   /** Explicitly unsubscribe + clear the active channel (call on component unmount) */
   destroyRealtimeChannel: () => void;
+  /** Update the realtime connection status shown in the UI banner */
+  setRealtimeStatus: (status: RealtimeStatus) => void;
 }
 
 export const useOrderStore = create<OrderState>()((set, get) => ({
   pendingCount: 0,
   newOrders: [],
   realtimeChannel: null,
+  realtimeStatus: "disconnected",
 
   setPendingCount: (count) => set({ pendingCount: count }),
 
@@ -62,4 +68,6 @@ export const useOrderStore = create<OrderState>()((set, get) => ({
       set({ realtimeChannel: null });
     }
   },
+
+  setRealtimeStatus: (status) => set({ realtimeStatus: status }),
 }));

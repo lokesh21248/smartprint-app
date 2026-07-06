@@ -82,6 +82,23 @@ let isReconnecting = false;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000;
 
+// Module-level reference to setRealtimeStatus so initSubscription can call it
+type StatusSetter = (s: import("@/stores/orderStore").RealtimeStatus) => void;
+let _setStatus: StatusSetter | null = null;
+
+/** Call this from the "Reconnect" button — resets backoff and retries immediately */
+export function forceReconnect() {
+  if (!activeChannelShopId) return;
+  reconnectAttempts = 0;
+  isReconnecting = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  _setStatus?.("reconnecting");
+  initSubscription(activeChannelShopId, () => {});
+}
+
 // Supabase realtime channel exposes internal state not in the public types; use a narrow interface instead of any
 interface ChannelWithState {
   state: string;
@@ -105,12 +122,14 @@ function handleReconnect(
   if (isReconnecting) return;
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     console.error(`[Realtime] ❌ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached for shop "${shopId}". Stopping retries.`);
+    _setStatus?.("disconnected");
     return;
   }
 
   isReconnecting = true;
   reconnectAttempts++;
   const delay = Math.min(INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), 30000);
+  _setStatus?.("reconnecting");
 
   if (process.env.NODE_ENV !== "production") {
     console.log(`[Realtime] 🔄 Scheduling reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} for shop "${shopId}" in ${delay}ms...`);
@@ -223,6 +242,7 @@ async function initSubscription(
       }
       reconnectAttempts = 0;
       isReconnecting = false;
+      _setStatus?.("connected");
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -266,12 +286,20 @@ async function terminateSubscription(
 export function useRealtimeOrders(shopId: string | null) {
   const queryClient = useQueryClient();
   const { incrementNotifications } = useShopStore();
-  const { addNewOrder, incrementPending, setRealtimeChannel } = useOrderStore();
+  const { addNewOrder, incrementPending, decrementPending, setRealtimeChannel, setRealtimeStatus } = useOrderStore();
+
+  // Wire the module-level status setter so non-hook code (forceReconnect, handleReconnect)
+  // can update the store without prop-drilling.
+  useEffect(() => {
+    _setStatus = setRealtimeStatus;
+    return () => { _setStatus = null; };
+  }, [setRealtimeStatus]);
 
   // Create refs to keep handler callbacks always fresh without re-subscribing
   const handlersRef = useRef({
     addNewOrder,
     incrementPending,
+    decrementPending,
     incrementNotifications,
     queryClient,
   });
@@ -280,10 +308,11 @@ export function useRealtimeOrders(shopId: string | null) {
     handlersRef.current = {
       addNewOrder,
       incrementPending,
+      decrementPending,
       incrementNotifications,
       queryClient,
     };
-  }, [addNewOrder, incrementPending, incrementNotifications, queryClient]);
+  }, [addNewOrder, incrementPending, decrementPending, incrementNotifications, queryClient]);
 
   // Keep timers at the local hook level
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -395,19 +424,37 @@ export function useRealtimeOrders(shopId: string | null) {
         batchTimerRef.current = setTimeout(flushInsertBatch, 300);
       } else if (payload.eventType === "UPDATE") {
         const updated = mapRawToOrder(payload.new);
+        const oldStatus = (payload.old as Record<string, unknown>).status as string | undefined;
+        const newStatus = updated.order_status as string;
+        const wasPlaced = oldStatus?.toUpperCase() === "PLACED";
+        const isStillPlaced = newStatus?.toUpperCase() === "PLACED";
+
         if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] 📥 Order UPDATE event received: ID="${updated.id}", status="${updated.order_status}"`);
+          console.log(`[Realtime] 📥 Order UPDATE event received: ID="${updated.id}", ${oldStatus} → ${newStatus}`);
         }
+
+        // If order left PLACED status (accepted/rejected by another tab/device)
+        // decrement the pending badge and remove from the new-orders feed.
+        if (wasPlaced && !isStillPlaced) {
+          handlersRef.current.decrementPending();
+          qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) =>
+            (prev ?? []).filter((o) => o.id !== updated.id)
+          );
+        }
+
         qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) =>
           (prev ?? []).map((o) =>
             o.id === updated.id ? { ...o, ...updated } : o
           )
         );
-        qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) =>
-          (prev ?? []).map((o) =>
-            o.id === updated.id ? { ...o, ...updated } : o
-          )
-        );
+        // Only keep in new-orders cache if still PLACED
+        if (isStillPlaced) {
+          qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) =>
+            (prev ?? []).map((o) =>
+              o.id === updated.id ? { ...o, ...updated } : o
+            )
+          );
+        }
         qClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
       } else if (payload.eventType === "DELETE") {
         const id = (payload.old as { id: string }).id;

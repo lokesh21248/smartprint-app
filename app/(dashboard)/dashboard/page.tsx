@@ -6,6 +6,7 @@ import type { DashboardStats, Order, Shop } from "@/types";
 import { User as UserIcon, Store, Mail } from "lucide-react";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { getShopByUserId } from "@/lib/data/shop";
+import { PendingCountSeeder } from "@/components/dashboard/PendingCountSeeder";
 
 import { StatsSection } from "@/components/dashboard/StatsSection";
 import { NewOrdersFeed } from "@/components/dashboard/NewOrdersFeed";
@@ -173,6 +174,8 @@ export default async function DashboardPage() {
       </div>
 
       <PendingOrdersBanner count={stats?.pendingOrders || 0} />
+      {/* Seed the orderStore.pendingCount so the bell badge is correct immediately */}
+      <PendingCountSeeder count={stats?.pendingOrders || 0} />
 
       <StatsSection initialStats={stats} shopId={shop.id} />
 

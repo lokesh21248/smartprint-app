@@ -11,6 +11,7 @@ import { Header } from "@/components/shared/Header";
 import { ShopStoreInitializer } from "@/components/shared/ShopStoreInitializer";
 import { AudioInitializer } from "@/components/shared/AudioInitializer";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
+import { ConnectionStatusBanner } from "@/components/shared/ConnectionStatusBanner";
 
 import { getShopByUserId } from "@/lib/data/shop";
 import { requireShopOwner } from "@/lib/auth/role-guard";
@@ -53,6 +54,7 @@ export default async function DashboardLayout({
           id="dashboard-main"
           className="flex-1 flex flex-col overflow-hidden transition-all duration-300 ml-0 md:ml-[var(--sidebar-w,256px)]"
         >
+          <ConnectionStatusBanner />
           <Header />
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="max-w-7xl mx-auto animate-fade-in">

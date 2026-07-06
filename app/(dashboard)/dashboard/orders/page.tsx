@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getShopByUserId } from "@/lib/data/shop";
 import { OrdersClient } from "@/components/orders/OrdersClient";
 import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
+import { PendingCountSeeder } from "@/components/dashboard/PendingCountSeeder";
 import type { Order } from "@/types";
 
 export const metadata: Metadata = {
@@ -70,6 +71,10 @@ export default async function OrdersPage() {
     ? await getInitialOrders(userId)
     : { orders: [], shopId: "" };
 
+  const placedCount = orders.filter(
+    (o) => o.order_status?.toUpperCase() === "PLACED"
+  ).length;
+
   return (
     /**
      * CRITICAL: OrdersClient calls useSearchParams() which opts out of SSR
@@ -79,8 +84,11 @@ export default async function OrdersPage() {
      *
      * The fallback uses the real OrdersSkeleton so the transition is seamless.
      */
-    <Suspense fallback={<OrdersSkeleton />}>
-      <OrdersClient initialOrders={orders} shopId={shopId} />
-    </Suspense>
+    <>
+      <PendingCountSeeder count={placedCount} />
+      <Suspense fallback={<OrdersSkeleton />}>
+        <OrdersClient initialOrders={orders} shopId={shopId} />
+      </Suspense>
+    </>
   );
 }
