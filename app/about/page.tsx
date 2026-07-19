@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "About – Scan2Paper",
+  title: "About – Print Shop Management Software | Scan2Paper",
   description:
-    "Learn about Scan2Paper — the print shop management platform built for modern xerox and print shops across India.",
+    "Learn about Scan2Paper — the print shop management software platform built for modern xerox and print shops across India.",
   alternates: {
     canonical: "https://scan2paper.com/about",
   },
@@ -13,9 +13,9 @@ export const metadata: Metadata = {
     follow: true,
   },
   openGraph: {
-    title: "About – Scan2Paper",
+    title: "About – Print Shop Management Software | Scan2Paper",
     description:
-      "Scan2Paper is a print shop management platform built for modern xerox and print shops across India.",
+      "Scan2Paper is a print shop management software platform built for modern xerox and print shops across India.",
     url: "https://scan2paper.com/about",
     type: "website",
   },

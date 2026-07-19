@@ -10,16 +10,16 @@ import { allPosts } from "@/lib/blog/posts";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Scan2Paper – Digital Print Shop Management",
+  title: "Scan2Paper – Print Shop Management Software & Digital Ordering",
   description:
-    "Scan2Paper helps print shop owners manage orders, documents, staff, and revenue from one powerful dashboard. Customers can upload documents online and collect their prints quickly and efficiently.",
+    "Manage your print shop with Scan2Paper's Xerox shop software. Accept online orders, enable PDF document upload, and increase revenue. Start for free.",
   alternates: {
     canonical: "https://scan2paper.com/",
   },
   openGraph: {
-    title: "Scan2Paper – Digital Print Shop Management",
+    title: "Scan2Paper – Print Shop Management Software & Digital Ordering",
     description:
-      "Manage your print shop orders, staff, and analytics from one powerful dashboard. Join Scan2Paper today.",
+      "Manage your print shop with Scan2Paper's Xerox shop software. Accept online orders, enable PDF document upload, and increase revenue. Start for free.",
     url: "https://scan2paper.com/",
     type: "website",
   },
@@ -49,6 +49,7 @@ const jsonLd = {
       "@type": "Organization",
       "@id": "https://scan2paper.com/#organization",
       "name": "Scan2Paper",
+      "alternateName": ["Scan Paper", "Scan To Paper"],
       "url": "https://scan2paper.com",
       "logo": {
         "@type": "ImageObject",
@@ -62,6 +63,19 @@ const jsonLd = {
         "contactType": "customer support",
       },
       "sameAs": [],
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://scan2paper.com/#software",
+      "name": "Scan2Paper",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Any",
+      "url": "https://scan2paper.com",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "INR"
+      },
     },
     {
       "@type": "WebPage",

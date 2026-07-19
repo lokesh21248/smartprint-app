@@ -17,10 +17,10 @@ export default function robots(): MetadataRoute.Robots {
           "/blog",
           "/blog/",
           "/blog/*",   // explicitly allow all blog article slugs
+          "/find-shop", // explicitly allow the shop lookup page
+          "/s/*",       // explicitly allow all individual shop profiles for local SEO
         ],
         disallow: [
-          "/find-shop",   // utility lookup page — noindex
-          "/s/",          // individual shop pages — noindex
           "/order/",      // transactional order-tracking pages
           "/order-upload/", // file-upload flow
           "/create-shop/",  // onboarding flow

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Features – Scan2Paper",
+  title: "Features – Print Shop Management Software | Scan2Paper",
   description:
     "Explore Scan2Paper's features: real-time order management, PDF upload, QR code shop discovery, staff management, and live analytics for print shop owners.",
   alternates: {
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     follow: true,
   },
   openGraph: {
-    title: "Features – Scan2Paper",
+    title: "Features – Print Shop Management Software | Scan2Paper",
     description:
       "Everything you need to run a modern print shop: orders, staff, and analytics — all in one dashboard.",
     url: "https://scan2paper.com/features",
@@ -27,7 +27,7 @@ const jsonLd = {
   "@type": "WebPage",
   "@id": "https://scan2paper.com/features#webpage",
   "url": "https://scan2paper.com/features",
-  "name": "Features – Scan2Paper",
+  "name": "Features – Print Shop Management Software | Scan2Paper",
   "description":
     "Explore Scan2Paper's features: real-time order management, PDF upload, QR code shop discovery, staff management, and live analytics for print shop owners.",
   "isPartOf": { "@id": "https://scan2paper.com/#website" },

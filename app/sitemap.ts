@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { allPosts } from "@/lib/blog/posts";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 
 // Static sitemap — only include pages that are:
@@ -15,7 +16,7 @@ export const revalidate = 86400; // Rebuild at most once per day (CDN cache)
 
 const BASE_URL = "https://scan2paper.com";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Static marketing pages
   const staticPages: MetadataRoute.Sitemap = [
     {
@@ -54,6 +55,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 0.8,
     },
+    {
+      url: `${BASE_URL}/find-shop`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.8,
+    },
   ];
 
   // Blog post pages — sourced from lib/blog/posts (single source of truth)
@@ -65,7 +72,29 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.8,
   }));
 
-  return [...staticPages, ...blogPages];
+  // Active Shop pages — fetched from the database at build time (and revalidated)
+  let shopPages: MetadataRoute.Sitemap = [];
+  try {
+    const supabase = createAdminClient();
+    const { data: shops } = await supabase
+      .from("shops")
+      .select("slug, updated_at")
+      .eq("is_active", true)
+      .eq("is_approved", true);
+
+    if (shops && shops.length > 0) {
+      shopPages = shops.map((shop) => ({
+        url: `${BASE_URL}/s/${shop.slug}`,
+        lastModified: shop.updated_at ? new Date(shop.updated_at) : new Date(),
+        changeFrequency: "daily" as const,
+        priority: 0.6,
+      }));
+    }
+  } catch (error) {
+    console.error("Failed to fetch shops for sitemap:", error);
+  }
+
+  return [...staticPages, ...blogPages, ...shopPages];
 }
 
 

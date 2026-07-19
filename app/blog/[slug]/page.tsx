@@ -108,7 +108,6 @@ export default function BlogPostPage({
     },
   };
 
-  // JSON-LD BreadcrumbList
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -134,6 +133,24 @@ export default function BlogPostPage({
     ],
   };
 
+  // Dynamically generate FAQPage schema if the post contains an FAQ block
+  const faqBlock = post.content.find((block) => block.type === "faq") as { type: "faq"; items: { q: string; a: string }[] } | undefined;
+  let faqLd = null;
+  if (faqBlock && faqBlock.items.length > 0) {
+    faqLd = {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqBlock.items.map((item) => ({
+        "@type": "Question",
+        name: item.q,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: item.a,
+        },
+      })),
+    };
+  }
+
   return (
     <>
       {/* Structured data */}
@@ -145,6 +162,12 @@ export default function BlogPostPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
       />
+      {faqLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+        />
+      )}
 
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50">
         {/* Hero image */}
