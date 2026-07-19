@@ -1,6 +1,18 @@
-'use client';
+/**
+ * LatestArticles — Server Component
+ *
+ * Renders the latest blog post cards on the homepage.
+ *
+ * WHY this is a Server Component:
+ *   - Previously guarded by localStorage ("scan2paper_articles_seen") causing:
+ *       a) Cumulative Layout Shift (CLS): section invisible on first render, appears after hydration.
+ *       b) Googlebot invisibility: crawlers never execute the localStorage check → articles never indexed.
+ *   - Removing the gate eliminates both issues: articles are always server-rendered, always visible to
+ *     crawlers, and zero layout shift occurs because the HTML is present from the initial response.
+ *   - No client interactivity is needed on this component — Image, Link, and time formatting are all
+ *     static. Keeping it server-side reduces the client JS bundle.
+ */
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { type Category, formatDate } from "@/lib/blog/posts";
@@ -20,7 +32,7 @@ interface LatestArticlesProps {
   posts: LatestArticle[];
 }
 
-// Static lookup — defined once, not recreated on every render or map iteration
+// Static lookup — defined once at module level, never recreated
 const CATEGORY_COLORS: Record<string, string> = {
   "Print Shop Management": "bg-blue-50 text-blue-700 border-blue-100",
   "Online Printing": "bg-emerald-50 text-emerald-700 border-emerald-100",
@@ -30,20 +42,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export function LatestArticles({ posts }: LatestArticlesProps) {
-  const [showArticles, setShowArticles] = useState(false);
-
-  useEffect(() => {
-    const hasSeenArticles = localStorage.getItem("scan2paper_articles_seen");
-
-    if (!hasSeenArticles) {
-      setShowArticles(true);
-      localStorage.setItem("scan2paper_articles_seen", "true");
-    }
-  }, []);
-
-  if (!showArticles) {
-    return null;
-  }
+  if (!posts || posts.length === 0) return null;
 
   return (
     <section aria-labelledby="blog-preview-heading" className="mt-24 max-w-5xl w-full px-4">
@@ -72,7 +71,7 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
                   fill
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                  // Only the first card is above-the-fold; rest load lazily
+                  // Only the first card is above-the-fold on desktop; rest load lazily
                   priority={index === 0}
                   loading={index === 0 ? "eager" : "lazy"}
                 />
@@ -94,7 +93,7 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
                 </div>
                 <div className="mt-5 flex items-center gap-2 text-xs text-gray-400 border-t border-gray-50 pt-3">
                   <time dateTime={post.date}>{formatDate(post.date)}</time>
-                  <span>·</span>
+                  <span aria-hidden="true">·</span>
                   <span>{post.readingTime}</span>
                 </div>
               </div>
@@ -109,7 +108,13 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
           className="inline-flex items-center justify-center px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 hover:text-emerald-700 shadow-sm transition-all duration-200"
         >
           Explore all articles
-          <svg className="ml-2 w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg
+            className="ml-2 w-4 h-4 transition-transform duration-200 group-hover:translate-x-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
           </svg>
         </Link>

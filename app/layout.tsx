@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -73,6 +73,14 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: [
+    // Brand primary green for the mobile browser address bar
+    { media: "(prefers-color-scheme: light)", color: "#2E8B57" },
+    { media: "(prefers-color-scheme: dark)", color: "#1F6B42" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -84,6 +92,16 @@ export default function RootLayout({
       signUpFallbackRedirectUrl="/dashboard"
     >
       <html lang="en" className={inter.variable}>
+        <head>
+          {/* Reinforce HTTP Link header preconnects with in-markup hints.
+              Some CDNs (Cloudflare) strip or delay Link response headers
+              before the browser receives them. Having both ensures early
+              connection establishment regardless of CDN behaviour. */}
+          <link rel="preconnect" href="https://clerk.scan2paper.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          <link rel="dns-prefetch" href="https://api.supabase.co" />
+          <link rel="dns-prefetch" href="https://api.clerk.dev" />
+        </head>
         <body className="font-sans antialiased">
           <Providers>{children}</Providers>
           <Analytics />

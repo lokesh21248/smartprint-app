@@ -147,7 +147,11 @@ const nextConfig = {
   },
 
   logging: {
-    fetches: { fullUrl: true },
+    fetches: {
+      // Only log full URLs in development — avoids noise + internal-path
+      // exposure in production Vercel log streams.
+      fullUrl: process.env.NODE_ENV !== "production",
+    },
   },
 
   // optimizePackageImports: enabled for safe ES-module packages only.
@@ -202,10 +206,13 @@ const nextConfig = {
         ],
       },
       {
-        // Resource hints: establish connections to critical third-party origins
-        // early so the browser does not pay DNS + TLS costs on first use.
+        // ── Resource hints + Security headers: apply to every route ─────────────
+        // Consolidating all per-route headers into a single rule avoids
+        // potential override conflicts where the second rule could shadow
+        // headers set by the first on CDNs that apply rules sequentially.
         source: "/(.*)",
         headers: [
+          // ── Resource hints: establish early connections to critical origins ─────
           // Supabase — REST API + realtime WebSocket
           { key: "Link", value: "<https://api.supabase.co>; rel=preconnect" },
           // Clerk — auth JS bundle served from custom domain
@@ -214,16 +221,13 @@ const nextConfig = {
           { key: "Link", value: "<https://fonts.gstatic.com>; rel=preconnect; crossorigin" },
           // Clerk CDN fallback for accounts.dev (staging / local dev)
           { key: "Link", value: "<https://api.clerk.dev>; rel=dns-prefetch" },
-        ],
-      },
-      {
-        source: "/(.*)",
-        headers: [
+          // ── Security headers ──────────────────────────────────────────────────
           { key: "Content-Security-Policy", value: ContentSecurityPolicy },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-DNS-Prefetch-Control", value: "on" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), display-capture=(), accelerometer=(), gyroscope=()" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
         ],
       },

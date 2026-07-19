@@ -68,6 +68,17 @@ function generateIdempotencyKey(shopId: string, phone: string, fileNames: string
   return `${shopId}:${phone}:${fileNames}:${Date.now().toString(36)}`;
 }
 
+// ─── Format bytes → human-readable size string ──────────────────────────────
+// Defined at module level — not inside the component — so it is not
+// recreated on every render, avoiding unnecessary GC pressure.
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
 // ─── Sanitize filename on client to match backend ──────────────────────────────
 function sanitizeFileName(raw: string): string {
   const lastDotIdx = raw.lastIndexOf(".");
@@ -392,7 +403,9 @@ function OrderUploadPageInner() {
   useEffect(() => {
     const clearUploadSession = () => {
       if (persistUploadRef.current) {
-        console.log("[order-upload] Preserving upload queue for status page redirection.");
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[order-upload] Preserving upload queue for status page redirection.");
+        }
         return;
       }
       try {
@@ -580,14 +593,16 @@ function OrderUploadPageInner() {
       tracker.markInsertStart();
 
       // Debug: verify copies/color/doubleSided are captured correctly at checkout time
-      console.log("[OrderUpload] Files state at checkout:", files.map(f => ({
-        name: f.name,
-        copies: f.copies,
-        color: f.color,
-        doubleSided: f.doubleSided,
-        pages: f.pages,
-        status: f.status,
-      })));
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[OrderUpload] Files state at checkout:", files.map(f => ({
+          name: f.name,
+          copies: f.copies,
+          color: f.color,
+          doubleSided: f.doubleSided,
+          pages: f.pages,
+          status: f.status,
+        })));
+      }
 
       // Structure files array for backend schema validator using precalculated permanent S3 paths
       const filesPayload = files.map((f) => {
@@ -734,14 +749,6 @@ function OrderUploadPageInner() {
     );
   }
 
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
   return (
     <div className={`min-h-screen bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-50 via-slate-50 to-white font-sans antialiased font-medium text-slate-800 transition-all ${files.length > 0 ? "pb-36 md:pb-24" : "pb-24"}`}>
       {/* Offline Banner */}
@@ -770,8 +777,9 @@ function OrderUploadPageInner() {
                 onClick={() => setStep(1)}
                 className="p-2 hover:bg-slate-100 rounded-xl transition"
                 disabled={isSubmitting}
+                aria-label="Go back to upload step"
               >
-                <ArrowLeft className="w-4 h-4 text-slate-600" />
+                <ArrowLeft className="w-4 h-4 text-slate-600" aria-hidden="true" />
               </button>
             )}
             {step === 1 && (
@@ -914,34 +922,37 @@ function OrderUploadPageInner() {
 
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
+                    <label htmlFor="customer-name" className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
                       Full Name
                     </label>
                     <div className="relative group">
-                      <User className="absolute left-4 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                      <User className="absolute left-4 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" aria-hidden="true" />
                       <input
                         id="customer-name"
                         placeholder="Enter your name"
                         value={customerName}
                         onChange={(e) => setCustomerName(e.target.value)}
                         disabled={isSubmitting}
+                        maxLength={100}
+                        autoComplete="name"
                         className="w-full pl-12 h-12 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm font-semibold transition-all disabled:opacity-60"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
+                    <label htmlFor="customer-phone" className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
                       WhatsApp / Phone Number
                     </label>
                     <div className="relative group">
-                      <Phone className="absolute left-4 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                      <Phone className="absolute left-4 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" aria-hidden="true" />
                       <input
                         id="customer-phone"
                         placeholder="10-digit mobile number"
                         type="tel"
                         inputMode="numeric"
                         maxLength={10}
+                        autoComplete="tel"
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                         disabled={isSubmitting}
@@ -957,15 +968,17 @@ function OrderUploadPageInner() {
 
               {/* Notes */}
               <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-4 sm:p-6 md:p-8 space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
+                <label htmlFor="customer-notes" className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-0.5">
                   Special Instructions (Optional)
                 </label>
                 <textarea
+                  id="customer-notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="E.g. Staple top-left, spiral binding requested..."
                   className="w-full bg-slate-50/50 rounded-2xl p-4 text-sm border border-slate-100 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none min-h-[90px] transition-all placeholder:text-slate-400"
                   disabled={isSubmitting}
+                  maxLength={500}
                 />
               </div>
 

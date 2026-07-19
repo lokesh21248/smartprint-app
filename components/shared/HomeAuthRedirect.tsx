@@ -17,16 +17,16 @@ export function HomeAuthRedirect() {
   const hasCheckedRef = useRef(false);
 
   useEffect(() => {
-    // 3-second fallback timeout to prevent infinite loading
+    // 2-second fallback timeout to prevent infinite loading
     const timer = setTimeout(() => {
       if (!hasCheckedRef.current) {
         if (process.env.NODE_ENV !== 'production') {
-          console.log("[HomeAuthRedirect] ⏰ Redirect timeout reached (3s). Removing 'js-redirecting' and showing homepage.");
+          console.log("[HomeAuthRedirect] ⏰ Redirect timeout reached (2s). Removing 'js-redirecting' and showing homepage.");
         }
         document.documentElement.classList.remove('js-redirecting');
         setRedirectTimedOut(true);
       }
-    }, 3000);
+    }, 2000);
 
     return () => clearTimeout(timer);
   }, []);
@@ -110,7 +110,7 @@ export function HomeAuthRedirect() {
           `,
         }}
       />
-      <div className="redirect-overlay">
+      <div className="redirect-overlay" role="status" aria-label="Loading, please wait">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full border-4 border-emerald-100 border-t-emerald-600 animate-spin" />
           <p className="text-gray-600 font-semibold text-base animate-pulse">

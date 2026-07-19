@@ -334,23 +334,25 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
           </button>
         </div>
         <div className="space-y-3">
-          {services.map((svc, i) => {
-            const max = Math.max(...services.map((s) => s.count));
-            const pct = (svc.count / max) * 100;
-            return (
-              <div key={svc.name} className="flex items-center gap-3">
-                <span className="text-sm font-medium text-[#6B7280] w-4">{i + 1}</span>
-                <span className="text-sm font-medium text-[#374151] w-32 flex-shrink-0">{svc.name}</span>
-                <div className="flex-1 bg-[#F3F4F6] rounded-full h-2.5">
-                  <div
-                    className="h-2.5 rounded-full bg-[#2E8B57] transition-all duration-700"
-                    style={{ width: `${pct}%` }}
-                  />
+          {(() => {
+            const maxServiceCount = Math.max(...services.map((s) => s.count), 1);
+            return services.map((svc, i) => {
+              const pct = (svc.count / maxServiceCount) * 100;
+              return (
+                <div key={svc.name} className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-[#6B7280] w-4">{i + 1}</span>
+                  <span className="text-sm font-medium text-[#374151] w-32 flex-shrink-0">{svc.name}</span>
+                  <div className="flex-1 bg-[#F3F4F6] rounded-full h-2.5">
+                    <div
+                      className="h-2.5 rounded-full bg-[#2E8B57] transition-all duration-700"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-bold text-[#111827] w-10 text-right">{svc.count}</span>
                 </div>
-                <span className="text-sm font-bold text-[#111827] w-10 text-right">{svc.count}</span>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
       </div>
 

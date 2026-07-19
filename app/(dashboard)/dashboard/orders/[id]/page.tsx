@@ -37,7 +37,7 @@ async function fetchOrder(id: string, userId: string): Promise<FetchResult> {
     const supabase = createAdminClient();
 
     // ── Query 1: fetch the order (no JOIN, partitioned-table safe) ────────────
-    console.time(`[orders/${id}] db-fetch`);
+    if (process.env.NODE_ENV !== "production") console.time(`[orders/${id}] db-fetch`);
     const { data: rawData, error } = await supabase
       .from("orders")
       .select(
@@ -48,7 +48,7 @@ async function fetchOrder(id: string, userId: string): Promise<FetchResult> {
       .eq("id", id)
       .limit(1)
       .maybeSingle();
-    console.timeEnd(`[orders/${id}] db-fetch`);
+    if (process.env.NODE_ENV !== "production") console.timeEnd(`[orders/${id}] db-fetch`);
 
     // Cast through unknown — FlexDatabase uses a loose generic that doesn't
     // infer column types from the select string. This is safe because we
@@ -77,22 +77,26 @@ async function fetchOrder(id: string, userId: string): Promise<FetchResult> {
 
 
     if (error) {
-      console.error(`[orders/${id}] DB error:`, error.message, error.code);
+      if (process.env.NODE_ENV !== "production") console.error(`[orders/${id}] DB error:`, error.message, error.code);
       return { ok: false, reason: "error", message: error.message };
     }
 
     if (!raw) {
-      console.warn(`[orders/${id}] order not found in DB`);
+      if (process.env.NODE_ENV !== "production") console.warn(`[orders/${id}] order not found in DB`);
       return { ok: false, reason: "not-found" };
     }
 
-    console.log(`[orders/${id}] found order, shop_id=${raw.shop_id}, status=${raw.status}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[orders/${id}] found order, shop_id=${raw.shop_id}, status=${raw.status}`);
+    }
 
     // Verify shop access using the canManageShop helper (handles owners, managers, staff, admins)
     const { canManageShop } = await import("@/lib/auth/shop-access");
     const isAuthorized = await canManageShop(userId, raw.shop_id);
     if (!isAuthorized) {
-      console.warn(`[orders/${id}] unauthorized: userId=${userId} does not manage shop=${raw.shop_id}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[orders/${id}] unauthorized: userId=${userId} does not manage shop=${raw.shop_id}`);
+      }
       return { ok: false, reason: "unauthorized" };
     }
 
@@ -124,7 +128,7 @@ async function fetchOrder(id: string, userId: string): Promise<FetchResult> {
     return { ok: true, order };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error(`[orders/${id}] unexpected error:`, message);
+    if (process.env.NODE_ENV !== "production") console.error(`[orders/${id}] unexpected error:`, message);
     return { ok: false, reason: "error", message };
   }
 }
@@ -143,8 +147,9 @@ export default async function OrderDetailPage({
   }
 
   const { id } = params;
-  console.log(`[orders/${id}] rendering for userId=${userId}`);
-
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[orders/${id}] rendering for userId=${userId}`);
+  }
   const result = await fetchOrder(id, userId);
 
   if (!result.ok) {

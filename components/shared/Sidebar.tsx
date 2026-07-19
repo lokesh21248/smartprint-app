@@ -96,7 +96,7 @@ export function Sidebar() {
     setCollapsed((prev) => !prev);
   }, []);
 
-  const renderNavItems = (isMobile = false) => {
+  const renderNavItems = useCallback((isMobile = false) => {
     const isCollapsed = !isMobile && collapsed;
     return navItems.map((item) => {
       const isActive =
@@ -135,7 +135,7 @@ export function Sidebar() {
         </Link>
       );
     });
-  };
+  }, [collapsed, pathname, pendingCount]);
 
   const sidebarContent = (
     <aside
@@ -238,6 +238,7 @@ export function Sidebar() {
             className="fixed inset-0 z-40 bg-black/40 md:hidden"
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
+            role="presentation"
           />
           {/* Drawer */}
           <div className="fixed left-0 top-0 h-full z-50 md:hidden animate-slide-in-left">

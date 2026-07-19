@@ -38,19 +38,29 @@ function playNotificationSound() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Browser push notification
+// Permission is requested proactively in useRealtimeOrders via a useEffect
+// so it is attached to an explicit user gesture (page load interaction),
+// not inside an async event handler where browsers block permission prompts.
 // ─────────────────────────────────────────────────────────────────────────────
 function showBrowserNotification(order: Order) {
   if (typeof window === "undefined") return;
-  if (Notification.permission === "granted") {
+  if (Notification.permission !== "granted") {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Realtime] 🔕 Browser notification skipped — permission not granted. Current:", Notification.permission);
+    }
+    return;
+  }
+  try {
     new Notification("🖨️ New Print Order!", {
       body: `${order.customer_name || "Customer"} placed an order — ₹${order.total_amount}`,
       icon: "/favicon.ico",
       tag: order.id,
     });
-  } else if (Notification.permission !== "denied") {
-    Notification.requestPermission().then((perm) => {
-      if (perm === "granted") showBrowserNotification(order);
-    });
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Realtime] 🔔 Browser notification dispatched for order:", order.id);
+    }
+  } catch (err) {
+    console.error("[Realtime] ❌ Browser notification failed:", err);
   }
 }
 
@@ -237,9 +247,12 @@ async function initSubscription(
 
   channel.subscribe((status: string, err?: Error) => {
     if (status === "SUBSCRIBED") {
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[Realtime] ✅ Connected: listening to public.orders for shop "${shopId}"`);
-      }
+      console.log(
+        `[Realtime] ✅ SUBSCRIBED to channel "${channelName}" for shop "${shopId}".`,
+        `\n  → If no INSERT events arrive, verify:`,
+        `\n  1. orders table is in supabase_realtime publication (run: ALTER PUBLICATION supabase_realtime ADD TABLE orders;)`,
+        `\n  2. RLS policy allows anon SELECT on orders (run migration 20260709000001_enable_realtime_orders.sql)`,
+      );
       reconnectAttempts = 0;
       isReconnecting = false;
       _setStatus?.("connected");
@@ -250,6 +263,10 @@ async function initSubscription(
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       console.warn(`[Realtime] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
       handleReconnect(shopId, setRealtimeChannel);
+    } else {
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] ℹ️ Subscription status: "${status}" for shop "${shopId}"`);
+      }
     }
   });
 
@@ -294,6 +311,27 @@ export function useRealtimeOrders(shopId: string | null) {
     _setStatus = setRealtimeStatus;
     return () => { _setStatus = null; };
   }, [setRealtimeStatus]);
+
+  // Proactively request browser notification permission on mount.
+  // Must be done here (inside a useEffect, linked to a page-load event) NOT inside
+  // the realtime event handler — browsers block permission prompts in async callbacks.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Realtime] 🔔 Requesting browser notification permission...");
+      }
+      Notification.requestPermission().then((perm) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Realtime] 🔔 Browser notification permission: "${perm}"`);
+        }
+      }).catch((err) => {
+        console.warn("[Realtime] Failed to request notification permission:", err);
+      });
+    } else if (process.env.NODE_ENV !== "production") {
+      console.log(`[Realtime] 🔔 Browser notification permission already set: "${Notification.permission}"`);
+    }
+  }, []);
 
   // Create refs to keep handler callbacks always fresh without re-subscribing
   const handlersRef = useRef({

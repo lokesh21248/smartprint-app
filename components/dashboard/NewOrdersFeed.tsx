@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,9 @@ import type { Order } from "@/types";
 
 type ScanStatus = "pending" | "scanning" | "clean" | "infected" | "failed" | null;
 
-function ScanStatusBadge({ status }: { status: ScanStatus }) {
+// Wrapped in React.memo: scan status rarely changes; prevents re-renders
+// when the parent NewOrdersFeed re-renders due to realtime order updates.
+const ScanStatusBadge = memo(function ScanStatusBadge({ status }: { status: ScanStatus }) {
   if (!status || status === "clean") return null;
 
   if (status === "infected") {
@@ -61,7 +63,7 @@ function ScanStatusBadge({ status }: { status: ScanStatus }) {
   }
 
   return null;
-}
+});
 
 /**
  * Fetches new orders via the authenticated server API route.

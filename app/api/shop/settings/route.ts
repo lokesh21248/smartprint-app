@@ -9,7 +9,8 @@ const SettingsPatchSchema = z.object({
   shopId: z.string().uuid("shopId must be a valid UUID"),
   soundEnabled: z.boolean().optional(),
   // Extend this enum when new sounds are added to the audio manager
-  notificationSound: z.enum(["whatsapp", "bell", "chime", "ding", "none"]).optional(),
+  // Must exactly match: stores/settingsStore.ts NotificationSound type + audioManager preloaded sounds
+  notificationSound: z.enum(["whatsapp", "cash", "bell", "ding"]).optional(),
 });
 
 export async function GET(request: Request) {

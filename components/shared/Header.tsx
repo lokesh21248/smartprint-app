@@ -110,7 +110,7 @@ export function Header() {
           onClick={openMobileSidebar}
           className="md:hidden flex-shrink-0 p-2 rounded-xl text-slate-500 border border-slate-100 hover:bg-slate-50/50 hover:text-slate-800 transition-all duration-200"
           aria-label="Open navigation menu"
-          aria-haspopup="true"
+          aria-haspopup="dialog"
         >
           <Menu className="h-4.5 w-4.5" aria-hidden="true" />
         </button>
@@ -123,7 +123,7 @@ export function Header() {
             <div className="h-4 flex items-center mt-0.5">
               {mounted ? (
                 <p className="text-[11px] font-bold text-slate-400 truncate animate-fade-in leading-none">
-                  {greetingRef.current}, {shopName} 👋
+                  {greetingRef.current}, {shopName} <span aria-hidden="true">👋</span>
                 </p>
               ) : (
                 <div className="h-2.5 w-24 bg-slate-100 rounded animate-pulse" />
@@ -138,6 +138,7 @@ export function Header() {
         {/* Notification Bell */}
         <button
           type="button"
+          id="notification-bell"
           className="relative p-2.5 rounded-xl text-slate-500 border border-transparent hover:border-slate-100 hover:bg-slate-50/50 hover:text-slate-850 transition-all duration-200 min-tap flex items-center justify-center"
           aria-label={
             pendingCount + notificationCount > 0
