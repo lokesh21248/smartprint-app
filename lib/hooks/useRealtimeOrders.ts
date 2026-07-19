@@ -15,24 +15,27 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 // Prevents duplicate notification sound triggers if network hiccups cause duplicate events
 const playedOrderIds = new Set<string>();
 
+// Single source of truth — avoids repeated process.env.NODE_ENV lookups
+const isDev = process.env.NODE_ENV !== "production";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Audio notification (Delegated to preloaded AudioManager & settingsStore)
 // ─────────────────────────────────────────────────────────────────────────────
 function playNotificationSound() {
   try {
     const { soundEnabled, notificationSound } = useSettingsStore.getState();
-    if (process.env.NODE_ENV !== "production") {
+    if (isDev) {
       console.log(
         `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}, Choice="${notificationSound}"`
       );
     }
     if (soundEnabled) {
       audioManager.play(notificationSound);
-    } else if (process.env.NODE_ENV !== "production") {
+    } else if (isDev) {
       console.log("[Realtime] 🔇 playNotificationSound: Alert sound skipped (merchant sound toggle is off)");
     }
   } catch (err) {
-    console.error("[Realtime] ❌ playNotificationSound: Playback exception inside realtime trigger:", err);
+    if (isDev) console.error("[Realtime] ❌ playNotificationSound: Playback exception inside realtime trigger:", err);
   }
 }
 
@@ -45,7 +48,7 @@ function playNotificationSound() {
 function showBrowserNotification(order: Order) {
   if (typeof window === "undefined") return;
   if (Notification.permission !== "granted") {
-    if (process.env.NODE_ENV !== "production") {
+    if (isDev) {
       console.warn("[Realtime] 🔕 Browser notification skipped — permission not granted. Current:", Notification.permission);
     }
     return;
@@ -56,11 +59,11 @@ function showBrowserNotification(order: Order) {
       icon: "/favicon.ico",
       tag: order.id,
     });
-    if (process.env.NODE_ENV !== "production") {
+    if (isDev) {
       console.log("[Realtime] 🔔 Browser notification dispatched for order:", order.id);
     }
   } catch (err) {
-    console.error("[Realtime] ❌ Browser notification failed:", err);
+    if (isDev) console.error("[Realtime] ❌ Browser notification failed:", err);
   }
 }
 
@@ -131,7 +134,7 @@ function handleReconnect(
 ) {
   if (isReconnecting) return;
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.error(`[Realtime] ❌ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached for shop "${shopId}". Stopping retries.`);
+    if (isDev) console.error(`[Realtime] ❌ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached for shop "${shopId}". Stopping retries.`);
     _setStatus?.("disconnected");
     return;
   }
@@ -141,7 +144,7 @@ function handleReconnect(
   const delay = Math.min(INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), 30000);
   _setStatus?.("reconnecting");
 
-  if (process.env.NODE_ENV !== "production") {
+  if (isDev) {
     console.log(`[Realtime] 🔄 Scheduling reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} for shop "${shopId}" in ${delay}ms...`);
   }
 
@@ -149,7 +152,7 @@ function handleReconnect(
   reconnectTimer = setTimeout(async () => {
     isReconnecting = false;
     try {
-      if (process.env.NODE_ENV !== "production") {
+      if (isDev) {
         console.log(`[Realtime] 🚀 Executing scheduled reconnect attempt ${reconnectAttempts} for shop "${shopId}"...`);
       }
       // Ensure we remove the channel before establishing a new one
@@ -161,7 +164,7 @@ function handleReconnect(
       }
       await initSubscription(shopId, setRealtimeChannel);
     } catch (e) {
-      console.error(`[Realtime] ❌ Reconnect attempt ${reconnectAttempts} failed:`, e);
+      if (isDev) console.error(`[Realtime] ❌ Reconnect attempt ${reconnectAttempts} failed:`, e);
       handleReconnect(shopId, setRealtimeChannel);
     }
   }, delay);
@@ -176,12 +179,12 @@ async function initSubscription(
   if (activeChannel && activeChannelShopId === shopId) {
     const state = (activeChannel as unknown as ChannelWithState).state;
     if (state === "joined" || state === "joining") {
-      if (process.env.NODE_ENV !== "production") {
+      if (isDev) {
         console.log(`[Realtime] 🛡️ Channel already exists and is active (${state}) for shop ${shopId}. Reusing active channel.`);
       }
       return;
     } else {
-      if (process.env.NODE_ENV !== "production") {
+      if (isDev) {
         console.log(`[Realtime] 🔄 Channel exists but is in "${state}" state. Re-initializing.`);
       }
       const oldChannel = activeChannel;
@@ -197,7 +200,7 @@ async function initSubscription(
 
   // Cleanup old channel if shopId changed
   if (activeChannel && activeChannelShopId !== shopId) {
-    if (process.env.NODE_ENV !== "production") {
+    if (isDev) {
       console.log(`[Realtime] 🔌 Shop ID changed from ${activeChannelShopId} to ${shopId}. Cleaning up old channel.`);
     }
     const oldChannel = activeChannel;
@@ -217,13 +220,13 @@ async function initSubscription(
     .find((c) => c.topic === channelTopic);
 
   if (existingChannel) {
-    if (process.env.NODE_ENV !== "production") {
+    if (isDev) {
       console.log(`[Realtime] 🗑️ Removing duplicate channel from Supabase registry: ${channelName}`);
     }
     await supabase.removeChannel(existingChannel).catch(() => {});
   }
 
-  if (process.env.NODE_ENV !== "production") {
+  if (isDev) {
     console.log("[Realtime] Subscribing:", shopId);
   }
 
@@ -247,12 +250,17 @@ async function initSubscription(
 
   channel.subscribe((status: string, err?: Error) => {
     if (status === "SUBSCRIBED") {
-      console.log(
-        `[Realtime] ✅ SUBSCRIBED to channel "${channelName}" for shop "${shopId}".`,
-        `\n  → If no INSERT events arrive, verify:`,
-        `\n  1. orders table is in supabase_realtime publication (run: ALTER PUBLICATION supabase_realtime ADD TABLE orders;)`,
-        `\n  2. RLS policy allows anon SELECT on orders (run migration 20260709000001_enable_realtime_orders.sql)`,
-      );
+      // Only log in development — this message exposes the shop UUID and
+      // internal infrastructure hints (ALTER PUBLICATION, migration filenames)
+      // in the production browser console.
+      if (isDev) {
+        console.log(
+          `[Realtime] ✅ SUBSCRIBED to channel "${channelName}" for shop "${shopId}".`,
+          `\n  → If no INSERT events arrive, verify:`,
+          `\n  1. orders table is in supabase_realtime publication (run: ALTER PUBLICATION supabase_realtime ADD TABLE orders;)`,
+          `\n  2. RLS policy allows anon SELECT on orders (run migration 20260709000001_enable_realtime_orders.sql)`,
+        );
+      }
       reconnectAttempts = 0;
       isReconnecting = false;
       _setStatus?.("connected");
@@ -261,10 +269,12 @@ async function initSubscription(
         reconnectTimer = null;
       }
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      console.warn(`[Realtime] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
+      // Keep this warn in both dev and prod — connection failures are actionable
+      // and help diagnose issues from Vercel/Sentry error monitoring.
+      if (isDev) console.warn(`[Realtime] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
       handleReconnect(shopId, setRealtimeChannel);
     } else {
-      if (process.env.NODE_ENV !== "production") {
+      if (isDev) {
         console.log(`[Realtime] ℹ️ Subscription status: "${status}" for shop "${shopId}"`);
       }
     }

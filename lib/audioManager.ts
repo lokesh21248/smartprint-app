@@ -5,12 +5,19 @@
  * Caches preloaded HTMLAudioElement instances and provides a 
  * Web Audio API synthesizer fallback for guaranteed, offline-safe 
  * audio alert delivery on all mobile and desktop browsers.
+ *
+ * NOTE: All console.log / console.warn calls are guarded with
+ * NODE_ENV !== "production" so they NEVER appear in production DevTools.
+ * Only genuine errors (console.error) surface in production.
  */
 
 // Extend Window to cover vendor-prefixed AudioContext without `any`
 interface WindowWithWebkitAudio extends Window {
   webkitAudioContext?: typeof AudioContext;
 }
+
+// Single source of truth — avoids repeated process.env.NODE_ENV lookups
+const isDev = process.env.NODE_ENV !== "production";
 
 class AudioManager {
   private audioCache: Record<string, HTMLAudioElement> = {};
@@ -28,7 +35,7 @@ class AudioManager {
    * Preloads all sound elements into memory
    */
   public preload() {
-    console.log("[AudioManager] 🎧 Preloading all notification sounds...");
+    if (isDev) console.log("[AudioManager] 🎧 Preloading all notification sounds...");
     this.sounds.forEach((sound) => {
       try {
         if (this.audioCache[sound]) return; // Already cached
@@ -41,9 +48,9 @@ class AudioManager {
 
         // Cache the preloaded HTMLAudioElement instance
         this.audioCache[sound] = audio;
-        console.log(`[AudioManager] Preload success: ${sound}.mp3 cached`);
+        if (isDev) console.log(`[AudioManager] Preload success: ${sound}.mp3 cached`);
       } catch (err) {
-        console.error(`[AudioManager] ❌ Failed to preload sound "${sound}":`, err);
+        if (isDev) console.error(`[AudioManager] ❌ Failed to preload sound "${sound}":`, err);
       }
     });
   }
@@ -56,7 +63,7 @@ class AudioManager {
   public unlock() {
     if (this.unlocked) return;
 
-    console.log("[AudioManager] 🔓 Unlocking browser audio for this session...");
+    if (isDev) console.log("[AudioManager] 🔓 Unlocking browser audio for this session...");
 
     // 1. Silent playback on preloaded cached audio elements to satisfy mobile autoplay policies
     Object.entries(this.audioCache).forEach(([name, audio]) => {
@@ -66,10 +73,10 @@ class AudioManager {
           .then(() => {
             audio.pause();
             audio.currentTime = 0;
-            console.log(`[AudioManager] HTML5 pre-play unlocked successfully: ${name}`);
+            if (isDev) console.log(`[AudioManager] HTML5 pre-play unlocked successfully: ${name}`);
           })
           .catch((err) => {
-            console.warn(`[AudioManager] Autoplay unlock deferred for "${name}":`, err.message);
+            if (isDev) console.warn(`[AudioManager] Autoplay unlock deferred for "${name}":`, err.message);
           });
       }
     });
@@ -84,11 +91,11 @@ class AudioManager {
         }
       }
     } catch (e) {
-      console.warn("[AudioManager] Failed to initialize AudioContext:", e);
+      if (isDev) console.warn("[AudioManager] Failed to initialize AudioContext:", e);
     }
 
     this.unlocked = true;
-    console.log("[AudioManager] 🔊 Browser audio successfully warmed & unlocked!");
+    if (isDev) console.log("[AudioManager] 🔊 Browser audio successfully warmed & unlocked!");
   }
 
   /**
@@ -99,12 +106,12 @@ class AudioManager {
     // 1. Resolve sound target with a bulletproof fallback to "whatsapp" if missing or invalid
     let targetSound = sound;
     if (!targetSound || !this.sounds.includes(targetSound)) {
-      console.warn(`[AudioManager] Sound name "${sound}" is empty or invalid. Falling back to "whatsapp".`);
+      if (isDev) console.warn(`[AudioManager] Sound name "${sound}" is empty or invalid. Falling back to "whatsapp".`);
       targetSound = "whatsapp";
     }
 
     if (!this.audioCache[targetSound]) {
-      console.warn(`[AudioManager] Sound "${targetSound}" not found in cache. Re-initializing cache and falling back to "whatsapp".`);
+      if (isDev) console.warn(`[AudioManager] Sound "${targetSound}" not found in cache. Re-initializing cache and falling back to "whatsapp".`);
       this.preload();
       targetSound = "whatsapp";
     }
@@ -113,14 +120,14 @@ class AudioManager {
 
     if (audio) {
       try {
-        console.log(`[AudioManager] 🔊 Sound play requested for: "${targetSound}"`);
+        if (isDev) console.log(`[AudioManager] 🔊 Sound play requested for: "${targetSound}"`);
         // Reset playback position so subsequent triggers start instantly
         audio.currentTime = 0;
         await audio.play();
-        console.log(`[AudioManager] ✅ Audio element playing: "${targetSound}"`);
+        if (isDev) console.log(`[AudioManager] ✅ Audio element playing: "${targetSound}"`);
         return;
       } catch (err: unknown) {
-        console.warn(
+        if (isDev) console.warn(
           `[AudioManager] ⚠️ HTML5 play failed for "${targetSound}" (Autoplay block or missing codec). Error:`,
           err instanceof Error ? err.message : err
         );
@@ -128,7 +135,7 @@ class AudioManager {
     }
 
     // 2. Programmatic high-quality synthesizer fallback (works offline and under autoplay restrictions)
-    console.log(`[AudioManager] ⚡ Falling back to Web Audio Synthesis for: "${targetSound}"`);
+    if (isDev) console.log(`[AudioManager] ⚡ Falling back to Web Audio Synthesis for: "${targetSound}"`);
     this.playSynthesizedSound(targetSound);
   }
 
@@ -156,22 +163,23 @@ class AudioManager {
         // WhatsApp dual tone: 554.37Hz (C#5) and 659.25Hz (E5) chimes
         this.synthesizeChime(ctx, 554.37, now, 0.08);
         this.synthesizeChime(ctx, 659.25, now + 0.09, 0.18);
-        console.log("[AudioManager] Synthesized WhatsApp dual-tone");
+        if (isDev) console.log("[AudioManager] Synthesized WhatsApp dual-tone");
       } else if (sound === "cash") {
         // Cash Register: Metallic noise transient + high coin chime (1567Hz)
         this.synthesizeNoise(ctx, now, 0.1);
         this.synthesizeChime(ctx, 1567.98, now + 0.05, 0.45, "triangle");
-        console.log("[AudioManager] Synthesized Cash Register chimes");
+        if (isDev) console.log("[AudioManager] Synthesized Cash Register chimes");
       } else if (sound === "bell") {
         // Service Bell: Resonance frequency (880Hz + 883Hz wobbling beat)
         this.synthesizeBell(ctx, 880, now, 0.8);
-        console.log("[AudioManager] Synthesized Service Bell chime");
+        if (isDev) console.log("[AudioManager] Synthesized Service Bell chime");
       } else {
         // Ding: 1174.66Hz (D6) simple clean ding
         this.synthesizeChime(ctx, 1174.66, now, 0.3, "sine");
-        console.log("[AudioManager] Synthesized Minimalist Ding chime");
+        if (isDev) console.log("[AudioManager] Synthesized Minimalist Ding chime");
       }
     } catch (e) {
+      // Keep this error visible — synthesis failure means no audio alerts at all
       console.error("[AudioManager] ❌ Web Audio synthesis failed completely:", e);
     }
   }
