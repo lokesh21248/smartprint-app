@@ -38,7 +38,7 @@ export function withShopAccessCache<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * Resolves the shop ID associated with a user.
- * Checks ownership first, then falls back to staff assignments.
+ * Checks ownership and staff assignments in parallel.
  *
  * @param userId Clerk User ID
  */
@@ -46,28 +46,27 @@ export async function getUserShop(userId: string): Promise<string | null> {
   if (!userId) return null;
   const supabase = createAdminClient();
 
-  // 1. Check if the user is the owner of a shop
-  const { data: ownerShop } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("clerk_owner_id", userId)
-    .limit(1)
-    .maybeSingle();
+  const [ownerShopResult, staffRecordResult] = await Promise.all([
+    supabase
+      .from("shops")
+      .select("id")
+      .eq("clerk_owner_id", userId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("shop_staff")
+      .select("shop_id")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  if (ownerShop) {
-    return ownerShop.id;
+  if (ownerShopResult.data) {
+    return ownerShopResult.data.id;
   }
 
-  // 2. Check if the user is a staff/manager in shop_staff
-  const { data: staffRecord } = await supabase
-    .from("shop_staff")
-    .select("shop_id")
-    .eq("user_id", userId)
-    .limit(1)
-    .maybeSingle();
-
-  if (staffRecord) {
-    return staffRecord.shop_id;
+  if (staffRecordResult.data) {
+    return staffRecordResult.data.shop_id;
   }
 
   return null;

@@ -35,25 +35,38 @@ export async function POST() {
 
     const supabase = createAdminClient();
 
-    // Single atomic UPDATE via RPC — no SELECT + UPDATE race condition
-    const { data: isOpen, error } = await supabase.rpc("toggle_shop_open", {
-      p_shop_id: shopId,
-    });
+    // Fetch current status
+    const { data: shop, error: fetchError } = await supabase
+      .from("shops")
+      .select("is_open")
+      .eq("id", shopId)
+      .single();
 
-    if (error) {
-      // RPC raises an exception if shop is not found
-      if (error.message?.includes("not found")) {
-        return NextResponse.json({ error: "Shop not found" }, { status: 404 });
-      }
-      console.error("[POST /api/shop/toggle-open] RPC error:", error.message);
+    if (fetchError || !shop) {
+      console.error("[POST /api/shop/toggle-open] Fetch error:", fetchError?.message);
+      return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+    }
+
+    // Toggle the status
+    const newStatus = !shop.is_open;
+    const { data: updatedShop, error: updateError } = await supabase
+      .from("shops")
+      .update({ is_open: newStatus, updated_at: new Date().toISOString() })
+      .eq("id", shopId)
+      .select("is_open")
+      .single();
+
+    if (updateError || !updatedShop) {
+      console.error("[POST /api/shop/toggle-open] Update error:", updateError?.message);
       return NextResponse.json({ error: "Failed to toggle shop status" }, { status: 500 });
     }
 
     return NextResponse.json(
-      { is_open: isOpen },
+      { is_open: updatedShop.is_open },
       { headers: { "Cache-Control": "no-store" } }
     );
-  } catch {
+  } catch (err) {
+    console.error("[POST /api/shop/toggle-open] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
