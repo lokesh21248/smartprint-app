@@ -7,8 +7,7 @@ import { useAuth } from '@clerk/nextjs';
 /**
  * Client-side redirect for users visiting the homepage.
  * - Logged-in user → /dashboard
- * - Logged-out returning visitor → /login
- * - Logged-out first-time visitor → Show homepage, sets visited flag
+ * - Logged-out user → Show homepage instantly
  */
 export function HomeAuthRedirect() {
   const { isSignedIn, isLoaded } = useAuth();
@@ -33,17 +32,10 @@ export function HomeAuthRedirect() {
 
   useEffect(() => {
     if (redirectTimedOut) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log("[HomeAuthRedirect] Skip redirect check: already timed out.");
-      }
       return;
     }
     if (hasCheckedRef.current) {
       return;
-    }
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log("[HomeAuthRedirect] Auth status check: isLoaded =", isLoaded, ", isSignedIn =", isSignedIn);
     }
 
     if (isLoaded) {
@@ -54,23 +46,10 @@ export function HomeAuthRedirect() {
         }
         router.replace('/dashboard');
       } else {
-        const hasVisited = localStorage.getItem("scan2paper_visited");
         if (process.env.NODE_ENV !== 'production') {
-          console.log("[HomeAuthRedirect] User is signed out. localStorage 'scan2paper_visited' =", hasVisited);
+          console.log("[HomeAuthRedirect] User is signed out. Showing homepage.");
         }
-
-        if (hasVisited) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log("[HomeAuthRedirect] Returning visitor. Redirecting to /login.");
-          }
-          router.replace('/login');
-        } else {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log("[HomeAuthRedirect] First-time visitor. Showing homepage immediately.");
-          }
-          document.documentElement.classList.remove('js-redirecting');
-          localStorage.setItem("scan2paper_visited", "true");
-        }
+        document.documentElement.classList.remove('js-redirecting');
       }
     }
   }, [isLoaded, isSignedIn, router, redirectTimedOut]);
@@ -81,7 +60,7 @@ export function HomeAuthRedirect() {
         dangerouslySetInnerHTML={{
           __html: `
             try {
-              if (localStorage.getItem('scan2paper_visited') || document.cookie.indexOf('__session') !== -1) {
+              if (document.cookie.indexOf('__session') !== -1) {
                 document.documentElement.classList.add('js-redirecting');
               }
             } catch (e) {}
@@ -114,7 +93,7 @@ export function HomeAuthRedirect() {
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full border-4 border-emerald-100 border-t-emerald-600 animate-spin" />
           <p className="text-gray-600 font-semibold text-base animate-pulse">
-            Redirecting you...
+            Redirecting to your dashboard...
           </p>
         </div>
       </div>
