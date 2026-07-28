@@ -37,15 +37,15 @@ export function AdminOverviewClient({ stats, latestOrders, chartData }: AdminOve
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {[
+      {[
           { label: "Total Revenue", value: formatCurrency(stats.totalRevenue), icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Active Shops", value: stats.activeShops, icon: Store, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Total Orders", value: stats.totalOrders, icon: ShoppingBag, color: "text-orange-600", bg: "bg-orange-50" },
-        ].map((item, i) => (
-          <div key={i} className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
+          { label: "Active Shops",  value: stats.activeShops,                  icon: Store,        color: "text-blue-600",    bg: "bg-blue-50"    },
+          { label: "Total Orders",  value: stats.totalOrders,                  icon: ShoppingBag,  color: "text-orange-600",  bg: "bg-orange-50"  },
+        ].map((item) => (
+          <div key={item.label} className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div className={`w-12 h-12 rounded-2xl ${item.bg} flex items-center justify-center`}>
-                <item.icon className={`h-6 w-6 ${item.color}`} />
+                <item.icon className={`h-6 w-6 ${item.color}`} aria-hidden="true" />
               </div>
             </div>
             <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">{item.label}</p>
@@ -58,7 +58,10 @@ export function AdminOverviewClient({ stats, latestOrders, chartData }: AdminOve
         <div className="xl:col-span-2 bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-8">
             <h3 className="font-bold text-gray-900">Revenue Trends</h3>
-            <select className="bg-gray-50 border-none rounded-lg text-xs font-bold px-3 py-2 outline-none">
+            <select
+              aria-label="Select time range"
+              className="bg-gray-50 border-none rounded-lg text-xs font-bold px-3 py-2 outline-none"
+            >
               <option>Last 7 Days</option>
               <option>Last 30 Days</option>
             </select>
@@ -88,27 +91,31 @@ export function AdminOverviewClient({ stats, latestOrders, chartData }: AdminOve
         <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-6">Recent Activity</h3>
           <div className="space-y-6">
-            {(latestOrders.slice(0, 10).map((o, index) => {
+            {latestOrders.slice(0, 10).map((o, index) => {
               const isNew = o.status === "PLACED";
-              return {
-                type: isNew ? "shop" : "order",
-                text: isNew ? `New order #${o.short_token} from ${o.customer_name || 'Guest'}` : `Order #${o.short_token} updated to ${o.status}`,
-                time: new Date(o.created_at).toLocaleString(),
-                color: isNew ? "bg-blue-500" : "bg-emerald-500",
-                id: o.id + index,
-              };
-            })).map((item, i, arr) => (
-              <div key={item.id} className="flex gap-4">
-                <div className="relative">
-                  <div className={`w-2.5 h-2.5 rounded-full ${item.color} mt-1.5`} />
-                  {i < arr.length - 1 && <div className="absolute top-4 left-1 w-[1px] h-10 bg-gray-100" />}
+              const text = isNew
+                ? `New order #${o.short_token} from ${o.customer_name || "Guest"}`
+                : `Order #${o.short_token} updated to ${o.status}`;
+              const dotColor = isNew ? "bg-blue-500" : "bg-emerald-500";
+              const isLast = index === Math.min(latestOrders.length, 10) - 1;
+              return (
+                <div key={o.id} className="flex gap-4">
+                  <div className="relative">
+                    <div className={`w-2.5 h-2.5 rounded-full ${dotColor} mt-1.5`} />
+                    {!isLast && <div className="absolute top-4 left-1 w-[1px] h-10 bg-gray-100" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 leading-tight">{text}</p>
+                    <p
+                      className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-tighter"
+                      suppressHydrationWarning
+                    >
+                      {new Date(o.created_at).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-800 leading-tight">{item.text}</p>
-                  <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-tighter" suppressHydrationWarning>{item.time}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <button className="w-full mt-8 py-3 bg-gray-50 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors">
             View All Logs

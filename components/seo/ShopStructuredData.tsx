@@ -1,13 +1,52 @@
 /**
  * ShopStructuredData — Server Component (no "use client" directive).
  *
- * CRITICAL: This must remain a server component.
- * "use client" would cause this script tag to be injected by JavaScript
- * after page load, making it invisible to Googlebot on the initial HTML response.
- * As a server component it is rendered into the static HTML payload,
- * which is what Google's crawler actually reads.
+ * CRITICAL: Must remain a server component. Adding "use client" would inject
+ * the script tag via JS after page load, making it invisible to Googlebot on
+ * the initial HTML response.
  */
 
+// ── Constants lifted to module scope — only computed once per process ──────
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://scan2paper.com";
+const LOGO_URL = `${APP_URL}/logo.png`;
+
+// Schema.org day abbreviation map — frozen so it is never mutated
+const DAY_MAP: Readonly<Record<string, string>> = Object.freeze({
+  Monday: "Mo",
+  Tuesday: "Tu",
+  Wednesday: "We",
+  Thursday: "Th",
+  Friday: "Fr",
+  Saturday: "Sa",
+  Sunday: "Su",
+});
+
+const DEFAULT_WORKING_DAYS = "Mo Tu We Th Fr Sa"; // sensible default for Indian shops
+
+/** Encodes JSON-LD safely for inline <script> — prevents XSS via </script> injection */
+const safeStringify = (obj: unknown): string =>
+  JSON.stringify(obj)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+
+/**
+ * Maps a working_days array to Schema.org openingHours format.
+ * E.g. ["Monday","Saturday"] → "Mo Sa 09:00-21:00"
+ */
+function buildOpeningHours(
+  opening: string,
+  closing: string,
+  workingDays: readonly string[]
+): string {
+  const days =
+    workingDays.length > 0
+      ? workingDays.map((d) => DAY_MAP[d] ?? d.slice(0, 2)).join(" ")
+      : DEFAULT_WORKING_DAYS;
+  return `${days} ${opening}-${closing}`;
+}
+
+// ── Strict prop types — removes index signature so callers get type-checking ─
 interface ShopDisplayData {
   name?: string;
   address?: string;
@@ -19,42 +58,19 @@ interface ShopDisplayData {
   opening_time?: string;
   closing_time?: string;
   working_days?: string[];
-  [key: string]: unknown;
-}
-
-/**
- * Maps working_days array to Schema.org day abbreviations.
- * E.g. ["Monday","Tuesday","Saturday"] → "Mo Tu Sa"
- */
-function buildOpeningHours(
-  opening: string,
-  closing: string,
-  workingDays: string[]
-): string {
-  const dayMap: Record<string, string> = {
-    Monday: "Mo",
-    Tuesday: "Tu",
-    Wednesday: "We",
-    Thursday: "Th",
-    Friday: "Fr",
-    Saturday: "Sa",
-    Sunday: "Su",
-  };
-  const days =
-    workingDays.length > 0
-      ? workingDays.map((d) => dayMap[d] ?? d.slice(0, 2)).join(" ")
-      : "Mo Tu We Th Fr Sa"; // sensible default for Indian shops
-  return `${days} ${opening}-${closing}`;
 }
 
 export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
-  if (!shop || !shop.name) return null;
+  if (!shop.name || !shop.slug) return null;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scan2paper.com";
-  const shopUrl = `${appUrl}/s/${shop.slug}`;
+  const shopUrl = `${APP_URL}/s/${shop.slug}`;
+
+  // Build the Google Maps search URL once
+  const mapsQuery = encodeURIComponent(
+    [shop.name, shop.address, shop.city, shop.state].filter(Boolean).join(", ")
+  );
 
   // ── LocalBusiness JSON-LD ─────────────────────────────────────────────────
-  // Uses real DB address fields instead of placeholder "City" / "State"
   const localBusinessLd = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
@@ -62,11 +78,8 @@ export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
     name: shop.name,
     description: `${shop.name} is a local print shop offering online document upload, black & white printing, and colour printing via Scan2Paper.`,
     url: shopUrl,
-    logo: {
-      "@type": "ImageObject",
-      url: `${appUrl}/logo.png`,
-    },
-    image: `${appUrl}/logo.png`,
+    logo: { "@type": "ImageObject", url: LOGO_URL },
+    image: LOGO_URL,
     address: {
       "@type": "PostalAddress",
       streetAddress: shop.address ?? "",
@@ -79,13 +92,10 @@ export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
     openingHours: buildOpeningHours(
       shop.opening_time ?? "09:00",
       shop.closing_time ?? "21:00",
-      (shop.working_days as string[]) ?? []
+      shop.working_days ?? []
     ),
     priceRange: "₹",
-    servesCuisine: undefined, // not applicable
-    hasMap: `https://maps.google.com/?q=${encodeURIComponent(
-      [shop.name, shop.address, shop.city, shop.state].filter(Boolean).join(", ")
-    )}`,
+    hasMap: `https://maps.google.com/?q=${mapsQuery}`,
   };
 
   // ── BreadcrumbList JSON-LD ────────────────────────────────────────────────
@@ -93,32 +103,11 @@ export function ShopStructuredData({ shop }: { shop: ShopDisplayData }) {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      {
-        "@type": "ListItem",
-        position: 1,
-        name: "Home",
-        item: `${appUrl}/`,
-      },
-      {
-        "@type": "ListItem",
-        position: 2,
-        name: "Find a Shop",
-        item: `${appUrl}/find-shop`,
-      },
-      {
-        "@type": "ListItem",
-        position: 3,
-        name: shop.name,
-        item: shopUrl,
-      },
+      { "@type": "ListItem", position: 1, name: "Home", item: `${APP_URL}/` },
+      { "@type": "ListItem", position: 2, name: "Find a Shop", item: `${APP_URL}/find-shop` },
+      { "@type": "ListItem", position: 3, name: shop.name, item: shopUrl },
     ],
   };
-
-  const safeStringify = (obj: unknown) =>
-    JSON.stringify(obj)
-      .replace(/</g, "\\u003c")
-      .replace(/>/g, "\\u003e")
-      .replace(/&/g, "\\u0026");
 
   return (
     <>

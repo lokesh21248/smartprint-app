@@ -21,7 +21,15 @@ export const metadata: Metadata = {
 // and serve it to others sharing the same CDN cache key.
 export const dynamic = "force-dynamic";
 
-
+// ── Empty fallback — avoids repeating the same literal in 3 places ──────────
+const EMPTY_STATS: DashboardStats = {
+  pendingOrders: 0,
+  ordersToday: 0,
+  revenueToday: 0,
+  avgCompletionMins: 0,
+  activeCustomers: 0,
+  completedToday: 0,
+};
 
 async function getDashboardData(userId: string): Promise<{
   stats: DashboardStats;
@@ -30,14 +38,11 @@ async function getDashboardData(userId: string): Promise<{
 }> {
   try {
     const supabase = createAdminClient();
-    // Use the cached shop data to avoid duplicate DB calls
     const shop = await getShopByUserId(userId);
 
     if (!shop) {
-      return { stats: { pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }, newOrders: [], shop: null };
+      return { stats: EMPTY_STATS, newOrders: [], shop: null };
     }
-
-
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -60,24 +65,24 @@ async function getDashboardData(userId: string): Promise<{
 
     const rawOrders = ordersResult.data ?? [];
     
-    // An order is completed today if its status is COMPLETED/SUCCESS and completed_at (or updated_at) is today
-    const completedOrders = rawOrders.filter((o) => {
-      const s = o.status?.toUpperCase();
-      const isCompleted = s === "COMPLETED" || s === "SUCCESS";
-      if (!isCompleted) return false;
-      const compDate = o.completed_at ? new Date(o.completed_at) : new Date(o.updated_at);
-      return compDate >= today;
-    });
+    // ── Aggregate completed orders in a single pass ─────────────────────────
+    let totalRevenue = 0;
+    let completedCount = 0;
+    let totalCompletionMins = 0;
 
-    const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-    const avgMins =
-      completedOrders.length > 0
-        ? completedOrders.reduce((sum, o) => {
-            const compTime = o.completed_at ? new Date(o.completed_at).getTime() : new Date(o.updated_at).getTime();
-            const diff = (compTime - new Date(o.created_at).getTime()) / 60000;
-            return sum + diff;
-          }, 0) / completedOrders.length
-        : 0;
+    for (const o of rawOrders) {
+      const s = o.status?.toUpperCase();
+      if (s !== "COMPLETED" && s !== "SUCCESS") continue;
+      const compDate = o.completed_at ? new Date(o.completed_at) : new Date(o.updated_at);
+      if (compDate < today) continue;
+
+      totalRevenue += Number(o.total_amount) || 0;
+      completedCount++;
+      const compTime = compDate.getTime();
+      totalCompletionMins += (compTime - new Date(o.created_at).getTime()) / 60_000;
+    }
+
+    const avgMins = completedCount > 0 ? totalCompletionMins / completedCount : 0;
 
     const ordersToday = rawOrders.filter(o => new Date(o.created_at) >= today);
     const uniqueCustomers = new Set(
@@ -112,14 +117,14 @@ async function getDashboardData(userId: string): Promise<{
         revenueToday: totalRevenue,
         avgCompletionMins: Math.round(avgMins),
         activeCustomers: uniqueCustomers,
-        completedToday: completedOrders.length,
+        completedToday: completedCount,
       },
       newOrders: mappedNewOrders as unknown as Order[],
       shop: shop as Shop,
     };
   } catch (err) {
     console.error("[getDashboardData] ❌ Error:", err);
-    return { stats: { pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }, newOrders: [], shop: null };
+    return { stats: EMPTY_STATS, newOrders: [], shop: null };
   }
 }
 
@@ -129,7 +134,7 @@ export default async function DashboardPage() {
   
   const data = userId
     ? await getDashboardData(userId)
-    : { stats: { pendingOrders: 0, ordersToday: 0, revenueToday: 0, avgCompletionMins: 0, activeCustomers: 0, completedToday: 0 }, newOrders: [], shop: null };
+    : { stats: EMPTY_STATS, newOrders: [], shop: null };
 
   if (!data.shop) return <div>Shop not found. Please log in properly.</div>;
   

@@ -7,35 +7,35 @@ import { getUserShop } from "@/lib/auth/shop-access";
 /**
  * POST /api/shop/toggle-open
  *
- * Atomically toggles the shop's is_open flag using a single Postgres UPDATE
- * via the toggle_shop_open() RPC function.
+ * Toggles the shop's is_open flag.
  *
  * Before: SELECT is_open → UPDATE is_open = !is_open  (2 queries, race condition window)
- * After:  RPC toggle_shop_open(shop_id)               (1 atomic query, race-safe)
+ * After:  same 2 steps but with a shared error helper and explicit return types.
  *
- * Prerequisite: run supabase/migrations/20260701_performance_optimizations.sql
+ * For a fully atomic single-query toggle, deploy:
+ *   supabase/migrations/20260701_performance_optimizations.sql
+ * then replace both queries with:
+ *   supabase.rpc("toggle_shop_open", { shop_id: shopId })
  */
-export async function POST() {
+
+// Shared factory — keeps response shape consistent and removes repetition
+const err = (message: string, status: number): NextResponse =>
+  NextResponse.json({ error: message }, { status });
+
+export async function POST(): Promise<NextResponse> {
   try {
     const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!userId) return err("Unauthorized", 401);
 
     const { success } = rateLimit(`toggle_open_${userId}`, 20, 60);
-    if (!success) {
-      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-    }
+    if (!success) return err("Too many requests", 429);
 
-    // Resolve the shop for this user (owner or staff)
     const shopId = await getUserShop(userId);
-    if (!shopId) {
-      return NextResponse.json({ error: "Shop not found" }, { status: 404 });
-    }
+    if (!shopId) return err("Shop not found", 404);
 
     const supabase = createAdminClient();
 
-    // Fetch current status
+    // Step 1 — read current state
     const { data: shop, error: fetchError } = await supabase
       .from("shops")
       .select("is_open")
@@ -43,30 +43,29 @@ export async function POST() {
       .single();
 
     if (fetchError || !shop) {
-      console.error("[POST /api/shop/toggle-open] Fetch error:", fetchError?.message);
-      return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+      console.error("[toggle-open] fetch:", fetchError?.message);
+      return err("Shop not found", 404);
     }
 
-    // Toggle the status
-    const newStatus = !shop.is_open;
-    const { data: updatedShop, error: updateError } = await supabase
+    // Step 2 — write opposite state
+    const { data: updated, error: updateError } = await supabase
       .from("shops")
-      .update({ is_open: newStatus, updated_at: new Date().toISOString() })
+      .update({ is_open: !shop.is_open, updated_at: new Date().toISOString() })
       .eq("id", shopId)
       .select("is_open")
       .single();
 
-    if (updateError || !updatedShop) {
-      console.error("[POST /api/shop/toggle-open] Update error:", updateError?.message);
-      return NextResponse.json({ error: "Failed to toggle shop status" }, { status: 500 });
+    if (updateError || !updated) {
+      console.error("[toggle-open] update:", updateError?.message);
+      return err("Failed to toggle shop status", 500);
     }
 
     return NextResponse.json(
-      { is_open: updatedShop.is_open },
+      { is_open: updated.is_open },
       { headers: { "Cache-Control": "no-store" } }
     );
-  } catch (err) {
-    console.error("[POST /api/shop/toggle-open] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (e) {
+    console.error("[toggle-open] unexpected:", e);
+    return err("Internal server error", 500);
   }
 }
