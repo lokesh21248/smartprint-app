@@ -4,6 +4,9 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Upload Documents | Scan2Paper",
   description: "Upload your PDF documents, configure print settings, and place your order securely with Scan2Paper.",
+  alternates: {
+    canonical: "https://scan2paper.com/order-upload",
+  },
   robots: {
     index: false,
     follow: true,

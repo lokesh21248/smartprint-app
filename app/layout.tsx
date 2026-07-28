@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   },
   description:
     "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
-  keywords: ["xerox shop", "print shop", "order management", "Scan2Paper"],
+  keywords: ["Scan2Paper", "Scan Paper", "xerox shop", "print shop", "order management", "print shop software India"],
   icons: {
     icon: [
       { url: "/favicon.ico?v=2", sizes: "any" },
@@ -58,10 +58,10 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Scan2Paper — Digital Print Shop Management",
     description: "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
-    images: ["/logo.webp"],
+    images: ["/logo.png"],
   },
   robots: {
     index: true,

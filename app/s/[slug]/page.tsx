@@ -12,11 +12,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { StartSessionForm } from "@/components/shop/StartSessionForm";
 
 interface PageProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export default async function QRLandingPage({ params }: PageProps) {
-  const slug = params.slug;
+  const { slug } = await params;
   const supabase = createAdminClient();
 
   const { data: rawShop, error } = await supabase

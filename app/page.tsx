@@ -10,16 +10,25 @@ import { allPosts } from "@/lib/blog/posts";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Scan2Paper – Print Shop Management Software & Digital Ordering",
+  title: "Scan2Paper – Smart Online Printing Platform",
   description:
-    "Manage your print shop with Scan2Paper's Xerox shop software. Accept online orders, enable PDF document upload, and increase revenue. Start for free.",
+    "Scan2Paper is the smart online printing platform for xerox shops in India. Accept print orders online, enable PDF document upload, manage staff, and grow revenue. Start for free.",
   alternates: {
     canonical: "https://scan2paper.com/",
   },
+  keywords: [
+    "Scan2Paper",
+    "Scan Paper",
+    "online print shop",
+    "xerox shop software",
+    "print shop management",
+    "PDF upload printing India",
+    "QR code print ordering",
+  ],
   openGraph: {
-    title: "Scan2Paper – Print Shop Management Software & Digital Ordering",
+    title: "Scan2Paper – Smart Online Printing Platform",
     description:
-      "Manage your print shop with Scan2Paper's Xerox shop software. Accept online orders, enable PDF document upload, and increase revenue. Start for free.",
+      "Scan2Paper helps xerox shops accept online orders, upload documents, and manage print jobs from one dashboard. Start for free.",
     url: "https://scan2paper.com/",
     type: "website",
   },
@@ -53,7 +62,8 @@ const jsonLd = {
       "url": "https://scan2paper.com",
       "logo": {
         "@type": "ImageObject",
-        "url": "https://scan2paper.com/logo.webp",
+        "url": "https://scan2paper.com/logo.png",
+        "contentUrl": "https://scan2paper.com/logo.png",
         "width": 512,
         "height": 512,
       },
@@ -115,12 +125,16 @@ export default function Home() {
         {/* Client-side redirect for authenticated users — keeps this page static/CDN-cacheable */}
         <HomeAuthRedirect />
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          Digital Print Shop Management
+          Scan2Paper – Smart Online Printing Platform
         </h1>
-        <p className="text-lg text-gray-600 max-w-xl mb-8">
+        <p className="text-lg text-gray-600 max-w-xl mb-4">
           Scan2Paper helps print shop owners manage orders, documents, staff, and
-          revenue from one powerful dashboard. Customers can upload documents
-          online and collect their prints quickly and efficiently.
+          revenue from one powerful dashboard. Customers upload documents online
+          and collect their prints — no waiting, no queues.
+        </p>
+        <p className="text-sm text-gray-500 max-w-xl mb-8">
+          Join xerox shops and copy centres across India already using Scan2Paper
+          to accept online print orders and grow their business.
         </p>
         <div className="flex flex-wrap gap-4 justify-center">
           <Link

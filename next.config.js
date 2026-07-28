@@ -182,6 +182,24 @@ const nextConfig = {
         destination: "/order-upload",
         permanent: false,
       },
+      // ── Blog 301 redirects ─────────────────────────────────────────────────
+      // These old URLs were indexed by Google but the slugs changed.
+      // A 301 preserves link equity and prevents Search Console 404 errors.
+      {
+        source: "/blog/qr-code-shop-discovery",
+        destination: "/blog/qr-code-ordering-for-xerox-shops-complete-guide",
+        permanent: true,
+      },
+      {
+        source: "/blog/how-to-manage-print-orders-online",
+        destination: "/blog/how-to-manage-print-orders-efficiently-with-scan2paper",
+        permanent: true,
+      },
+      {
+        source: "/blog/increase-revenue-print-shop",
+        destination: "/blog/7-ways-to-increase-revenue-for-your-print-shop",
+        permanent: true,
+      },
     ];
   },
 

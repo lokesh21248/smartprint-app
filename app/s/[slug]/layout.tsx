@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 
@@ -10,9 +11,27 @@ export const revalidate = 300;
 
 const BASE_URL = "https://scan2paper.com";
 
+// ── React cache() deduplication ──────────────────────────────────────────────
+// Both generateMetadata and ShopLayout need shop data. Wrapping the fetch in
+// React's cache() ensures only ONE Supabase query executes per request,
+// regardless of how many times this function is called within the same render.
+const getShopForLayout = cache(async (slug: string) => {
+  try {
+    const supabase = createAdminClient();
+    const { data } = await supabase
+      .from("shops")
+      .select("name, address_line1, city, state, pincode, owner_phone, slug, business_hours, is_approved")
+      .eq("slug", slug)
+      .maybeSingle();
+    return data;
+  } catch {
+    return null;
+  }
+});
+
 interface LayoutProps {
   children: React.ReactNode;
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 /**
@@ -36,52 +55,68 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
-  const supabase = createAdminClient();
-  const { data: shop } = await supabase
-    .from("shops")
-    .select("name, address_line1, slug")
-    .eq("slug", params.slug)
-    .maybeSingle();
+  const { slug } = await params;
+  const shop = await getShopForLayout(slug);
 
-  if (!shop) {
+  if (!shop || !shop.is_approved) {
     return {
       title: "Shop Not Found | Scan2Paper",
-      // Explicitly noindex missing shop pages so Google doesn't index 404-like pages.
       robots: { index: false, follow: true },
     };
   }
 
-  const title = `${shop.name} | Print Online at Scan2Paper`;
-  const description = `Order high-quality prints from ${shop.name} at ${shop.address_line1}. Upload your documents online and collect your prints when ready.`;
-
-  // Use absolute canonical URL — more robust than relative path.
-  // metadataBase resolves relative URLs, but absolute is unambiguous.
+  const locationParts = [shop.city, shop.state].filter(Boolean).join(", ");
+  const title = `${shop.name} – Print Shop${locationParts ? ` in ${locationParts}` : ""} | Scan2Paper`;
+  const description = `Order high-quality prints from ${shop.name}${shop.address_line1 ? ` at ${shop.address_line1}` : ""}${locationParts ? `, ${locationParts}` : ""}. Upload your documents online via Scan2Paper and collect your prints when ready. Black & white and colour printing available.`;
   const canonicalUrl = `${BASE_URL}/s/${shop.slug}`;
 
   return {
     title,
     description,
+    keywords: [
+      shop.name,
+      "print shop",
+      "xerox shop",
+      shop.city ?? "",
+      "online printing",
+      "Scan2Paper",
+      "document upload",
+      "PDF printing",
+    ].filter(Boolean),
     alternates: {
       canonical: canonicalUrl,
     },
+    // ── Shop pages ARE public marketing pages (local business profiles). ──
+    // They should be indexed so customers can discover print shops via Google.
+    // Only unapproved or not-found shops remain noindex (handled above).
     robots: {
-      // Shop pages are transactional landing pages accessed via QR code or
-      // direct link — not marketing pages. Keeping them noindex prevents
-      // thin-content shop pages from diluting the site's SEO signal while
-      // still allowing Googlebot to follow links out of them.
-      index: false,
+      index: true,
       follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+      },
     },
     openGraph: {
       title,
       description,
       type: "website",
       url: canonicalUrl,
+      siteName: "Scan2Paper",
+      images: [
+        {
+          url: `${BASE_URL}/logo.png`,
+          width: 512,
+          height: 512,
+          alt: `${shop.name} – Scan2Paper Print Shop`,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [`${BASE_URL}/logo.png`],
     },
   };
 }
@@ -89,69 +124,49 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
 /**
  * ShopLayout — server component.
  *
- * Fetches shop data a second time to inject JSON-LD structured data into the
- * SSR HTML. This is intentional: generateMetadata already fetches for <head>
- * tags, but structured data must be in <body> HTML — it can't come from metadata.
+ * Uses React cache() to share the Supabase fetch with generateMetadata —
+ * one DB call per request, not two.
  *
  * The ShopStructuredData component is a server component (no "use client") so
  * the <script type="application/ld+json"> is present in the initial HTML
  * payload that Googlebot parses — NOT injected by JS after load.
- *
- * The ISR revalidate=300 cache means this second fetch is nearly free in prod.
  */
 export default async function ShopLayout({ children, params }: LayoutProps) {
-  let shopData: {
-    name?: string;
-    address_line1?: string;
-    phone?: string;
-    slug?: string;
+  const { slug } = await params;
+  const data = await getShopForLayout(slug);
+
+  type BusinessHours = {
     opening_time?: string;
     closing_time?: string;
-  } | null = null;
+    working_days?: string[];
+  };
+  const bh = data?.business_hours as BusinessHours | null;
 
-  try {
-    const supabase = createAdminClient();
-    const { data } = await supabase
-      .from("shops")
-      .select("name, address_line1, owner_phone, slug, business_hours")
-      .eq("slug", params.slug)
-      .eq("is_approved", true)
-      .maybeSingle();
-    
-    if (data) {
-      type BusinessHours = { opening_time?: string; closing_time?: string };
-      const bh = data.business_hours as BusinessHours | null;
-      shopData = {
+  const shopData = data
+    ? {
         name: data.name,
-        address_line1: data.address_line1,
+        address: data.address_line1,
+        city: data.city,
+        state: data.state,
+        pincode: data.pincode,
         phone: data.owner_phone,
         slug: data.slug,
-        opening_time: bh?.opening_time || "09:00",
-        closing_time: bh?.closing_time || "21:00",
-      };
-    }
-  } catch (err) {
-    console.error("[ShopLayout] Failed to query dynamic shop schema:", err);
-  }
+        opening_time: bh?.opening_time ?? "09:00",
+        closing_time: bh?.closing_time ?? "21:00",
+        working_days: bh?.working_days ?? [],
+      }
+    : null;
 
   return (
     <>
-      {shopData && (
-        <ShopStructuredData
-          shop={{
-            name: shopData.name,
-            address: shopData.address_line1,
-            phone: shopData.phone,
-            slug: shopData.slug,
-            opening_time: shopData.opening_time,
-            closing_time: shopData.closing_time,
-          }}
-        />
-      )}
+      {shopData && <ShopStructuredData shop={shopData} />}
       {children}
 
+      {/* Server-rendered internal links — crawlable by Googlebot */}
       <nav aria-label="Site links" className="sr-only">
         <Link href="/">Scan2Paper Home</Link>
+        <Link href="/find-shop">Find Other Print Shops</Link>
+        <Link href="/features">Scan2Paper Features</Link>
       </nav>
     </>
   );
