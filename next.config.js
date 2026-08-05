@@ -265,6 +265,25 @@ const nextConfig = {
         source: "/(dashboard|admin|api/admin)(.*)",
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
+      // ── SEO: noindex HTTP header for auth routes ─────────────────────────────
+      // X-Robots-Tag is the most reliable noindex signal — it works before JS
+      // executes and takes precedence over meta tags per Google's documentation.
+      // Applied as belt-and-suspenders on top of the metadata robots config in
+      // app/(auth)/layout.tsx. Covers both our hosted auth pages (/login etc.)
+      // and any edge case where the meta tag might not render client-side.
+      {
+        source: "/(login|signup|forgot-password|verify-email|register|auth|unauthorized)(.*)",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
+      {
+        source: "/(dashboard|admin|settings|profile|staff|shop|create-shop|order|order-history|order-upload|analytics|my-shop|shop-profile)(.*)",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
     ];
   },
 };
