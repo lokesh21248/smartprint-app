@@ -79,16 +79,15 @@ class NotificationSoundManager {
 
   public async play() {
     if (!this.audio) {
-      if (isDev) console.warn("[NotificationSound] Audio not initialized — attempting preload.");
+      console.warn("[NotificationSound] Audio not initialized — attempting preload.");
       this.preload();
       return;
     }
 
-    if (isDev) {
-      console.log(
-        `[Audio] PLAY ATTEMPT — readyState=${this.audio.readyState}, unlocked=${this.unlocked}, muted=${this.audio.muted}, volume=${this.audio.volume}`
-      );
-    }
+    // DIAGNOSTIC — always visible
+    console.log(
+      `[NotificationSound] play() called | readyState=${this.audio.readyState} | unlocked=${this.unlocked} | muted=${this.audio.muted} | volume=${this.audio.volume} | src=${this.audio.src.slice(-40)}`
+    );
 
     try {
       this.audio.currentTime = 0;
@@ -97,13 +96,12 @@ class NotificationSoundManager {
       if (promise !== undefined) {
         promise
           .then(() => {
-            if (isDev) console.log("[Audio] PLAY SUCCESS ✅");
+            console.log("[NotificationSound] ✅ PLAY SUCCESS");
           })
           .catch((err: Error) => {
             if (err.name === "NotAllowedError") {
-              if (isDev) console.warn("[Audio] PLAY FAILED — NotAllowedError (autoplay blocked by browser)");
+              console.warn("[NotificationSound] ⚠️ PLAY BLOCKED — NotAllowedError (user has not interacted with page yet)");
 
-              // Show a one-time, unobtrusive toast so the user can enable audio
               if (!this.toastShown) {
                 this.toastShown = true;
                 toast("🔔 Enable notification sounds", {
@@ -112,7 +110,7 @@ class NotificationSoundManager {
                     label: "Enable Sound",
                     onClick: () => {
                       this.unlock();
-                      this.toastShown = false; // allow re-show if they dismiss without clicking
+                      this.toastShown = false;
                       toast.success("Notification sounds enabled");
                     },
                   },
@@ -120,12 +118,12 @@ class NotificationSoundManager {
                 });
               }
             } else {
-              console.error("[Audio] PLAY FAILED —", err.name, err.message);
+              console.error("[NotificationSound] ❌ PLAY FAILED —", err.name, err.message);
             }
           });
       }
     } catch (err) {
-      console.error("[NotificationSound] ❌ Unexpected play error:", err);
+      console.error("[NotificationSound] ❌ Unexpected play() error:", err);
     }
   }
 }

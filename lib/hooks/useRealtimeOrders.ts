@@ -21,22 +21,18 @@ const isDev = process.env.NODE_ENV !== "production";
 // ─────────────────────────────────────────────────────────────────────────────
 // Audio notification (Delegated to preloaded AudioManager & settingsStore)
 // ─────────────────────────────────────────────────────────────────────────────
-function playNotificationSound() {
+function playNotificationSound(orderId: string) {
   try {
     const { soundEnabled } = useSettingsStore.getState();
-    if (isDev) {
-      console.log(
-        `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}`
-      );
-    }
+    // DIAGNOSTIC — always visible so we can trace prod issues
+    console.log(`[Notification] playNotificationSound called for order="${orderId}" soundEnabled=${soundEnabled}`);
     if (soundEnabled) {
-      // Use the new Supabase-backed NotificationSoundManager
       notificationSoundManager.play();
-    } else if (isDev) {
-      console.log("[Realtime] 🔇 playNotificationSound: Alert sound skipped (merchant sound toggle is off)");
+    } else {
+      console.log("[Notification] Sound skipped — soundEnabled is false/off");
     }
   } catch (err) {
-    if (isDev) console.error("[Realtime] ❌ playNotificationSound: Playback exception inside realtime trigger:", err);
+    console.error("[Notification] ❌ Exception in playNotificationSound:", err);
   }
 }
 
@@ -244,6 +240,8 @@ async function initSubscription(
         filter: `shop_id=eq.${shopId}`,
       },
       (payload: RealtimePayload) => {
+        // DIAGNOSTIC — always log raw channel events to confirm delivery
+        console.log(`[Realtime] 📡 RAW channel event: type=${payload.eventType} id=${(payload.new as Record<string,unknown>)?.id ?? (payload.old as Record<string,unknown>)?.id ?? "?"}`);
         // Dispatch to all active handlers across hook instances
         activeHandlers.forEach((handler) => handler(payload));
       }
@@ -378,10 +376,10 @@ export function useRealtimeOrders(shopId: string | null) {
     }
 
     batch.forEach((order) => {
+      console.log(`[Notification] Processing INSERT for order="${order.id}"`);
+
       if (playedOrderIds.has(order.id)) {
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] 🛡️ Duplicate event detected for order: "${order.id}". Skipping audio chime.`);
-        }
+        console.log(`[Notification] 🛡️ Duplicate blocked — order "${order.id}" already notified.`);
         return;
       }
       
@@ -409,7 +407,7 @@ export function useRealtimeOrders(shopId: string | null) {
       addOrder(order);
       incPending();
       incNotifications();
-      playNotificationSound();
+      playNotificationSound(order.id);
       showBrowserNotification(order);
     });
 
