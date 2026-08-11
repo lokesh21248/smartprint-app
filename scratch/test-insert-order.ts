@@ -29,13 +29,16 @@ async function main() {
     {
       shop_id: shopId,
       customer_name: "Test Audio Order",
-      status: "placed",
+      customer_phone: "1234567890",
+      file_s3_key: "dummy/path.pdf",
+      file_name: "test.pdf",
+      file_size_bytes: 1024,
+      status: "PLACED",
       total_amount: 10,
       page_count: 1,
       copies: 1,
       is_color: false,
-      is_double_sided: false,
-      file_url: "dummy.pdf"
+      is_double_sided: false
     }
   ]).select();
 

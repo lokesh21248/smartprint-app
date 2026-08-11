@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 // Centralized configuration for the notification sound
 const NOTIFICATION_AUDIO_PATH = "audio/notifications/new-order.mp3";
@@ -8,6 +9,7 @@ class NotificationSoundManager {
   private audio: HTMLAudioElement | null = null;
   private unlocked = false;
   private loadAttempted = false;
+  private toastShown = false;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -86,10 +88,29 @@ class NotificationSoundManager {
         await this.audio.play();
         if (isDev) console.log(`[NotificationSound] ✅ Playback successful.`);
       } catch (err: unknown) {
-        if (isDev) console.warn(
-          `[NotificationSound] ⚠️ Play failed (Autoplay block or network issue):`,
-          err instanceof Error ? err.message : err
-        );
+        if (err instanceof Error && err.name === "NotAllowedError") {
+          if (isDev) console.warn("[NotificationSound] ⚠️ Playback blocked by browser autoplay policy.");
+          
+          if (!this.toastShown) {
+            this.toastShown = true;
+            toast("Enable notification sounds", {
+              description: "Allow your browser to play audio alerts for new orders.",
+              action: {
+                label: "Enable Sound",
+                onClick: () => {
+                  this.unlock();
+                  toast.success("Notification sounds enabled");
+                }
+              },
+              duration: 10000,
+            });
+          }
+        } else {
+          if (isDev) console.warn(
+            `[NotificationSound] ⚠️ Play failed (network issue or missing file):`,
+            err instanceof Error ? err.message : err
+          );
+        }
       }
     }
   }
