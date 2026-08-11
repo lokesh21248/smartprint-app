@@ -13,8 +13,7 @@ interface AudioInitializerProps {
  * Responsibilities:
  *   1. Fetch persisted sound settings from Supabase once per session.
  *   2. Register user-interaction listeners to unlock browser audio (autoplay policy).
- *      The unlock fires at most ONCE on the first interaction (click/keydown/touchstart).
- *      It does NOT play a sound — it only warms up the audio element.
+ *      Remains active until notificationSoundManager.isUnlocked() returns true.
  */
 export function AudioInitializer({ shopId }: AudioInitializerProps) {
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
@@ -26,20 +25,25 @@ export function AudioInitializer({ shopId }: AudioInitializerProps) {
     }
   }, [shopId, fetchSettings]);
 
-  // 2. Unlock browser audio on first user interaction (required by Chrome/Safari autoplay policy)
+  // 2. Unlock browser audio on user interaction (required by Chrome/Safari autoplay policy)
   useEffect(() => {
-    let unlocked = false;
-
-    const handleInteraction = () => {
-      if (unlocked) return;
-      unlocked = true;
-      notificationSoundManager.unlock();
-
-      // Remove all listeners after first successful unlock
+    const removeListeners = () => {
       window.removeEventListener("click", handleInteraction, { capture: true });
       window.removeEventListener("pointerdown", handleInteraction, { capture: true });
       window.removeEventListener("touchstart", handleInteraction, { capture: true });
       window.removeEventListener("keydown", handleInteraction, { capture: true });
+    };
+
+    const handleInteraction = async () => {
+      if (notificationSoundManager.isUnlocked()) {
+        removeListeners();
+        return;
+      }
+
+      const success = await notificationSoundManager.unlock();
+      if (success || notificationSoundManager.isUnlocked()) {
+        removeListeners();
+      }
     };
 
     // Use capture phase so this fires before any stopPropagation() calls
@@ -49,10 +53,7 @@ export function AudioInitializer({ shopId }: AudioInitializerProps) {
     window.addEventListener("keydown", handleInteraction, { capture: true });
 
     return () => {
-      window.removeEventListener("click", handleInteraction, { capture: true });
-      window.removeEventListener("pointerdown", handleInteraction, { capture: true });
-      window.removeEventListener("touchstart", handleInteraction, { capture: true });
-      window.removeEventListener("keydown", handleInteraction, { capture: true });
+      removeListeners();
     };
   }, []);
 

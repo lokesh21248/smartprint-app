@@ -1,21 +1,37 @@
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
-// Centralized configuration for the notification sound
-const NOTIFICATION_AUDIO_PATH = "audio/notifications/new-order.mp3";
+const LOCAL_AUDIO_PATH = "/sounds/new-order.mp3";
+const SUPABASE_AUDIO_PATH = "audio/notifications/new-order.mp3";
 const isDev = process.env.NODE_ENV !== "production";
 
 class NotificationSoundManager {
   private audio: HTMLAudioElement | null = null;
+  private audioContext: AudioContext | null = null;
   private unlocked = false;
   private loadAttempted = false;
   private toastShown = false;
+  private primaryUrl: string = LOCAL_AUDIO_PATH;
 
   constructor() {
-    // Only initialize on the client — module may be imported on the server
     if (typeof window !== "undefined") {
       this.preload();
     }
+  }
+
+  public isUnlocked(): boolean {
+    return this.unlocked;
+  }
+
+  private getAudioContext(): AudioContext | null {
+    if (typeof window === "undefined") return null;
+    if (!this.audioContext) {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        this.audioContext = new AudioCtx();
+      }
+    }
+    return this.audioContext;
   }
 
   public preload() {
@@ -23,57 +39,118 @@ class NotificationSoundManager {
     this.loadAttempted = true;
 
     try {
-      const supabase = createClient();
-      const [bucket, ...rest] = NOTIFICATION_AUDIO_PATH.split("/");
-      const path = rest.join("/");
+      if (isDev) console.log(`[NotificationSound] 🎧 Preloading local audio from: ${LOCAL_AUDIO_PATH}`);
 
-      const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-      const url = data.publicUrl;
-
-      if (isDev) console.log(`[NotificationSound] 🎧 Preloading from: ${url}`);
-
-      this.audio = new Audio(url);
+      this.audio = new Audio(LOCAL_AUDIO_PATH);
       this.audio.preload = "auto";
       this.audio.setAttribute("playsinline", "true");
-      this.audio.volume = 0.7;
-      this.audio.muted = false;
+      this.audio.volume = 0.8;
 
       this.audio.addEventListener("canplaythrough", () => {
-        if (isDev) console.log("[NotificationSound] ✅ Audio loaded and ready to play.");
+        if (isDev) console.log("[NotificationSound] ✅ Local audio loaded and ready to play.");
       }, { once: true });
 
-      this.audio.addEventListener("error", (e) => {
-        console.error("[NotificationSound] ❌ Audio load error:", (e.target as HTMLAudioElement)?.error);
+      this.audio.addEventListener("error", () => {
+        if (isDev) console.warn("[NotificationSound] ⚠️ Local audio load error, attempting Supabase Storage fallback...");
+        try {
+          const supabase = createClient();
+          const [bucket, ...rest] = SUPABASE_AUDIO_PATH.split("/");
+          const path = rest.join("/");
+          const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+          this.primaryUrl = data.publicUrl;
+          
+          if (this.audio) {
+            this.audio.src = this.primaryUrl;
+            this.audio.load();
+          }
+        } catch (err) {
+          console.error("[NotificationSound] ❌ Fallback audio load failed:", err);
+        }
       });
-
     } catch (err) {
-      console.error("[NotificationSound] ❌ Failed to preload:", err);
+      console.error("[NotificationSound] ❌ Failed to preload audio:", err);
     }
   }
 
   /**
-   * Call this from a user interaction (click/keydown) to satisfy browser autoplay policy.
-   * Plays and immediately pauses at position 0 to "warm up" the audio element.
-   * Sets this.unlocked = true only after the warm-up succeeds.
+   * Called on user interaction (click/touch/keydown) to satisfy browser autoplay policy.
+   * Resumes Web Audio API AudioContext and plays a muted/silent warm-up snippet.
    */
-  public unlock() {
-    if (this.unlocked || !this.audio) return;
+  public async unlock(): Promise<boolean> {
+    if (this.unlocked) return true;
 
-    if (isDev) console.log("[NotificationSound] 🔓 Unlocking browser audio...");
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx && ctx.state === "suspended") {
+        await ctx.resume();
+      }
 
-    const playPromise = this.audio.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          this.audio!.pause();
-          this.audio!.currentTime = 0;
-          this.unlocked = true;
-          if (isDev) console.log("[NotificationSound] ✅ Browser audio unlocked successfully.");
-        })
-        .catch((err) => {
-          // This is expected if called before full load — not a fatal error
-          if (isDev) console.warn("[NotificationSound] ⚠️ Unlock deferred (audio not ready):", err.message);
-        });
+      if (this.audio) {
+        const origMuted = this.audio.muted;
+        this.audio.muted = true;
+        const playPromise = this.audio.play();
+
+        if (playPromise !== undefined) {
+          await playPromise;
+          this.audio.pause();
+          this.audio.currentTime = 0;
+          this.audio.muted = origMuted;
+        }
+      }
+
+      this.unlocked = true;
+      if (isDev) console.log("[NotificationSound] ✅ Browser audio unlocked successfully.");
+      return true;
+    } catch (err) {
+      if (isDev) {
+        console.warn("[NotificationSound] ⚠️ Audio unlock attempt deferred:", (err as Error).message);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Synthesize a pleasant two-tone chime fallback using Web Audio API
+   * Guaranteed to work even if HTMLAudioElement fails to load
+   */
+  private playFallbackChime() {
+    try {
+      const ctx = this.getAudioContext();
+      if (!ctx) return;
+
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+
+      const now = ctx.currentTime;
+
+      // Note 1 (E5 - 659.25 Hz)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(659.25, now);
+      gain1.gain.setValueAtTime(0.3, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.3);
+
+      // Note 2 (A5 - 880 Hz)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(880, now + 0.15);
+      gain2.gain.setValueAtTime(0.4, now + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.6);
+
+      console.log("[NotificationSound] 🔔 Played synthesized fallback chime.");
+    } catch (err) {
+      console.error("[NotificationSound] ❌ Fallback chime error:", err);
     }
   }
 
@@ -81,49 +158,58 @@ class NotificationSoundManager {
     if (!this.audio) {
       console.warn("[NotificationSound] Audio not initialized — attempting preload.");
       this.preload();
-      return;
     }
 
-    // DIAGNOSTIC — always visible
     console.log(
-      `[NotificationSound] play() called | readyState=${this.audio.readyState} | unlocked=${this.unlocked} | muted=${this.audio.muted} | volume=${this.audio.volume} | src=${this.audio.src.slice(-40)}`
+      `[NotificationSound] play() requested | unlocked=${this.unlocked} | audioReadyState=${this.audio?.readyState ?? 0}`
     );
 
-    try {
-      this.audio.currentTime = 0;
-      const promise = this.audio.play();
+    let playedViaAudioElement = false;
 
-      if (promise !== undefined) {
-        promise
-          .then(() => {
-            console.log("[NotificationSound] ✅ PLAY SUCCESS");
-          })
-          .catch((err: Error) => {
-            if (err.name === "NotAllowedError") {
-              console.warn("[NotificationSound] ⚠️ PLAY BLOCKED — NotAllowedError (user has not interacted with page yet)");
+    if (this.audio) {
+      try {
+        // Clone audio element for seamless overlapping plays when multiple orders arrive
+        const soundInstance = this.audio.cloneNode(true) as HTMLAudioElement;
+        soundInstance.volume = 0.85;
+        soundInstance.currentTime = 0;
 
-              if (!this.toastShown) {
-                this.toastShown = true;
-                toast("🔔 Enable notification sounds", {
-                  description: "Click below to allow audio alerts for new orders.",
-                  action: {
-                    label: "Enable Sound",
-                    onClick: () => {
-                      this.unlock();
-                      this.toastShown = false;
-                      toast.success("Notification sounds enabled");
-                    },
-                  },
-                  duration: 10000,
-                });
-              }
-            } else {
-              console.error("[NotificationSound] ❌ PLAY FAILED —", err.name, err.message);
-            }
-          });
+        const promise = soundInstance.play();
+        if (promise !== undefined) {
+          await promise;
+          playedViaAudioElement = true;
+          console.log("[NotificationSound] ✅ Audio element playback successful");
+        }
+      } catch (err: unknown) {
+        const error = err as Error;
+        if (error.name === "NotAllowedError") {
+          console.warn("[NotificationSound] ⚠️ Playback blocked by browser autoplay policy.");
+
+          if (!this.toastShown) {
+            this.toastShown = true;
+            toast("🔔 Enable order sound alerts", {
+              description: "Click anywhere on the dashboard to enable audio notifications for new orders.",
+              action: {
+                label: "Enable Sound",
+                onClick: async () => {
+                  const ok = await this.unlock();
+                  this.toastShown = false;
+                  if (ok) {
+                    toast.success("Notification sounds enabled!");
+                    this.play();
+                  }
+                },
+              },
+              duration: 10000,
+            });
+          }
+        } else {
+          console.warn("[NotificationSound] ⚠️ HTMLAudioElement play error, using fallback chime:", error.message);
+        }
       }
-    } catch (err) {
-      console.error("[NotificationSound] ❌ Unexpected play() error:", err);
+    }
+
+    if (!playedViaAudioElement) {
+      this.playFallbackChime();
     }
   }
 }

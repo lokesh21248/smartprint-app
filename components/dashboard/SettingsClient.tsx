@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useShopStore } from "@/stores/shopStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { notificationSoundManager } from "@/lib/NotificationSoundManager";
 import { useClerk } from "@clerk/nextjs";
 import { useState, useEffect } from "react";
 
@@ -103,14 +104,28 @@ export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: Se
           title="Sound Alerts"
           description="Play a sound when a new order arrives"
           control={
-            <Switch
-              checked={soundEnabled}
-              onCheckedChange={(v) => {
-                setSoundEnabled(v, shopId);
-                setShopStoreSoundEnabled(v);
-                toast.success(v ? "🔔 Sound alerts enabled" : "🔇 Sound alerts disabled");
-              }}
-            />
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-8 px-2.5"
+                onClick={async () => {
+                  await notificationSoundManager.unlock();
+                  notificationSoundManager.play();
+                  toast.info("🔊 Playing test sound...");
+                }}
+              >
+                Test Sound
+              </Button>
+              <Switch
+                checked={soundEnabled}
+                onCheckedChange={(v) => {
+                  setSoundEnabled(v, shopId);
+                  setShopStoreSoundEnabled(v);
+                  toast.success(v ? "🔔 Sound alerts enabled" : "🔇 Sound alerts disabled");
+                }}
+              />
+            </div>
           }
         />
 

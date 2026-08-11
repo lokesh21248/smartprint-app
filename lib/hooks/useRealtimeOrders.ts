@@ -24,15 +24,17 @@ const isDev = process.env.NODE_ENV !== "production";
 function playNotificationSound(orderId: string) {
   try {
     const { soundEnabled } = useSettingsStore.getState();
-    // DIAGNOSTIC — always visible so we can trace prod issues
-    console.log(`[Notification] playNotificationSound called for order="${orderId}" soundEnabled=${soundEnabled}`);
-    if (soundEnabled) {
+    const shopSoundEnabled = useShopStore.getState().soundEnabled;
+    const isEnabled = soundEnabled ?? shopSoundEnabled ?? true;
+
+    console.log(`[ORDER AUDIO] Notification requested for order="${orderId}" soundEnabled=${isEnabled}`);
+    if (isEnabled) {
       notificationSoundManager.play();
     } else {
-      console.log("[Notification] Sound skipped — soundEnabled is false/off");
+      console.log("[ORDER AUDIO] Sound skipped — soundEnabled is false/off");
     }
   } catch (err) {
-    console.error("[Notification] ❌ Exception in playNotificationSound:", err);
+    console.error("[ORDER AUDIO] ❌ Exception in playNotificationSound:", err);
   }
 }
 
