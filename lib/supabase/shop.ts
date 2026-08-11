@@ -55,7 +55,7 @@ export async function upsertShop(
     const { data, error: upsertError } = await supabase
       .from("shops")
       .upsert(payload, { onConflict: 'clerk_owner_id' })
-      .select()
+      .select("id, clerk_owner_id, owner_email, name, address_line1, owner_phone")
       .single();
 
     if (upsertError) throw new Error(`Upsert failed: ${upsertError.message}`);

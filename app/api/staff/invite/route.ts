@@ -68,7 +68,7 @@ export async function POST(request: Request) {
         role,
         is_active: true
       })
-      .select()
+      .select("id, shop_id, email, role, is_active")
       .single();
 
     if (inviteError) {

@@ -78,7 +78,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
-    const { searchParams } = new URL(request.url);
     const shopId = searchParams.get("shopId")?.trim();
     const statusParam = searchParams.get("status")?.trim().toUpperCase() as ValidStatus | undefined;
     const page = Math.min(200, Math.max(1, parseInt(searchParams.get("page") ?? "1", 10)));
