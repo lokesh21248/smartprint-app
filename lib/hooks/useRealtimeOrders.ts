@@ -6,7 +6,7 @@ import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { audioManager } from "@/lib/audioManager";
+import { notificationSoundManager } from "@/lib/NotificationSoundManager";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { Order } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -30,7 +30,8 @@ function playNotificationSound() {
       );
     }
     if (soundEnabled) {
-      audioManager.play(notificationSound);
+      // Use the new Supabase-backed NotificationSoundManager
+      notificationSoundManager.play();
     } else if (isDev) {
       console.log("[Realtime] 🔇 playNotificationSound: Alert sound skipped (merchant sound toggle is off)");
     }
