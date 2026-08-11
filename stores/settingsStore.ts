@@ -1,20 +1,15 @@
 import { create } from "zustand";
 
-export type NotificationSound = "whatsapp" | "cash" | "bell" | "ding";
-
 interface SettingsState {
   soundEnabled: boolean;
-  notificationSound: NotificationSound;
   isLoading: boolean;
 
   setSoundEnabled: (enabled: boolean, shopId?: string | null) => Promise<void>;
-  setNotificationSound: (sound: NotificationSound, shopId?: string | null) => Promise<void>;
   fetchSettings: (shopId: string | null) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   soundEnabled: true,
-  notificationSound: "whatsapp",
   isLoading: false,
 
   fetchSettings: async (shopId) => {
@@ -34,7 +29,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
       set({
         soundEnabled: data.soundEnabled ?? true,
-        notificationSound: (data.notificationSound as NotificationSound) ?? "whatsapp",
       });
     } catch (err) {
       console.error("[SettingsStore] ❌ Unexpected error in fetchSettings:", err);
@@ -59,25 +53,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     } catch (err) {
       console.error("[SettingsStore] Unexpected error saving sound_alerts:", err);
-    }
-  },
-
-  setNotificationSound: async (sound, shopId) => {
-    // 1. Optimistic update in memory
-    set({ notificationSound: sound });
-
-    if (!shopId) return;
-    try {
-      const response = await fetch("/api/shop/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shopId, notificationSound: sound }),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to update notification_sound: status ${response.status}`);
-      }
-    } catch (err) {
-      console.error("[SettingsStore] Unexpected error saving notification_sound:", err);
     }
   },
 }));

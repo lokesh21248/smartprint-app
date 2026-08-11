@@ -43,11 +43,6 @@ export default function AuthLayout({
 }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#E8F5EE] via-white to-[#E8F1F8] flex items-center justify-center p-4">
-      {/* Belt-and-suspenders: inline meta tag for JS-rendered environments
-          where the HTTP X-Robots-Tag header may not yet have been received. */}
-      {/* eslint-disable-next-line @next/next/no-head-element */}
-      <meta name="robots" content="noindex, nofollow" />
-
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-[#2E8B57]/10 blur-3xl" />

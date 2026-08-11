@@ -23,10 +23,10 @@ const isDev = process.env.NODE_ENV !== "production";
 // ─────────────────────────────────────────────────────────────────────────────
 function playNotificationSound() {
   try {
-    const { soundEnabled, notificationSound } = useSettingsStore.getState();
+    const { soundEnabled } = useSettingsStore.getState();
     if (isDev) {
       console.log(
-        `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}, Choice="${notificationSound}"`
+        `[Realtime] 🔊 playNotificationSound: Attempting playback. Enabled=${soundEnabled}`
       );
     }
     if (soundEnabled) {

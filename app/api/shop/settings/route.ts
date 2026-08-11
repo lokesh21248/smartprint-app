@@ -4,13 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { canManageShop } from "@/lib/auth/shop-access";
 import { z } from "zod";
 
-// ─── Validation schema ────────────────────────────────────────────────────────
 const SettingsPatchSchema = z.object({
   shopId: z.string().uuid("shopId must be a valid UUID"),
   soundEnabled: z.boolean().optional(),
-  // Extend this enum when new sounds are added to the audio manager
-  // Must exactly match: stores/settingsStore.ts NotificationSound type + audioManager preloaded sounds
-  notificationSound: z.enum(["whatsapp", "cash", "bell", "ding"]).optional(),
 });
 
 export async function GET(request: Request) {
@@ -47,7 +43,7 @@ export async function GET(request: Request) {
     // We don't need to UPSERT on GET; we can just return defaults if no row exists.
     const { data, error } = await supabase
       .from("shop_settings")
-      .select("sound_alerts, notification_sound")
+      .select("sound_alerts")
       .eq("shop_id", shopId)
       .maybeSingle();
 
@@ -59,7 +55,6 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         soundEnabled: data?.sound_alerts ?? true,
-        notificationSound: data?.notification_sound ?? "whatsapp",
       },
       { headers: { "Cache-Control": "no-store" } }
     );
@@ -91,7 +86,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { shopId, soundEnabled, notificationSound } = parsed.data;
+    const { shopId, soundEnabled } = parsed.data;
     if (!shopId) {
       return NextResponse.json({ error: "shopId is required" }, { status: 400 });
     }
@@ -120,7 +115,6 @@ export async function POST(request: Request) {
         {
           shop_id: shopId,
           ...(soundEnabled !== undefined && { sound_alerts: soundEnabled }),
-          ...(notificationSound !== undefined && { notification_sound: notificationSound }),
           updated_at: new Date().toISOString(),
         },
         { onConflict: "shop_id" }
