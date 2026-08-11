@@ -12,6 +12,7 @@ class NotificationSoundManager {
   private toastShown = false;
 
   constructor() {
+    // Only initialize on the client — module may be imported on the server
     if (typeof window !== "undefined") {
       this.preload();
     }
@@ -27,91 +28,104 @@ class NotificationSoundManager {
       const path = rest.join("/");
 
       const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-      
-      if (isDev) console.log(`[NotificationSound] 🎧 Preloading from: ${data.publicUrl}`);
+      const url = data.publicUrl;
 
-      this.audio = new Audio(data.publicUrl);
+      if (isDev) console.log(`[NotificationSound] 🎧 Preloading from: ${url}`);
+
+      this.audio = new Audio(url);
       this.audio.preload = "auto";
       this.audio.setAttribute("playsinline", "true");
-      
-      // Default volume
       this.audio.volume = 0.7;
+      this.audio.muted = false;
 
-      // Add a global click listener to unlock audio if it hasn't been unlocked yet
-      const unlockHandler = () => {
-        this.unlock();
-        document.removeEventListener("click", unlockHandler);
-        document.removeEventListener("touchstart", unlockHandler);
-        document.removeEventListener("keydown", unlockHandler);
-      };
-      
-      document.addEventListener("click", unlockHandler);
-      document.addEventListener("touchstart", unlockHandler);
-      document.addEventListener("keydown", unlockHandler);
+      this.audio.addEventListener("canplaythrough", () => {
+        if (isDev) console.log("[NotificationSound] ✅ Audio loaded and ready to play.");
+      }, { once: true });
+
+      this.audio.addEventListener("error", (e) => {
+        console.error("[NotificationSound] ❌ Audio load error:", (e.target as HTMLAudioElement)?.error);
+      });
 
     } catch (err) {
-      if (isDev) console.error(`[NotificationSound] ❌ Failed to preload:`, err);
+      console.error("[NotificationSound] ❌ Failed to preload:", err);
     }
   }
 
+  /**
+   * Call this from a user interaction (click/keydown) to satisfy browser autoplay policy.
+   * Plays and immediately pauses at position 0 to "warm up" the audio element.
+   * Sets this.unlocked = true only after the warm-up succeeds.
+   */
   public unlock() {
     if (this.unlocked || !this.audio) return;
-    
+
     if (isDev) console.log("[NotificationSound] 🔓 Unlocking browser audio...");
-    
-    // Play and immediately pause to satisfy autoplay restrictions
+
     const playPromise = this.audio.play();
     if (playPromise !== undefined) {
       playPromise
         .then(() => {
-          this.audio?.pause();
-          if (this.audio) this.audio.currentTime = 0;
+          this.audio!.pause();
+          this.audio!.currentTime = 0;
           this.unlocked = true;
-          if (isDev) console.log(`[NotificationSound] HTML5 audio unlocked successfully.`);
+          if (isDev) console.log("[NotificationSound] ✅ Browser audio unlocked successfully.");
         })
         .catch((err) => {
-          if (isDev) console.warn(`[NotificationSound] Autoplay unlock deferred:`, err.message);
+          // This is expected if called before full load — not a fatal error
+          if (isDev) console.warn("[NotificationSound] ⚠️ Unlock deferred (audio not ready):", err.message);
         });
     }
   }
 
   public async play() {
     if (!this.audio) {
-      if (isDev) console.warn("[NotificationSound] Audio not initialized. Attempting preload.");
+      if (isDev) console.warn("[NotificationSound] Audio not initialized — attempting preload.");
       this.preload();
+      return;
     }
 
-    if (this.audio) {
-      try {
-        if (isDev) console.log(`[NotificationSound] 🔊 Playing notification sound...`);
-        this.audio.currentTime = 0;
-        await this.audio.play();
-        if (isDev) console.log(`[NotificationSound] ✅ Playback successful.`);
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "NotAllowedError") {
-          if (isDev) console.warn("[NotificationSound] ⚠️ Playback blocked by browser autoplay policy.");
-          
-          if (!this.toastShown) {
-            this.toastShown = true;
-            toast("Enable notification sounds", {
-              description: "Allow your browser to play audio alerts for new orders.",
-              action: {
-                label: "Enable Sound",
-                onClick: () => {
-                  this.unlock();
-                  toast.success("Notification sounds enabled");
-                }
-              },
-              duration: 10000,
-            });
-          }
-        } else {
-          if (isDev) console.warn(
-            `[NotificationSound] ⚠️ Play failed (network issue or missing file):`,
-            err instanceof Error ? err.message : err
-          );
-        }
+    if (isDev) {
+      console.log(
+        `[Audio] PLAY ATTEMPT — readyState=${this.audio.readyState}, unlocked=${this.unlocked}, muted=${this.audio.muted}, volume=${this.audio.volume}`
+      );
+    }
+
+    try {
+      this.audio.currentTime = 0;
+      const promise = this.audio.play();
+
+      if (promise !== undefined) {
+        promise
+          .then(() => {
+            if (isDev) console.log("[Audio] PLAY SUCCESS ✅");
+          })
+          .catch((err: Error) => {
+            if (err.name === "NotAllowedError") {
+              if (isDev) console.warn("[Audio] PLAY FAILED — NotAllowedError (autoplay blocked by browser)");
+
+              // Show a one-time, unobtrusive toast so the user can enable audio
+              if (!this.toastShown) {
+                this.toastShown = true;
+                toast("🔔 Enable notification sounds", {
+                  description: "Click below to allow audio alerts for new orders.",
+                  action: {
+                    label: "Enable Sound",
+                    onClick: () => {
+                      this.unlock();
+                      this.toastShown = false; // allow re-show if they dismiss without clicking
+                      toast.success("Notification sounds enabled");
+                    },
+                  },
+                  duration: 10000,
+                });
+              }
+            } else {
+              console.error("[Audio] PLAY FAILED —", err.name, err.message);
+            }
+          });
       }
+    } catch (err) {
+      console.error("[NotificationSound] ❌ Unexpected play error:", err);
     }
   }
 }
