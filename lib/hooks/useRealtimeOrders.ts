@@ -6,7 +6,7 @@ import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { notificationSoundManager } from "@/lib/NotificationSoundManager";
+
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { Order } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -19,22 +19,18 @@ const playedOrderIds = new Set<string>();
 const isDev = process.env.NODE_ENV !== "production";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Audio notification (Delegated to preloaded AudioManager & settingsStore)
+// Audio notification — plays /sounds/new-order.mp3 on a genuine INSERT event
 // ─────────────────────────────────────────────────────────────────────────────
 function playNotificationSound(orderId: string) {
   try {
     const { soundEnabled } = useSettingsStore.getState();
-    const shopSoundEnabled = useShopStore.getState().soundEnabled;
-    const isEnabled = soundEnabled ?? shopSoundEnabled ?? true;
-
-    console.log(`[ORDER AUDIO] Notification requested for order="${orderId}" soundEnabled=${isEnabled}`);
-    if (isEnabled) {
-      notificationSoundManager.play();
-    } else {
-      console.log("[ORDER AUDIO] Sound skipped — soundEnabled is false/off");
-    }
+    if (!soundEnabled) return;
+    const audio = new Audio("/sounds/new-order.mp3");
+    audio.play().catch((err) => {
+      if (isDev) console.warn(`[ORDER AUDIO] Playback blocked for order "${orderId}":`, err?.message);
+    });
   } catch (err) {
-    console.error("[ORDER AUDIO] ❌ Exception in playNotificationSound:", err);
+    if (isDev) console.error("[ORDER AUDIO] Exception playing notification:", err);
   }
 }
 

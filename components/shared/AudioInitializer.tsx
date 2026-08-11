@@ -2,58 +2,48 @@
 
 import { useEffect } from "react";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { notificationSoundManager } from "@/lib/NotificationSoundManager";
 
 interface AudioInitializerProps {
   shopId: string | null;
 }
 
 /**
- * AudioInitializer mounts inside the authenticated dashboard layout.
- * Responsibilities:
- *   1. Fetch persisted sound settings from Supabase once per session.
- *   2. Register user-interaction listeners to unlock browser audio (autoplay policy).
- *      Remains active until notificationSoundManager.isUnlocked() returns true.
+ * AudioInitializer — two responsibilities only:
+ * 1. Fetch persisted notification settings (soundEnabled) from Supabase.
+ * 2. Unlock browser autoplay on first user interaction so that subsequent
+ *    audio.play() calls in the realtime handler are allowed.
  */
 export function AudioInitializer({ shopId }: AudioInitializerProps) {
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
 
-  // 1. Load persisted settings (soundEnabled) from Supabase into Zustand store
+  // Load soundEnabled setting from Supabase into Zustand store
   useEffect(() => {
     if (shopId) {
       fetchSettings(shopId);
     }
   }, [shopId, fetchSettings]);
 
-  // 2. Unlock browser audio on user interaction (required by Chrome/Safari autoplay policy)
+  // Unlock browser autoplay on first user gesture (Chrome/Safari requirement).
+  // Creates a silent Audio element, plays it muted, then discards it.
+  // This satisfies the browser's "user gesture required" rule without making
+  // any audible sound, so future audio.play() calls in the order handler work.
   useEffect(() => {
-    const removeListeners = () => {
-      window.removeEventListener("click", handleInteraction, { capture: true });
-      window.removeEventListener("pointerdown", handleInteraction, { capture: true });
-      window.removeEventListener("touchstart", handleInteraction, { capture: true });
-      window.removeEventListener("keydown", handleInteraction, { capture: true });
+    const unlock = () => {
+      try {
+        const silent = new Audio("/sounds/new-order.mp3");
+        silent.volume = 0;
+        silent.play().then(() => { silent.pause(); }).catch(() => {});
+      } catch (_) {}
     };
 
-    const handleInteraction = async () => {
-      if (notificationSoundManager.isUnlocked()) {
-        removeListeners();
-        return;
-      }
-
-      const success = await notificationSoundManager.unlock();
-      if (success || notificationSoundManager.isUnlocked()) {
-        removeListeners();
-      }
-    };
-
-    // Use capture phase so this fires before any stopPropagation() calls
-    window.addEventListener("click", handleInteraction, { capture: true });
-    window.addEventListener("pointerdown", handleInteraction, { capture: true });
-    window.addEventListener("touchstart", handleInteraction, { capture: true });
-    window.addEventListener("keydown", handleInteraction, { capture: true });
+    document.addEventListener("click", unlock, { once: true });
+    document.addEventListener("touchstart", unlock, { once: true });
+    document.addEventListener("keydown", unlock, { once: true });
 
     return () => {
-      removeListeners();
+      document.removeEventListener("click", unlock);
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("keydown", unlock);
     };
   }, []);
 
