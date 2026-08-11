@@ -49,44 +49,73 @@ function createSilentWavBuffer() {
 
 function downloadFile(name, url) {
   const destPath = path.join(SOUNDS_DIR, `${name}.mp3`);
+  const tmpPath = destPath + ".tmp";
   console.log(`[Sound Downloader] Attempting to download ${name} from: ${url}`);
 
   return new Promise((resolve) => {
+    let handled = false;
+    let fileStream = null;
+
+    const doFallback = () => {
+      if (handled) return;
+      handled = true;
+      writeFallback(name, destPath);
+
+      const cleanup = () => fs.rm(tmpPath, { force: true }, () => {});
+      
+      if (fileStream && !fileStream.destroyed) {
+        fileStream.destroy();
+        fileStream.on("close", cleanup);
+      } else {
+        cleanup();
+      }
+      resolve();
+    };
+
     const request = https.get(url, { timeout: 10000 }, (response) => {
       if (response.statusCode !== 200) {
         console.warn(`[Sound Downloader] ⚠️ Failed to download ${name}: status code ${response.statusCode}`);
-        writeFallback(name, destPath);
-        resolve();
+        response.resume(); // Consume response data to free up memory
+        doFallback();
         return;
       }
 
-      const fileStream = fs.createWriteStream(destPath);
+      fileStream = fs.createWriteStream(tmpPath);
       response.pipe(fileStream);
 
-      fileStream.on("finish", () => {
-        fileStream.close();
-        console.log(`[Sound Downloader] ✅ Successfully downloaded ${name}.mp3`);
-        resolve();
+      // Listen on 'close' instead of 'finish' to ensure the OS file descriptor is fully released
+      fileStream.on("close", () => {
+        if (!handled) {
+          handled = true;
+          // Rename tmp to actual destination safely
+          fs.rename(tmpPath, destPath, (err) => {
+            if (err) {
+              console.error(`[Sound Downloader] ❌ Failed to rename temp file for ${name}:`, err);
+              writeFallback(name, destPath);
+              resolve();
+              return;
+            }
+            console.log(`[Sound Downloader] ✅ Successfully downloaded ${name}.mp3`);
+            resolve();
+          });
+        }
       });
 
       fileStream.on("error", (err) => {
         console.error(`[Sound Downloader] ❌ Error writing file ${name}:`, err);
-        writeFallback(name, destPath);
-        resolve();
+        doFallback();
       });
     });
 
     request.on("error", (err) => {
       console.warn(`[Sound Downloader] ⚠️ Request error for ${name}:`, err.message);
-      writeFallback(name, destPath);
-      resolve();
+      doFallback();
     });
 
     request.on("timeout", () => {
-      request.destroy();
       console.warn(`[Sound Downloader] ⚠️ Request timeout for ${name}`);
-      writeFallback(name, destPath);
-      resolve();
+      request.destroy();
+      // Destroying the request will trigger the "error" event, so we don't need to resolve/fallback here again.
     });
   });
 }
