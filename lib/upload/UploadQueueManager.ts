@@ -415,11 +415,29 @@ export class UploadQueueManager {
   /** Reset a failed file to queued state and re-trigger the drain. */
   retryFile(id: string): void {
     const entry = this._files.get(id);
-    if (!entry || (entry.state !== "failed" && entry.state !== "cancelled")) return;
+    if (!entry || !["failed", "cancelled", "retrying", "preparing"].includes(entry.state)) return;
+
+    // Stop any existing retry timer
+    const retryTimeout = this._tusRetryTimeouts.get(id);
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      this._tusRetryTimeouts.delete(id);
+    }
+
+    // Cancel stale initialization requests
+    const abortCtrl = this._abortControllers.get(id);
+    if (abortCtrl) {
+      abortCtrl.abort();
+      this._abortControllers.delete(id);
+    }
 
     // Invalidate current execution immediately
     const currentExecId = this._fileExecutionIds.get(id) ?? 0;
     this._fileExecutionIds.set(id, currentExecId + 1);
+
+    // Clear locks so the new execution can acquire them
+    this._runningProcesses.delete(id);
+    this._activeFileIds.delete(id);
 
     clearStaleTusFingerprints(id);
     this._patch(id, {
@@ -983,8 +1001,8 @@ export class UploadQueueManager {
         });
       }
     } finally {
-      this._runningProcesses.delete(id); // ALWAYS release the duplicate process lock unconditionally
       if (this._fileExecutionIds.get(id) === execId) {
+        this._runningProcesses.delete(id); // ALWAYS release the duplicate process lock unconditionally
         console.log(`[QueueManager:Debug] Releasing active slot in finally block for file ${id}`);
         this._activeFileIds.delete(id);
         this._abortControllers.delete(id);
@@ -1072,6 +1090,7 @@ export class UploadQueueManager {
         // Transient network error check
         const isNetworkError =
           err instanceof TypeError ||
+          (err as any)?.code === "NETWORK_TIMEOUT" ||
           (err instanceof Error && (
             err.message?.toLowerCase().includes("network") ||
             err.message?.toLowerCase().includes("fetch") ||

@@ -722,7 +722,6 @@ function OrderUploadPageInner() {
       console.error("[order] submission failed:", err);
       setErrorMessage(userMessage);
       setOrderStatus("failed");
-      toast.error("Please review the errors below to complete your order.");
 
       // Do NOT clear uploader session or reset files list on failure. 
       // This preserves files so they remain on screen for retries and prevents total amount from becoming 0.

@@ -371,7 +371,9 @@ export async function POST(request: Request) {
       is_double_sided: Boolean(firstFile ? (firstFile.doubleSided ?? false) : (doubleSided ?? false)),
       notes: String(notes || "").trim(),
       total_amount: Number(totalAmount || 0),
-      status: "new",
+      status: "PLACED",
+      // order_number is intentionally omitted — a DB trigger auto-generates
+      // it in ORD-YYMMDD-NNNN format on every INSERT.
     };
 
     perfStart("[orders:POST:insert]");
