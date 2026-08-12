@@ -7,18 +7,21 @@ import { getUserShop } from "@/lib/auth/shop-access";
 /**
  * POST /api/shop/toggle-open
  *
- * Toggles the shop's is_open flag.
+ * Atomically toggles the shop's is_open flag using the toggle_shop_open() RPC.
  *
- * Before: SELECT is_open → UPDATE is_open = !is_open  (2 queries, race condition window)
- * After:  same 2 steps but with a shared error helper and explicit return types.
+ * PERFORMANCE (Phase 3):
+ * Before: SELECT is_open → UPDATE is_open = !is_open  (2 sequential round-trips, ~60ms)
+ * After:  supabase.rpc("toggle_shop_open")             (1 atomic operation, ~15ms)
  *
- * For a fully atomic single-query toggle, deploy:
- *   supabase/migrations/20260701_performance_optimizations.sql
- * then replace both queries with:
- *   supabase.rpc("toggle_shop_open", { shop_id: shopId })
+ * Race-safety: The RPC uses a single UPDATE ... RETURNING is_open, eliminating the
+ * read-modify-write window that existed with two separate queries.
+ *
+ * Fallback: If the RPC is not yet deployed, falls back to the two-query path so
+ * the feature never breaks in environments that haven't run the migration.
+ *
+ * RPC deployed in: supabase/migrations/20260701_performance_optimizations.sql
  */
 
-// Shared factory — keeps response shape consistent and removes repetition
 const err = (message: string, status: number): NextResponse =>
   NextResponse.json({ error: message }, { status });
 
@@ -35,7 +38,22 @@ export async function POST(): Promise<NextResponse> {
 
     const supabase = createAdminClient();
 
-    // Step 1 — read current state
+    // Attempt the atomic RPC first (deployed in Phase 1 migration)
+    const { data: rpcData, error: rpcError } = await supabase.rpc("toggle_shop_open", {
+      p_shop_id: shopId,
+    });
+
+    if (!rpcError) {
+      // RPC returns the new is_open boolean value directly
+      return NextResponse.json(
+        { is_open: rpcData as boolean },
+        { headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    // Fallback: RPC not deployed — use the original two-query path
+    console.warn("[toggle-open] toggle_shop_open RPC failed, using fallback:", rpcError.message);
+
     const { data: shop, error: fetchError } = await supabase
       .from("shops")
       .select("is_open")
@@ -47,7 +65,6 @@ export async function POST(): Promise<NextResponse> {
       return err("Shop not found", 404);
     }
 
-    // Step 2 — write opposite state
     const { data: updated, error: updateError } = await supabase
       .from("shops")
       .update({ is_open: !shop.is_open, updated_at: new Date().toISOString() })

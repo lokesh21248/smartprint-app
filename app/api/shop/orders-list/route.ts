@@ -119,11 +119,15 @@ export async function GET(request: Request) {
       )
       .eq("shop_id", shopId);
 
-    // Optional status filter — handle PLACED mapping to all 'new order' variants
+    // Optional status filter — PLACED maps to all 'new/pending order' variants.
+    // After the status normalization fix, new orders are stored as lowercase 'new'
+    // while legacy orders may still have 'PLACED' or 'placed'. We query all variants
+    // so both old and new orders appear correctly in the dashboard feed.
     if (statusParam === "PLACED") {
       query = query.in("status", ["PLACED", "placed", "new", "NEW"]);
     } else if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
-      query = query.eq("status", statusParam);
+      // For other statuses, match both original case and lowercase
+      query = query.in("status", [statusParam, statusParam.toLowerCase()]);
     }
 
     query = query

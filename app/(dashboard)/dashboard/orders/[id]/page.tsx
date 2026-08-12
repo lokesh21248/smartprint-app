@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { auth } from "@clerk/nextjs/server";
+import { canManageShop } from "@/lib/auth/shop-access";
 import type { Order } from "@/types";
 import { OrderDetailView } from "@/components/orders/OrderDetailView";
 import { OrderDetailError } from "@/components/orders/OrderDetailError";
@@ -91,7 +92,7 @@ async function fetchOrder(id: string, userId: string): Promise<FetchResult> {
     }
 
     // Verify shop access using the canManageShop helper (handles owners, managers, staff, admins)
-    const { canManageShop } = await import("@/lib/auth/shop-access");
+    // Static import — resolves once per cold start, not on every request
     const isAuthorized = await canManageShop(userId, raw.shop_id);
     if (!isAuthorized) {
       if (process.env.NODE_ENV !== "production") {
