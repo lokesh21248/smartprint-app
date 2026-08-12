@@ -45,12 +45,12 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
   if (!posts || posts.length === 0) return null;
 
   return (
-    <section aria-labelledby="blog-preview-heading" className="mt-24 max-w-5xl w-full px-4">
-      <div className="text-center mb-10">
-        <h2 id="blog-preview-heading" className="text-2xl font-extrabold text-gray-900 tracking-tight sm:text-3xl">
+    <section aria-labelledby="blog-preview-heading" className="mt-32 max-w-5xl w-full px-4">
+      <div className="text-center mb-7">
+        <h2 id="blog-preview-heading" className="text-xl font-extrabold text-gray-900 tracking-tight sm:text-2xl">
           Latest Articles
         </h2>
-        <p className="mt-2 max-w-xl mx-auto text-sm text-gray-500">
+        <p className="mt-1.5 max-w-xl mx-auto text-xs text-gray-500">
           Insights, strategies, and guides to optimize your xerox shop operations and accelerate growth.
         </p>
       </div>
@@ -64,7 +64,7 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
               key={post.slug}
               className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-md group"
             >
-              <Link href={`/blog/${post.slug}`} className="block relative h-40 w-full overflow-hidden">
+              <Link href={`/blog/${post.slug}`} className="block relative h-32 w-full overflow-hidden">
                 <Image
                   src={post.coverImage}
                   alt={post.coverImageAlt}
@@ -77,7 +77,7 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
                 />
                 <div className="absolute inset-0 bg-black/5 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
               </Link>
-              <div className="flex flex-1 flex-col justify-between p-5">
+              <div className="flex flex-1 flex-col justify-between p-4">
                 <div className="flex-1">
                   <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${badgeColor}`}>
                     {post.category}
@@ -91,7 +91,7 @@ export function LatestArticles({ posts }: LatestArticlesProps) {
                     </p>
                   </Link>
                 </div>
-                <div className="mt-5 flex items-center gap-2 text-xs text-gray-400 border-t border-gray-50 pt-3">
+                <div className="mt-4 flex items-center gap-2 text-xs text-gray-400 border-t border-gray-50 pt-2.5">
                   <time dateTime={post.date}>{formatDate(post.date)}</time>
                   <span aria-hidden="true">·</span>
                   <span>{post.readingTime}</span>
