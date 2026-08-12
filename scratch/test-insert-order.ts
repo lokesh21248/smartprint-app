@@ -20,25 +20,14 @@ async function main() {
     console.error("Failed to find a shop to insert an order for.");
     process.exit(1);
   }
-  
+
   const shopId = shops[0].id;
   console.log(`Using shopId: ${shopId}`);
 
   // Insert a fake order
   const { data, error } = await supabase.from("orders").insert([
     {
-      shop_id: shopId,
-      customer_name: "Test Audio Order",
-      customer_phone: "1234567890",
-      file_s3_key: "dummy/path.pdf",
-      file_name: "test.pdf",
-      file_size_bytes: 1024,
-      status: "PLACED",
-      total_amount: 10,
-      page_count: 1,
-      copies: 1,
-      is_color: false,
-      is_double_sided: false
+
     }
   ]).select();
 
@@ -46,7 +35,7 @@ async function main() {
     console.error("Error inserting order:", error.message);
   } else {
     console.log("Order inserted successfully!", data);
-    
+
     // Cleanup the test order
     setTimeout(async () => {
       await supabase.from("orders").delete().eq("id", data[0].id);

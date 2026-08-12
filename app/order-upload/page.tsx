@@ -293,13 +293,13 @@ function OrderUploadPageInner() {
 
   // Pre-generate unique orderId for this session (for TUS folder structuring)
   const [orderId] = useState(() => {
-    if (typeof window !== "undefined" && window.crypto) {
-      if (window.crypto.randomUUID) return window.crypto.randomUUID();
-      const arr = new Uint32Array(1);
-      window.crypto.getRandomValues(arr);
-      return "f-" + arr[0].toString(36) + "-" + Date.now();
+    if (typeof window !== "undefined" && window.crypto && window.crypto.randomUUID) {
+      return window.crypto.randomUUID();
     }
-    return "order-fallback-" + Date.now();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   });
 
   // ── Guard: If this orderId already has a completed order, redirect now ─────────
@@ -336,6 +336,7 @@ function OrderUploadPageInner() {
   type OrderStatus = "idle" | "saving" | "success" | "failed";
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isOffline, setIsOffline] = useState(false);
 
   const handleCheckoutDetails = useCallback(() => {
@@ -536,9 +537,9 @@ function OrderUploadPageInner() {
     }
 
     // Input Validation
+    const errors: Record<string, string> = {};
     if (!customerName || customerName.trim().length < 3) {
-      toast.error("Please enter your name");
-      return;
+      errors.customerName = "Please enter your name";
     }
     const rawDigits = customerPhone.replace(/\D/g, "");
     const cleanedPhone =
@@ -546,7 +547,12 @@ function OrderUploadPageInner() {
         ? rawDigits.slice(2)
         : rawDigits;
     if (cleanedPhone.length !== 10) {
-      toast.error("Enter valid 10-digit phone number");
+      errors.customerPhone = "Enter valid 10-digit phone number";
+    }
+
+    setValidationErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
       return;
     }
 
@@ -712,10 +718,7 @@ function OrderUploadPageInner() {
         userMessage = "You went offline. Reconnect and tap Retry.";
         tracker.markFailure("network");
       } else {
-        userMessage =
-          err instanceof Error
-            ? err.message.replace(/^Error:\s*/, "")
-            : "Something went wrong placing your order.";
+        userMessage = "Order creation failed. Your uploaded file is محفوظ and you can safely retry.";
         tracker.markFailure("unknown");
       }
 
@@ -905,6 +908,25 @@ function OrderUploadPageInner() {
                 </div>
               </div>
 
+              {/* Validation Errors Banner */}
+              <AnimatePresence>
+                {Object.keys(validationErrors).length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-start gap-3"
+                  >
+                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-red-800">
+                        Please review the errors below to complete your order.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Delivery Info */}
               <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xl shadow-slate-900/[0.02] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
                 <div className="flex items-center gap-3">
@@ -937,6 +959,9 @@ function OrderUploadPageInner() {
                         className="w-full pl-12 h-12 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm font-semibold transition-all disabled:opacity-60"
                       />
                     </div>
+                    {validationErrors.customerName && (
+                      <p className="text-xs text-red-500 font-bold ml-1 mt-1">{validationErrors.customerName}</p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -958,6 +983,9 @@ function OrderUploadPageInner() {
                         className="w-full pl-12 h-12 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm font-semibold transition-all disabled:opacity-60"
                       />
                     </div>
+                    {validationErrors.customerPhone && (
+                      <p className="text-xs text-red-500 font-bold ml-1 mt-1">{validationErrors.customerPhone}</p>
+                    )}
                     <p className="text-[9px] text-slate-400 font-bold ml-0.5">
                       Used strictly for real-time status &amp; pickup updates
                     </p>

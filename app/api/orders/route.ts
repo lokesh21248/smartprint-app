@@ -372,8 +372,7 @@ export async function POST(request: Request) {
       notes: String(notes || "").trim(),
       total_amount: Number(totalAmount || 0),
       status: "PLACED",
-      // order_number is intentionally omitted — a DB trigger auto-generates
-      // it in ORD-YYMMDD-NNNN format on every INSERT.
+      order_number: `ORD-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`,
     };
 
     perfStart("[orders:POST:insert]");
