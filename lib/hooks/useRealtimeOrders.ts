@@ -86,6 +86,15 @@ let activeChannel: RealtimeChannel | null = null;
 let activeChannelShopId: string | null = null;
 let subscriberCount = 0;
 
+// Deferred teardown timer — gives a short grace window so React Strict Mode's
+// synchronous unmount+remount cycle (or fast navigation back to the same page)
+// can cancel the teardown before the WebSocket is actually closed.
+// Without this, Strict Mode fires: mount → unmount → removeChannel → remount
+// which logs "WebSocket is closed before the connection is established" every
+// time the dashboard loads, even though the subscription eventually succeeds.
+let teardownTimer: ReturnType<typeof setTimeout> | null = null;
+const TEARDOWN_GRACE_MS = 200; // enough for a Strict Mode re-mount cycle
+
 // Controlled reconnection manager variables
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
@@ -286,7 +295,12 @@ async function initSubscription(
 }
 
 // Centralized subscription teardown
-async function terminateSubscription(
+// Uses a short grace period (TEARDOWN_GRACE_MS) before actually closing the
+// channel. This eliminates the "WebSocket is closed before the connection is
+// established" console error caused by React Strict Mode's synchronous
+// mount → unmount → remount cycle, and also prevents unnecessary channel
+// destruction when navigating quickly between pages that share the hook.
+function terminateSubscription(
   setRealtimeChannel: (c: RealtimeChannel | null) => void
 ) {
   const shopId = activeChannelShopId;
@@ -297,17 +311,34 @@ async function terminateSubscription(
   reconnectAttempts = 0;
   isReconnecting = false;
 
-  if (activeChannel) {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[Realtime] Unsubscribing:", shopId);
+  // Cancel any previously pending teardown — a new subscriber may arrive soon
+  if (teardownTimer) {
+    clearTimeout(teardownTimer);
+    teardownTimer = null;
+  }
+
+  if (!activeChannel) return;
+
+  // Schedule actual teardown after the grace period.
+  // The mount path in the main effect will cancel this if subscriberCount > 0.
+  teardownTimer = setTimeout(async () => {
+    teardownTimer = null;
+    // Re-check: a new subscriber may have arrived during the grace window
+    if (subscriberCount > 0) {
+      if (isDev) {
+        console.log(`[Realtime] 🛡️ Teardown cancelled — ${subscriberCount} active subscriber(s) still present.`);
+      }
+      return;
     }
+    if (!activeChannel) return;
+    if (isDev) console.log("[Realtime] Unsubscribing:", shopId);
     const channelToCleanup = activeChannel;
     activeChannel = null;
     activeChannelShopId = null;
     setRealtimeChannel(null);
     const supabase = createClient();
     await supabase.removeChannel(channelToCleanup).catch(() => {});
-  }
+  }, TEARDOWN_GRACE_MS);
 }
 
 export function useRealtimeOrders(shopId: string | null) {
@@ -533,6 +564,18 @@ export function useRealtimeOrders(shopId: string | null) {
   useEffect(() => {
     if (!shopId) return;
 
+    // Cancel any pending deferred teardown — we have a live subscriber now
+    if (teardownTimer) {
+      clearTimeout(teardownTimer);
+      teardownTimer = null;
+      if (isDev) {
+        console.log(`[Realtime] 🛡️ Pending teardown cancelled — new subscriber arrived for shop: ${shopId}`);
+      }
+    }
+
+    // Clamp to 0 before incrementing to prevent negative counts from
+    // React Strict Mode double-unmount cycles
+    if (subscriberCount < 0) subscriberCount = 0;
     subscriberCount++;
     if (process.env.NODE_ENV !== "production") {
       console.log(`[Realtime] Hook instance mounted for shop: ${shopId}. Total active subscribers: ${subscriberCount}`);
@@ -553,7 +596,7 @@ export function useRealtimeOrders(shopId: string | null) {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      subscriberCount--;
+      subscriberCount = Math.max(0, subscriberCount - 1);
       if (process.env.NODE_ENV !== "production") {
         console.log(`[Realtime] Hook instance unmounted for shop: ${shopId}. Remaining active subscribers: ${subscriberCount}`);
       }
