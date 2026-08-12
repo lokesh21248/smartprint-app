@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useSettingsStore } from "@/stores/settingsStore";
+import { playOrderNotification } from "@/lib/audio/orderNotification";
 import type { Order } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -19,19 +20,21 @@ const playedOrderIds = new Set<string>();
 const isDev = process.env.NODE_ENV !== "production";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Audio notification — plays /sounds/new-order.mp3 on a genuine INSERT event
+// Audio notification — delegates to the singleton audio manager.
+//
+// The singleton (lib/audio/orderNotification.ts) holds ONE HTMLAudioElement
+// for the page lifetime, shared with AudioInitializer's unlock handler.
+// This is required because browser autoplay policy tracks unlock state
+// PER-OBJECT: unlocking a different Audio instance (the old bug) did nothing
+// for the playback object created here.
 // ─────────────────────────────────────────────────────────────────────────────
 function playNotificationSound(orderId: string) {
-  try {
-    const { soundEnabled } = useSettingsStore.getState();
-    if (!soundEnabled) return;
-    const audio = new Audio("/sounds/new-order.mp3");
-    audio.play().catch((err) => {
-      if (isDev) console.warn(`[ORDER AUDIO] Playback blocked for order "${orderId}":`, err?.message);
-    });
-  } catch (err) {
-    if (isDev) console.error("[ORDER AUDIO] Exception playing notification:", err);
-  }
+  const { soundEnabled } = useSettingsStore.getState();
+  if (!soundEnabled) return;
+  // playOrderNotification is async but we intentionally don't await here —
+  // the realtime handler is synchronous and the sound plays fire-and-forget.
+  // Errors are caught inside the singleton and never propagate.
+  playOrderNotification(orderId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
