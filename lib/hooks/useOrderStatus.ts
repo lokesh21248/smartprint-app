@@ -20,7 +20,7 @@ export function useOrderStatus(orderId: string, options?: UseOrderStatusOptions)
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newStatus, rejectionReason: reason }),
+        body: JSON.stringify({ newStatus: newStatus.toLowerCase(), rejectionReason: reason }),
       });
 
       if (!res.ok) throw new Error("Failed");

@@ -38,9 +38,7 @@ export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 
 export const OrderStatusUpdateSchema = z.object({
   orderId: z.string().uuid(),
-  // DRAFT is intentionally excluded — shop owners cannot revert an order to draft.
-  // Draft orders are created by the customer flow only.
-  newStatus: z.enum(["PLACED", "ACCEPTED", "PRINTING", "READY", "COMPLETED", "CANCELLED"]),
+  newStatus: z.enum(["new", "accepted", "printing", "ready", "completed", "cancelled"]),
   rejectionReason: z.string().max(500).optional(),
 });
 export type OrderStatusUpdateInput = z.infer<typeof OrderStatusUpdateSchema>;

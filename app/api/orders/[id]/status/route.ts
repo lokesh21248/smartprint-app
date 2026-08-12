@@ -8,11 +8,11 @@ import { rateLimit } from "@/lib/ratelimit";
 // Static import — eliminates dynamic module-resolution overhead on every status change
 import { NotificationService } from "@/lib/notifications";
 
-const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  PLACED: ["ACCEPTED", "CANCELLED"],
-  ACCEPTED: ["PRINTING", "CANCELLED"],
-  PRINTING: ["READY", "CANCELLED"],
-  READY: ["COMPLETED"],
+const VALID_TRANSITIONS: Partial<Record<string, string[]>> = {
+  new: ["accepted", "cancelled"],
+  accepted: ["printing", "cancelled"],
+  printing: ["ready", "cancelled"],
+  ready: ["completed"],
 };
 
 /**
@@ -46,8 +46,11 @@ export async function PATCH(
     const supabase = createAdminClient();
 
     const body = await request.json();
+    console.log('[ORDER STATUS] Request body:', body);
+
     const parsed = OrderStatusUpdateSchema.safeParse({ ...body, orderId: params.id });
     if (!parsed.success) {
+      console.error('[ORDER STATUS] Validation failed (schema):', parsed.error.flatten());
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
     const { newStatus, rejectionReason } = parsed.data;
@@ -77,10 +80,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const currentStatus = order.status as OrderStatus; // live schema column name
+    const currentStatus = String(order.status).toLowerCase(); // live schema column name, normalized
 
     const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
     if (!allowed.includes(newStatus)) {
+      console.error(`[ORDER STATUS] Validation failed (transition): Cannot transition from ${currentStatus} to ${newStatus}`);
       return NextResponse.json(
         { error: `Cannot transition from ${currentStatus} to ${newStatus}` },
         { status: 422 }
@@ -104,7 +108,7 @@ export async function PATCH(
       status_history: updatedHistory,
       updated_at: new Date().toISOString(),
     };
-    if (newStatus === "COMPLETED") {
+    if (newStatus === "completed") {
       updatePayload.completed_at = new Date().toISOString();
     }
     if (rejectionReason) updatePayload.cancellation_reason = rejectionReason;

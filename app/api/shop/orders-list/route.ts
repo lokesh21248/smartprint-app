@@ -119,8 +119,10 @@ export async function GET(request: Request) {
       )
       .eq("shop_id", shopId);
 
-    // Optional status filter — only apply if the value is in the allowlist
-    if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
+    // Optional status filter — handle PLACED mapping to all 'new order' variants
+    if (statusParam === "PLACED") {
+      query = query.in("status", ["PLACED", "placed", "new", "NEW"]);
+    } else if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
       query = query.eq("status", statusParam);
     }
 

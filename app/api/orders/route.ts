@@ -371,7 +371,7 @@ export async function POST(request: Request) {
       is_double_sided: Boolean(firstFile ? (firstFile.doubleSided ?? false) : (doubleSided ?? false)),
       notes: String(notes || "").trim(),
       total_amount: Number(totalAmount || 0),
-      status: "PLACED",
+      status: "new",
     };
 
     perfStart("[orders:POST:insert]");

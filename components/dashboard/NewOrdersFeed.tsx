@@ -105,7 +105,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
 
   const handleAction = async (
     orderId: string,
-    newStatus: "ACCEPTED" | "CANCELLED"
+    newStatus: "accepted" | "cancelled"
   ) => {
     setProcessing((p) => ({ ...p, [orderId]: true }));
 
@@ -120,11 +120,11 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newStatus, reason: newStatus === "CANCELLED" ? "Rejected by shop" : undefined }),
+        body: JSON.stringify({ newStatus, rejectionReason: newStatus === "cancelled" ? "Rejected by shop" : undefined }),
       });
       if (!res.ok) throw new Error("Failed");
       toast.success(
-        newStatus === "ACCEPTED" ? "✅ Order accepted!" : "Order rejected"
+        newStatus === "accepted" ? "✅ Order accepted!" : "Order rejected"
       );
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
@@ -246,7 +246,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                     size="sm"
                     className="flex-1"
                     loading={processing[order.id]}
-                    onClick={() => handleAction(order.id, "ACCEPTED")}
+                    onClick={() => handleAction(order.id, "accepted")}
                   >
                     <Check className="h-4 w-4" />
                     Accept
@@ -258,7 +258,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
                   variant="outline"
                   className="flex-1 border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2]"
                   loading={processing[order.id]}
-                  onClick={() => handleAction(order.id, "CANCELLED")}
+                  onClick={() => handleAction(order.id, "cancelled")}
                 >
                   <X className="h-4 w-4" />
                   {(order as Order & { file_scan_status?: ScanStatus }).file_scan_status === "infected" ? "Dismiss" : "Reject"}
