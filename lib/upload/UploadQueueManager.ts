@@ -778,7 +778,7 @@ export class UploadQueueManager {
           error: attempt > 0 ? "Reconnecting…" : "Preparing upload…",
         });
 
-        const presignResult = await this._generateUploadUrlWithRetry(id);
+        const presignResult = await this._generateUploadUrlWithRetry(id, execId);
         if (this._fileExecutionIds.get(id) !== execId || this._destroyed || !this._files.has(id)) {
           return;
         }
@@ -1019,7 +1019,8 @@ export class UploadQueueManager {
   // ─── Presign ──────────────────────────────────────────────────────────────────
 
   private async _generateUploadUrlWithRetry(
-    id: string
+    id: string,
+    execId: number
   ): Promise<{
     token: string;
     storagePath: string;
@@ -1032,18 +1033,17 @@ export class UploadQueueManager {
     if (!entry || !entry.file) return null;
 
     const retries = this._isMobile ? MAX_NETWORK_RETRIES : 5;
-    // 15s timeout for presign on both mobile and desktop — the request is a tiny JSON call.
-    // 60s was excessive and masked real connectivity issues.
     const timeoutMs = 15_000;
     let lastError: unknown = null;
 
     for (let i = 0; i < retries; i++) {
-      if (this._destroyed || !this._files.has(id)) return null;
+      if (this._destroyed || !this._files.has(id) || this._fileExecutionIds.get(id) !== execId) return null;
 
       // Offline detection
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         console.warn(`[QueueManager] Offline during URL generation for ${entry.name}. Waiting...`);
         await this._waitForNetwork(id);
+        if (this._destroyed || !this._files.has(id) || this._fileExecutionIds.get(id) !== execId) return null;
       }
 
       const controller = new AbortController();
@@ -1107,14 +1107,18 @@ export class UploadQueueManager {
           // Exponential backoff
           const delay = 1000 * Math.pow(2, i + 1) + Math.random() * 300;
           this._patch(id, {
+            state: "retrying",
             error: `Connection interrupted. Reconnecting upload… (Attempt ${i + 1}/5)`,
           });
           await new Promise((r) => setTimeout(r, delay));
+          if (this._destroyed || !this._files.has(id) || this._fileExecutionIds.get(id) !== execId) return null;
         }
       } finally {
         this._abortControllers.delete(id);
       }
     }
+
+    if (this._fileExecutionIds.get(id) !== execId || this._destroyed) return null;
 
     // All retries failed
     const classified = classifyUploadError(lastError, "presign");
@@ -1122,7 +1126,7 @@ export class UploadQueueManager {
 
     this._patch(id, {
       state: "failed",
-      error: `Upload initialization failed: ${classified.userMessage}.`,
+      error: `Upload initialization failed: ${classified.userMessage}`,
     });
     this._activeFileIds.delete(id);
     this._runningProcesses.delete(id);
