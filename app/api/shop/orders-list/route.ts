@@ -54,6 +54,17 @@ function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
   return "clean";
 }
 
+// Normalize raw DB status values to the uppercase frontend OrderStatus enum.
+// The DB may contain lowercase ('new', 'placed', 'accepted', …) from orders
+// created after the normalization fix, or uppercase ('PLACED', 'ACCEPTED', …)
+// from legacy orders. The frontend type is always uppercase.
+function normalizeOrderStatus(raw: string): string {
+  const s = raw.trim().toUpperCase();
+  // 'NEW' is the normalized DB value for new orders; map it to 'PLACED' (frontend enum)
+  if (s === "NEW") return "PLACED";
+  return s; // PLACED, ACCEPTED, PRINTING, READY, COMPLETED, CANCELLED, DRAFT
+}
+
 // ── Route Handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -181,6 +192,7 @@ export async function GET(request: Request) {
       }
     }
 
+
     // 5. Map DB column names → client field names
     const orders = rows.map((ord) => ({
       id: ord.id,
@@ -193,7 +205,7 @@ export async function GET(request: Request) {
       copies: ord.copies,
       color: ord.is_color, // DB: is_color       → client: color
       double_sided: ord.is_double_sided, // DB: is_double_sided → client: double_sided
-      order_status: ord.status, // DB: status         → client: order_status
+      order_status: normalizeOrderStatus(ord.status), // DB: status → client: order_status (uppercase)
       notes: ord.notes ?? "",
       total_amount: ord.total_amount,
       created_at: ord.created_at,

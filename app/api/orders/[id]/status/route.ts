@@ -8,8 +8,12 @@ import { rateLimit } from "@/lib/ratelimit";
 // Static import — eliminates dynamic module-resolution overhead on every status change
 import { NotificationService } from "@/lib/notifications";
 
+// Both 'placed' (older orders) and 'new' (normalized orders) map to the same
+// allowed transitions. Using lowercase keys because currentStatus is .toLowerCase()d
+// before lookup.
 const VALID_TRANSITIONS: Partial<Record<string, string[]>> = {
   new: ["accepted", "cancelled"],
+  placed: ["accepted", "cancelled"], // alias for 'new' — legacy DB value
   accepted: ["printing", "cancelled"],
   printing: ["ready", "cancelled"],
   ready: ["completed"],
@@ -84,9 +88,14 @@ export async function PATCH(
 
     const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
     if (!allowed.includes(newStatus)) {
-      console.error(`[ORDER STATUS] Validation failed (transition): Cannot transition from ${currentStatus} to ${newStatus}`);
+      console.error(`[ORDER STATUS] Invalid transition: '${currentStatus}' → '${newStatus}' for order ${params.id}`);
+      // Return the specific transition error so the client can show a useful message.
+      // The status values here are safe to expose (no credentials or SQL).
+      const friendlyError = allowed.length === 0
+        ? `This order cannot be updated from its current state.`
+        : `Cannot change this order to '${newStatus}' from its current state.`;
       return NextResponse.json(
-        { error: `Cannot transition from ${currentStatus} to ${newStatus}` },
+        { error: friendlyError },
         { status: 422 }
       );
     }
