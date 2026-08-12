@@ -100,8 +100,10 @@ export async function PATCH(
       );
     }
 
+    const dbStatus = newStatus.toUpperCase();
+
     const newHistoryEntry = {
-      status: newStatus,
+      status: dbStatus,
       at: new Date().toISOString(),
       actor: "shop",
       note: rejectionReason ?? undefined,
@@ -113,7 +115,7 @@ export async function PATCH(
     ];
 
     const updatePayload: Record<string, unknown> = {
-      status: newStatus,              // live schema column name
+      status: dbStatus,              // live schema column name
       status_history: updatedHistory,
       updated_at: new Date().toISOString(),
     };
@@ -128,6 +130,12 @@ export async function PATCH(
       .eq("id", params.id);
 
     if (updateError) {
+      console.error('[ORDER STATUS] Update error:', {
+        code: updateError.code,
+        message: updateError.message,
+        details: updateError.details,
+        hint: updateError.hint,
+      });
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
@@ -144,7 +152,8 @@ export async function PATCH(
       { success: true, order_status: newStatus },
       { headers: { "Cache-Control": "no-store" } }
     );
-  } catch {
+  } catch (error) {
+    console.error('[ORDER STATUS] Unexpected error:', error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
