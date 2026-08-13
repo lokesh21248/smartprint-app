@@ -32,92 +32,111 @@
 const SOUND_PATH = "/sounds/new-order.mp3";
 const isDev = process.env.NODE_ENV !== "production";
 
-// Module-level singleton — one instance per browser tab, for the entire
-// page lifetime. Never reassigned after the first initialization.
 let _audio: HTMLAudioElement | null = null;
 let _unlocked = false;
+let _unlocking = false;
 
-/** Initialize the singleton audio element (client-side only). */
-function initOrderNotificationAudio(): HTMLAudioElement | null {
+/** Initialize the singleton audio element inside a user gesture. */
+function getAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
-  if (_audio) return _audio;
-
-  try {
-    _audio = new Audio(SOUND_PATH);
-    _audio.preload = "auto";
-    _audio.volume = 1;
-    if (isDev) console.log("[ORDER AUDIO] Singleton initialized:", SOUND_PATH);
-  } catch (err) {
-    if (isDev) console.error("[ORDER AUDIO] Failed to initialize singleton:", err);
-    return null;
+  if (!_audio) {
+    try {
+      _audio = new Audio(SOUND_PATH);
+      _audio.preload = "auto";
+      if (isDev) console.log("[ORDER AUDIO] Audio object initialized");
+    } catch (err) {
+      if (isDev) console.error("[ORDER AUDIO] Failed to initialize audio:", err);
+    }
   }
-
   return _audio;
 }
 
-// Initialize immediately on module import (client-only — SSR guard is inside
-// initOrderNotificationAudio). This gives the browser maximum time to buffer
-// the audio file before any order arrives.
-initOrderNotificationAudio();
-
 /**
- * Call once on the first user gesture (click / touchstart / keydown).
- *
- * Plays the audio at volume 0 and immediately pauses it. This is enough for
- * Chrome/Safari/Edge to consider the element "user-gesture-activated" — all
- * future `.play()` calls on this SAME element are then allowed without
- * restrictions, even from async Supabase realtime callbacks.
+ * Call on user gesture to satisfy browser autoplay policies.
+ * Returns true if successfully unlocked, false otherwise.
  */
-export async function unlockAudio(): Promise<void> {
-  if (_unlocked) return;
-
-  const audio = initOrderNotificationAudio();
-  if (!audio) return;
+export async function unlockAudio(): Promise<boolean> {
+  if (_unlocked) return true;
+  if (_unlocking) return false;
+  
+  _unlocking = true;
+  
+  const audio = getAudio();
+  if (!audio) {
+    _unlocking = false;
+    return false;
+  }
 
   try {
     audio.volume = 0;
+    // Play then pause immediately to register as user-activated
     await audio.play();
     audio.pause();
     audio.currentTime = 0;
     audio.volume = 1;
     _unlocked = true;
     if (isDev) console.log("[ORDER AUDIO] ✅ Autoplay unlocked via user gesture.");
+    return true;
   } catch (err) {
-    // This can happen on mobile if the gesture is too indirect.
-    // Not fatal — we just try again on the next interaction.
-    if (isDev) console.warn("[ORDER AUDIO] Unlock failed (will retry on next gesture):", err);
+    if (isDev) console.warn("[ORDER AUDIO] Unlock failed (will retry):", err);
+    return false;
+  } finally {
+    _unlocking = false;
   }
 }
 
-/**
- * Play the order notification sound.
- *
- * Safe to call from any async context (Supabase realtime handler, setTimeout,
- * Promise callbacks). Errors are caught and logged — never thrown.
- *
- * If the audio hasn't been unlocked yet (user never interacted with page),
- * the call will still attempt to play. In that case the browser may allow it
- * if the tab was freshly opened by the user, or block it and log a warning.
- */
-export async function playOrderNotification(orderId: string): Promise<void> {
-  const audio = initOrderNotificationAudio();
-  if (!audio) return;
+const playQueue: string[] = [];
+let isPlaying = false;
 
-  try {
-    // Reset to start so rapid back-to-back orders each play fully
-    audio.currentTime = 0;
-    audio.volume = 1;
+async function processQueue() {
+  if (isPlaying || playQueue.length === 0) return;
+  isPlaying = true;
 
-    await audio.play();
+  const audio = getAudio();
+  if (!audio) {
+    playQueue.length = 0; // Clear queue
+    isPlaying = false;
+    return;
+  }
 
-    if (isDev) console.log(`[ORDER AUDIO] ✅ Notification played for order: ${orderId}`);
-  } catch (err) {
-    if (isDev) {
-      console.warn(
-        `[ORDER AUDIO] ⚠️ Playback blocked for order "${orderId}" —`,
-        "user may not have interacted with the page yet.",
-        err
-      );
+  while (playQueue.length > 0) {
+    const orderId = playQueue.shift();
+    if (!orderId) continue;
+    
+    try {
+      audio.currentTime = 0;
+      audio.volume = 1;
+      await audio.play();
+      
+      if (isDev) console.log(`[ORDER AUDIO] ✅ Notification played for order: ${orderId}`);
+      
+      // Wait for audio to finish before playing the next
+      await new Promise<void>((resolve) => {
+        const onEnded = () => {
+          audio.removeEventListener("ended", onEnded);
+          audio.removeEventListener("pause", onEnded);
+          resolve();
+        };
+        audio.addEventListener("ended", onEnded);
+        audio.addEventListener("pause", onEnded);
+        // Fallback in case events don't fire
+        setTimeout(onEnded, 5000);
+      });
+      
+    } catch (err) {
+      if (isDev) {
+        console.warn(`[ORDER AUDIO] ⚠️ Playback blocked for order "${orderId}"`, err);
+      }
+      // If playback fails, stop processing the queue
+      playQueue.length = 0; 
+      break;
     }
   }
+
+  isPlaying = false;
+}
+
+export function playOrderNotification(orderId: string): void {
+  playQueue.push(orderId);
+  processQueue();
 }
