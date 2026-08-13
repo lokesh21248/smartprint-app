@@ -158,6 +158,10 @@ export async function POST(request: Request) {
     const { userId } = await auth();
     const supabase = createAdminClient();
 
+    // TEMP DEBUG:
+    const debug = await supabase.from('pg_publication_tables').select('*');
+    console.log("pg_publication_tables:", debug.data || debug.error);
+
     // ── 1. Rate Limiting ──────────────────────────────────────────────────────
     const ip = getClientIp(request);
     const rl = rateLimitOrders(ip);
