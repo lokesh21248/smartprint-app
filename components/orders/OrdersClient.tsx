@@ -283,11 +283,12 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
             ) : (
               <Virtuoso
                 style={{ height: "calc(100vh - 290px)", minHeight: "400px" }}
-                totalCount={filteredOrders.length}
-                itemContent={(index) => (
+                data={filteredOrders}
+                computeItemKey={(index, order) => order.id}
+                itemContent={(index, order) => (
                   <div className="pb-4">
                     <OrderCard
-                      order={filteredOrders[index]}
+                      order={order}
                       onStatusChange={handleStatusChange}
                     />
                   </div>

@@ -361,6 +361,21 @@ export function useRealtimeOrders(shopId: string | null) {
     return () => { _setStatus = null; };
   }, [setRealtimeStatus]);
 
+  const realtimeStatus = useOrderStore((s) => s.realtimeStatus);
+
+  // Synchronise state when WebSocket transitions to "connected".
+  // This handles the connection race condition and ensures we catch up on any
+  // events missed during subscription setup or network reconnect window.
+  useEffect(() => {
+    if (realtimeStatus === "connected" && shopId) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Realtime] Syncing data on connection for shop: ${shopId}`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
+      queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
+    }
+  }, [realtimeStatus, shopId, queryClient]);
+
   // Proactively request browser notification permission on mount.
   // Must be done here (inside a useEffect, linked to a page-load event) NOT inside
   // the realtime event handler — browsers block permission prompts in async callbacks.
