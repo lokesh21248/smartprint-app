@@ -65,16 +65,26 @@ function showBrowserNotification(order: Order) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Map raw DB row → Order type
-// (DB uses is_color / is_double_sided / status; our type uses color / double_sided / order_status)
-// ─────────────────────────────────────────────────────────────────────────────
+// Normalises DB column names to client field names:
+//   is_color        → color
+//   is_double_sided → double_sided
+//   status          → order_status  (also uppercases + maps "NEW" → "PLACED")
+// –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+function normalizeStatus(raw: unknown): Order["order_status"] {
+  const s = String(raw ?? "").trim().toUpperCase();
+  // "NEW" is a legacy DB value for newly-placed orders; normalise to "PLACED"
+  // so realtime payloads have the same order_status as API-returned orders.
+  if (s === "NEW") return "PLACED" as Order["order_status"];
+  return s as Order["order_status"];
+}
+
 function mapRawToOrder(raw: Record<string, unknown>): Order {
   return {
     ...(raw as unknown as Order),
     color: raw.is_color as boolean,
     double_sided: raw.is_double_sided as boolean,
-    order_status: raw.status as Order["order_status"],
+    order_status: normalizeStatus(raw.status),
   };
 }
 
@@ -240,9 +250,7 @@ async function initSubscription(
   const channel = supabase
     .channel(channelName)
     .on(
-      // Cast through unknown to satisfy the overloaded `.on()` signature without
-      // a self-referential `channel` variable (which would cause TS7022).
-      "postgres_changes" as unknown as "system",
+      "postgres_changes" as any,
       {
         event: "*",
         schema: "public",
@@ -444,6 +452,10 @@ export function useRealtimeOrders(shopId: string | null) {
     });
 
     queryClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
+    // Safety net: mark ["new-orders"] stale so that if setQueryData silently
+    // skipped the update (React Query v5 does not call functional updaters when
+    // there is no existing cache entry), the next active observer refetches.
+    queryClient.invalidateQueries({ queryKey: ["new-orders", activeShopId] });
 
     if (batch.length === 1) {
       const order = batch[0];

@@ -93,10 +93,13 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
     queryKey: ["new-orders", shopId],
     queryFn: () => fetchNewOrders(shopId),
     initialData: initialOrders,
-    // Realtime subscription handles live updates — polling and focus-refetch removed.
-    staleTime: 5 * 60 * 1000,
+    // Mark initialData as immediately stale so a background refetch fires on
+    // every mount. This catches new orders that arrived while the Dashboard was
+    // inactive or while a realtime event was missed / not yet delivered.
+    initialDataUpdatedAt: 0,
+    staleTime: 60_000, // 60 s — prevents repeated fetches on fast nav
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // always background-refetch on mount to catch missed orders
     refetchOnReconnect: true,
   });
 
