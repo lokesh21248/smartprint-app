@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
 import type { Shop } from "@/types";
+import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
 
 interface ShopStoreInitializerProps {
   shop: Shop | null;
@@ -13,6 +14,8 @@ interface ShopStoreInitializerProps {
 export function ShopStoreInitializer({ shop, pendingCount }: ShopStoreInitializerProps) {
   const setShop = useShopStore((s) => s.setShop);
   const setPendingCount = useOrderStore((s) => s.setPendingCount);
+
+  useRealtimeOrders(shop?.id ?? null);
 
   useEffect(() => {
     if (shop) setShop(shop);

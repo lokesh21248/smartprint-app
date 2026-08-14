@@ -6,7 +6,6 @@ import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OrderCardSkeleton } from "@/components/ui/skeleton";
-import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
 import { useOrderStore } from "@/stores/orderStore";
 import { useShopStore } from "@/stores/shopStore";
 import { toast } from "sonner";
@@ -103,8 +102,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
     refetchOnReconnect: true,
   });
 
-  // Subscribe to realtime
-  useRealtimeOrders(shopId);
+  // Realtime subscription is now handled globally in ShopStoreInitializer
 
   const handleAction = async (
     orderId: string,

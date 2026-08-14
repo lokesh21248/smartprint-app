@@ -8,7 +8,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OrderCard } from "@/components/orders/OrderCard";
 import { OrderFilters } from "@/components/orders/OrderFilters";
 import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
-import { useRealtimeOrders } from "@/lib/hooks/useRealtimeOrders";
 import type { Order, OrderStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,7 +124,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   });
 
   // ── Realtime subscription (INSERT / UPDATE / DELETE) ─────────────────────
-  useRealtimeOrders(shopId);
+  // Realtime subscription is now handled globally in ShopStoreInitializer
 
   // ── Derived state ─────────────────────────────────────────────────────────
   // Step 1: Apply date + search filters FIRST to get the base dataset.
