@@ -30,10 +30,14 @@ const isDev = process.env.NODE_ENV !== "production";
 // ─────────────────────────────────────────────────────────────────────────────
 function playNotificationSound(orderId: string) {
   const { soundEnabled } = useSettingsStore.getState();
-  if (!soundEnabled) return;
+  if (!soundEnabled) {
+    if (isDev) console.log(`[ORDER_NOTIFY] 🔇 Sound skipped (disabled) for order: ${orderId}`);
+    return;
+  }
   // playOrderNotification is async but we intentionally don't await here —
   // the realtime handler is synchronous and the sound plays fire-and-forget.
   // Errors are caught inside the singleton and never propagate.
+  if (isDev) console.log(`[ORDER_NOTIFY] 🔊 Sound triggered for order: ${orderId}`);
   playOrderNotification(orderId);
 }
 
@@ -42,26 +46,47 @@ function playNotificationSound(orderId: string) {
 // Permission is requested proactively in useRealtimeOrders via a useEffect
 // so it is attached to an explicit user gesture (page load interaction),
 // not inside an async event handler where browsers block permission prompts.
+//
+// Clicking the browser notification focuses the window and navigates to the
+// specific order detail page via the same "navigate-to-order" DOM event
+// mechanism used by the toast action — avoiding a full page reload.
 // ─────────────────────────────────────────────────────────────────────────────
 function showBrowserNotification(order: Order) {
   if (typeof window === "undefined") return;
+
+  // Check both the browser permission AND the user's preference in settingsStore
+  const { browserNotificationsEnabled } = useSettingsStore.getState();
+  if (!browserNotificationsEnabled) {
+    if (isDev) {
+      console.log("[ORDER_NOTIFY] 🔕 Browser notification skipped — disabled in settings");
+    }
+    return;
+  }
   if (Notification.permission !== "granted") {
     if (isDev) {
-      console.warn("[Realtime] 🔕 Browser notification skipped — permission not granted. Current:", Notification.permission);
+      console.warn("[ORDER_NOTIFY] 🔕 Browser notification skipped — permission not granted. Current:", Notification.permission);
     }
     return;
   }
   try {
-    new Notification("🖨️ New Print Order!", {
-      body: `${order.customer_name || "Customer"} placed an order — ₹${order.total_amount}`,
+    const n = new Notification("🔔 New Order Received", {
+      body: `Order #${order.short_token} · ₹${order.total_amount}${order.customer_name ? ` · ${order.customer_name}` : ""}`,
       icon: "/favicon.ico",
-      tag: order.id,
+      tag: order.id, // deduplication: same order won't show twice
     });
+    // Clicking the notification focuses the window and navigates to the order
+    n.onclick = () => {
+      window.focus();
+      const href = `/dashboard/orders/${order.id}`;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("navigate-to-order", { detail: href }));
+      }
+    };
     if (isDev) {
-      console.log("[Realtime] 🔔 Browser notification dispatched for order:", order.id);
+      console.log("[ORDER_NOTIFY] 🔔 Browser notification dispatched for order:", order.id);
     }
   } catch (err) {
-    if (isDev) console.error("[Realtime] ❌ Browser notification failed:", err);
+    if (isDev) console.error("[ORDER_NOTIFY] ❌ Browser notification failed:", err);
   }
 }
 
@@ -244,7 +269,7 @@ async function initSubscription(
   }
 
   if (isDev) {
-    console.log("[Realtime] Subscribing:", shopId);
+    console.log(`[ORDER_SYNC] Subscribing to channel "${channelName}" for shop: ${shopId}`);
   }
 
   const channel = supabase
@@ -272,7 +297,7 @@ async function initSubscription(
       // in the production browser console.
       if (isDev) {
         console.log(
-          `[Realtime] ✅ SUBSCRIBED to channel "${channelName}" for shop "${shopId}".`,
+          `[ORDER_SYNC] ✅ Realtime connected — channel "${channelName}" for shop "${shopId}".`,
           `\n  → If no INSERT events arrive, verify:`,
           `\n  1. orders table is in supabase_realtime publication (run: ALTER PUBLICATION supabase_realtime ADD TABLE orders;)`,
           `\n  2. RLS policy allows anon SELECT on orders (run migration 20260709000001_enable_realtime_orders.sql)`,
@@ -288,11 +313,11 @@ async function initSubscription(
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       // Keep this warn in both dev and prod — connection failures are actionable
       // and help diagnose issues from Vercel/Sentry error monitoring.
-      if (isDev) console.warn(`[Realtime] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
+      if (isDev) console.warn(`[ORDER_SYNC] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
       handleReconnect(shopId, setRealtimeChannel);
     } else {
       if (isDev) {
-        console.log(`[Realtime] ℹ️ Subscription status: "${status}" for shop "${shopId}"`);
+        console.log(`[ORDER_SYNC] ℹ️ Subscription status: "${status}" for shop "${shopId}"`);
       }
     }
   });
@@ -423,23 +448,30 @@ export function useRealtimeOrders(shopId: string | null) {
   // Flush the INSERT batch
   const flushInsertBatch = useCallback(() => {
     const batch = pendingInserts.current.splice(0);
-    const activeShopId = shopId;
+    // FIX: Read shopId from the module-level activeChannelShopId instead of
+    // closing over the hook's shopId prop. The hook's shopId may be null during
+    // the initial mount race condition (ShopStoreInitializer runs useEffect
+    // asynchronously, so the first render may have shopId=null before the shop
+    // is loaded). activeChannelShopId is set synchronously when the channel
+    // is actually established and is always accurate.
+    const activeShopId = activeChannelShopId;
     if (!batch.length || !activeShopId) return;
 
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[Realtime] 📦 Flushing batch of ${batch.length} order events...`);
+    if (isDev) {
+      console.log(`[ORDER_SYNC] 📦 Flushing batch of ${batch.length} new order event(s)...`);
     }
 
     batch.forEach((order) => {
-      console.log(`[Notification] Processing INSERT for order="${order.id}"`);
+      if (isDev) console.log(`[ORDER_SYNC] Processing INSERT for order="${order.id}"`);
 
       if (playedOrderIds.has(order.id)) {
-        console.log(`[Notification] 🛡️ Duplicate blocked — order "${order.id}" already notified.`);
+        if (isDev) console.log(`[ORDER_SYNC] 🛡️ Duplicate ignored — order "${order.id}" already notified.`);
         return;
       }
-      
+
       playedOrderIds.add(order.id);
-      if (playedOrderIds.size > 100) {
+      // Keep the deduplication set bounded to prevent memory leaks over long sessions
+      if (playedOrderIds.size > 200) {
         const oldestKey = playedOrderIds.keys().next().value;
         if (oldestKey !== undefined) {
           playedOrderIds.delete(oldestKey);
@@ -448,11 +480,16 @@ export function useRealtimeOrders(shopId: string | null) {
 
       const { addNewOrder: addOrder, incrementPending: incPending, incrementNotifications: incNotifications, queryClient: qClient } = handlersRef.current;
 
+      if (isDev) console.log(`[ORDER_SYNC] Order "${order.id}" added to global store`);
+
+      // Update the full orders list cache — now always has a cache entry because
+      // GlobalOrderCacheSeeder pre-seeds it at layout mount time.
       qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) => {
         if (!prev) return [order];
         const exists = prev.some((o) => o.id === order.id);
         return exists ? prev : [order, ...prev];
       });
+      // Update the new/pending orders feed cache
       qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) => {
         if (!prev) return [order];
         const exists = prev.some((o) => o.id === order.id);
@@ -466,33 +503,53 @@ export function useRealtimeOrders(shopId: string | null) {
       showBrowserNotification(order);
     });
 
-    queryClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
+    handlersRef.current.queryClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
     // Safety net: mark ["new-orders"] stale so that if setQueryData silently
     // skipped the update (React Query v5 does not call functional updaters when
     // there is no existing cache entry), the next active observer refetches.
-    queryClient.invalidateQueries({ queryKey: ["new-orders", activeShopId] });
+    handlersRef.current.queryClient.invalidateQueries({ queryKey: ["new-orders", activeShopId] });
 
     if (batch.length === 1) {
       const order = batch[0];
-      toast.success(`🖨️ New order from ${order.customer_name || "Guest"}`, {
-        description: `₹${order.total_amount?.toFixed(2)} · ${order.page_count} pages × ${order.copies} copies`,
-        duration: 10_000,
+      if (isDev) console.log(`[ORDER_NOTIFY] 🔔 Toast triggered for order: ${order.id}`);
+      toast.success(`🔔 New Order Received`, {
+        description: `Order #${order.short_token} · ₹${order.total_amount?.toFixed(2)}${order.customer_name ? ` · ${order.customer_name}` : ""}`,
+        duration: 12_000,
         action: {
-          label: "View",
-          onClick: () => (window.location.href = `/dashboard/orders/${order.id}`),
+          label: "View Order",
+          onClick: () => {
+            // FIX: Dispatch a DOM event instead of using window.location.href
+            // so the OrderNavigationHandler picks it up and calls router.push()
+            // — avoiding a full page reload.
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("navigate-to-order", {
+                  detail: `/dashboard/orders/${order.id}`,
+                })
+              );
+            }
+          },
         },
       });
     } else {
-      toast.success(`🖨️ ${batch.length} new orders received`, {
-        description: "Check your orders dashboard",
-        duration: 8_000,
+      if (isDev) console.log(`[ORDER_NOTIFY] 🔔 Batch toast triggered for ${batch.length} orders`);
+      toast.success(`🔔 ${batch.length} New Orders Received`, {
+        description: "New orders are waiting for your action",
+        duration: 10_000,
         action: {
-          label: "View All",
-          onClick: () => (window.location.href = "/dashboard/orders"),
+          label: "View Orders",
+          onClick: () => {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("navigate-to-order", { detail: "/dashboard/orders" })
+              );
+            }
+          },
         },
       });
     }
 
+    // Flash the browser tab title to alert the shop owner when the tab is in background
     if (typeof window !== "undefined") {
       const originalTitle = document.title;
       let flashes = 0;
@@ -506,7 +563,7 @@ export function useRealtimeOrders(shopId: string | null) {
         }
       }, 600);
     }
-  }, [shopId, queryClient]);
+  }, [/* intentionally empty — reads from module-level vars and handlersRef */]);
 
   // Realtime event handler
   const handleRealtimeEvent = useCallback(
@@ -522,8 +579,8 @@ export function useRealtimeOrders(shopId: string | null) {
 
       if (payload.eventType === "INSERT") {
         const order = mapRawToOrder(payload.new);
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] 📥 Order INSERT event received: ID="${order.id}"`);
+        if (isDev) {
+          console.log(`[ORDER_SYNC] 📥 New order received: ID="${order.id}"`);
         }
         pendingInserts.current.push(order);
         if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
@@ -535,8 +592,8 @@ export function useRealtimeOrders(shopId: string | null) {
         const wasPlaced = oldStatus?.toUpperCase() === "PLACED";
         const isStillPlaced = newStatus?.toUpperCase() === "PLACED";
 
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] 📥 Order UPDATE event received: ID="${updated.id}", ${oldStatus} → ${newStatus}`);
+        if (isDev) {
+          console.log(`[ORDER_SYNC] 📥 Order status update received: ID="${updated.id}", ${oldStatus} → ${newStatus}`);
         }
 
         // If order left PLACED status (accepted/rejected by another tab/device)
@@ -564,8 +621,8 @@ export function useRealtimeOrders(shopId: string | null) {
         qClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
       } else if (payload.eventType === "DELETE") {
         const id = (payload.old as { id: string }).id;
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] 📥 Order DELETE event received: ID="${id}"`);
+        if (isDev) {
+          console.log(`[ORDER_SYNC] 📥 Order deleted: ID="${id}"`);
         }
         qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) =>
           (prev ?? []).filter((o) => o.id !== id)
@@ -604,8 +661,8 @@ export function useRealtimeOrders(shopId: string | null) {
     // React Strict Mode double-unmount cycles
     if (subscriberCount < 0) subscriberCount = 0;
     subscriberCount++;
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[Realtime] Hook instance mounted for shop: ${shopId}. Total active subscribers: ${subscriberCount}`);
+    if (isDev) {
+      console.log(`[ORDER_SYNC] Global listener initialized for shop: ${shopId}. Active subscribers: ${subscriberCount}`);
     }
 
     initSubscription(shopId, setRealtimeChannel);
@@ -624,8 +681,8 @@ export function useRealtimeOrders(shopId: string | null) {
 
     return () => {
       subscriberCount = Math.max(0, subscriberCount - 1);
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[Realtime] Hook instance unmounted for shop: ${shopId}. Remaining active subscribers: ${subscriberCount}`);
+      if (isDev) {
+        console.log(`[ORDER_SYNC] Listener unmounted for shop: ${shopId}. Remaining active subscribers: ${subscriberCount}`);
       }
 
       document.removeEventListener("visibilitychange", handleVisibilityChange);

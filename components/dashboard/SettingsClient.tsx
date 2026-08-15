@@ -12,12 +12,104 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useClerk } from "@clerk/nextjs";
 import { useState, useEffect } from "react";
 
+
 interface SettingsClientProps {
   shopId: string | null;
   shopName: string;
   shopEmail: string;
   shopLocation: string;
 }
+
+// ── Browser Notification Row ───────────────────────────────────────────────────
+// Separate sub-component so it can use its own state for the permission check
+// without re-rendering the entire SettingsClient on every toggle.
+function BrowserNotificationRow({ shopId: _shopId }: { shopId: string | null }) {
+  const { browserNotificationsEnabled, setBrowserNotificationsEnabled } = useSettingsStore();
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
+
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      setPermission("unsupported");
+    } else {
+      setPermission(Notification.permission);
+    }
+  }, []);
+
+  const handleToggle = async (enabled: boolean) => {
+    if (enabled) {
+      if (typeof Notification === "undefined") {
+        toast.error("Browser notifications are not supported on this device.");
+        return;
+      }
+      if (Notification.permission === "denied") {
+        toast.error(
+          "Browser notifications are blocked. Please enable them in your browser settings and refresh."
+        );
+        return;
+      }
+      // Permission is "default" — request it now
+      if (Notification.permission !== "granted") {
+        const perm = await Notification.requestPermission();
+        setPermission(perm);
+        if (perm !== "granted") {
+          toast.error("Browser notifications were not granted.");
+          return;
+        }
+      }
+      setBrowserNotificationsEnabled(true);
+      toast.success("✅ Browser notifications enabled");
+    } else {
+      setBrowserNotificationsEnabled(false);
+      toast.success("🔕 Browser notifications disabled");
+    }
+  };
+
+  const descriptionText =
+    permission === "denied"
+      ? "Blocked by browser — enable in browser settings to use"
+      : permission === "unsupported"
+      ? "Not supported on this device"
+      : "Show desktop popup when you\'re on another tab";
+
+  return (
+    <div id="browser-notify-toggle" className="flex items-center justify-between gap-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-[#F3F4F6] flex items-center justify-center flex-shrink-0">
+          <Bell className="h-4 w-4 text-[#6B7280]" />
+        </div>
+        <div>
+          <p className="font-semibold text-[#374151] text-sm">Browser Notifications</p>
+          <p className="text-xs text-[#9CA3AF] mt-0.5">{descriptionText}</p>
+          {permission === "granted" && (
+            <p className="text-xs text-emerald-600 font-medium mt-0.5">✅ Permission granted</p>
+          )}
+        </div>
+      </div>
+      <div className="flex-shrink-0">
+        {permission === "unsupported" || permission === "denied" ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={permission === "unsupported"}
+            onClick={() =>
+              toast.error(
+                "Browser notifications are blocked. Enable them in your browser/OS settings."
+              )
+            }
+          >
+            Blocked
+          </Button>
+        ) : (
+          <Switch
+            checked={browserNotificationsEnabled && permission === "granted"}
+            onCheckedChange={handleToggle}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 
 export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: SettingsClientProps) {
@@ -115,31 +207,7 @@ export function SettingsClient({ shopId, shopName, shopEmail, shopLocation }: Se
         />
 
         <div className="mt-4 border-t border-[#F3F4F6] pt-4">
-          <SettingRow
-            id="browser-notify-toggle"
-            icon={Bell}
-            title="Browser Notifications"
-            description="Show desktop popup when you're on another tab"
-            control={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (typeof Notification !== "undefined") {
-                    Notification.requestPermission().then((perm) => {
-                      toast.success(
-                        perm === "granted"
-                          ? "✅ Browser notifications enabled"
-                          : "Browser notifications blocked"
-                      );
-                    });
-                  }
-                }}
-              >
-                Enable
-              </Button>
-            }
-          />
+          <BrowserNotificationRow shopId={shopId} />
         </div>
       </div>
 

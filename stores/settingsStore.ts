@@ -2,14 +2,28 @@ import { create } from "zustand";
 
 interface SettingsState {
   soundEnabled: boolean;
+  /** Whether the shop owner has opted-in to browser desktop notifications.
+   *  This is an in-memory preference (not DB-persisted) — the browser's own
+   *  Notification.permission is the authoritative gate. Setting this to true
+   *  without Notification.permission === "granted" will still produce no
+   *  notifications (showBrowserNotification() checks both).
+   */
+  browserNotificationsEnabled: boolean;
   isLoading: boolean;
 
   setSoundEnabled: (enabled: boolean, shopId?: string | null) => Promise<void>;
+  setBrowserNotificationsEnabled: (enabled: boolean) => void;
   fetchSettings: (shopId: string | null) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   soundEnabled: true,
+  // Default to true if the browser already has permission (i.e. previously granted),
+  // so that existing users who already clicked "Enable" don't lose notifications.
+  browserNotificationsEnabled:
+    typeof Notification !== "undefined"
+      ? Notification.permission === "granted"
+      : false,
   isLoading: false,
 
   fetchSettings: async (shopId) => {
@@ -27,8 +41,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       if (process.env.NODE_ENV !== 'production') {
         console.log("[SettingsStore] ✅ Settings loaded successfully:", data);
       }
+
+      // Re-check browser permission at fetch time in case the user granted/denied
+      // permission after the store was first initialized.
+      const permissionGranted =
+        typeof Notification !== "undefined"
+          ? Notification.permission === "granted"
+          : false;
+
       set({
         soundEnabled: data.soundEnabled ?? true,
+        // Keep browserNotificationsEnabled in sync with actual browser permission.
+        // If the user has granted permission, honour it; if denied/default and
+        // our stored value is true, keep it true (permission prompt will be shown).
+        browserNotificationsEnabled: get().browserNotificationsEnabled || permissionGranted,
       });
     } catch (err) {
       console.error("[SettingsStore] ❌ Unexpected error in fetchSettings:", err);
@@ -53,6 +79,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     } catch (err) {
       console.error("[SettingsStore] Unexpected error saving sound_alerts:", err);
+    }
+  },
+
+  setBrowserNotificationsEnabled: (enabled) => {
+    set({ browserNotificationsEnabled: enabled });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[SettingsStore] Browser notifications ${enabled ? "enabled" : "disabled"}`);
     }
   },
 }));
