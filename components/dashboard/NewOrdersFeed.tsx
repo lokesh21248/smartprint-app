@@ -123,16 +123,28 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newStatus, rejectionReason: newStatus === "cancelled" ? "Rejected by shop" : undefined }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        let errorMsg = "Action failed. Please try again.";
+        try {
+          const body = await res.json();
+          if (body?.error && typeof body.error === "string") {
+            errorMsg = body.error;
+          }
+        } catch {}
+        throw new Error(errorMsg);
+      }
       toast.success(
         newStatus === "accepted" ? "✅ Order accepted!" : "Order rejected"
       );
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
-    } catch {
+    } catch (err) {
       // Rollback — re-fetch to restore correct state
       queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
-      toast.error("Action failed. Please try again.");
+      queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
+      const message = err instanceof Error ? err.message : "Action failed. Please try again.";
+      toast.error(message);
     } finally {
       setProcessing((p) => ({ ...p, [orderId]: false }));
     }

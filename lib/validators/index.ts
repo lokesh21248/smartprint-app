@@ -37,8 +37,11 @@ export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 // ─── Order ───────────────────────────────────────────────────────────────────
 
 export const OrderStatusUpdateSchema = z.object({
-  orderId: z.string().uuid(),
-  newStatus: z.enum(["new", "accepted", "printing", "ready", "completed", "cancelled"]),
+  orderId: z.string().uuid("Invalid orderId UUID"),
+  newStatus: z.preprocess(
+    (val) => (typeof val === "string" ? val.trim().toLowerCase() : val),
+    z.enum(["draft", "placed", "new", "accepted", "printing", "ready", "completed", "cancelled"])
+  ),
   rejectionReason: z.string().max(500).optional(),
 });
 export type OrderStatusUpdateInput = z.infer<typeof OrderStatusUpdateSchema>;

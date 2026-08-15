@@ -37,50 +37,57 @@ async function fetchLayoutSeedData(shopId: string): Promise<{
   try {
     const supabase = createAdminClient();
 
-    const mapRow = (ord: Record<string, unknown>): Order => ({
-      id: ord.id as string,
-      short_token: ord.short_token as string,
-      shop_id: ord.shop_id as string,
-      customer_name: ord.customer_name as string,
-      customer_phone: ord.customer_phone as string,
-      customer_phone_verified: false,
-      file_name: ord.file_name as string,
-      file_s3_key: "",
-      page_count: (ord.page_count as number) ?? 0,
-      copies: (ord.copies as number) ?? 1,
-      color: (ord.is_color as boolean) ?? false,
-      double_sided: (ord.is_double_sided as boolean) ?? false,
-      order_status: ord.status as Order["order_status"],
-      notes: (ord.notes as string) ?? "",
-      total_amount: (ord.total_amount as number) ?? 0,
-      status_history: [],
-      files: [],
-      created_at: ord.created_at as string,
-      updated_at: (ord.updated_at as string) ?? (ord.created_at as string),
-    });
+    const mapRow = (ord: Record<string, unknown>): Order => {
+      const rawStatus = String(ord.status || "").trim().toUpperCase();
+      const order_status = (rawStatus === "NEW" ? "PLACED" : rawStatus) as Order["order_status"];
+
+      return {
+        id: ord.id as string,
+        short_token: ord.short_token as string,
+        shop_id: ord.shop_id as string,
+        customer_name: ord.customer_name as string,
+        customer_phone: ord.customer_phone as string,
+        customer_phone_verified: false,
+        file_name: ord.file_name as string,
+        file_s3_key: "",
+        page_count: (ord.page_count as number) ?? 0,
+        copies: (ord.copies as number) ?? 1,
+        color: (ord.is_color as boolean) ?? false,
+        double_sided: (ord.is_double_sided as boolean) ?? false,
+        order_status,
+        notes: (ord.notes as string) ?? "",
+        total_amount: (ord.total_amount as number) ?? 0,
+        status_history: [],
+        files: [],
+        created_at: ord.created_at as string,
+        updated_at: (ord.updated_at as string) ?? (ord.created_at as string),
+      };
+    };
 
     const COLS =
       "id, short_token, shop_id, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, created_at, updated_at";
 
-    const [ordersRes, newOrdersRes] = await Promise.all([
-      supabase
-        .from("orders")
-        .select(COLS)
-        .eq("shop_id", shopId)
-        .order("created_at", { ascending: false })
-        .limit(70),
-      supabase
-        .from("orders")
-        .select(COLS)
-        .eq("shop_id", shopId)
-        .in("status", ["PLACED", "placed", "new", "NEW"])
-        .order("created_at", { ascending: false })
-        .limit(10),
-    ]);
+    // Optimized: 1 query instead of 2. Recent orders are fetched once, and
+    // placed/new orders are derived in memory with zero extra DB round-trips.
+    const { data, error } = await supabase
+      .from("orders")
+      .select(COLS)
+      .eq("shop_id", shopId)
+      .order("created_at", { ascending: false })
+      .limit(70);
 
-    const orders = (ordersRes.data ?? []).map(mapRow);
-    const newOrders = (newOrdersRes.data ?? []).map(mapRow);
-    return { orders, newOrders, pendingCount: newOrders.length };
+    if (error) {
+      console.error("[DashboardLayout] fetchLayoutSeedData DB error:", error.message);
+      return { orders: [], newOrders: [], pendingCount: 0 };
+    }
+
+    const orders = (data ?? []).map(mapRow);
+    const newOrders = orders
+      .filter((o) => o.order_status === "PLACED")
+      .slice(0, 10);
+    const pendingCount = newOrders.length;
+
+    return { orders, newOrders, pendingCount };
   } catch (err) {
     console.error("[DashboardLayout] fetchLayoutSeedData error:", err);
     return { orders: [], newOrders: [], pendingCount: 0 };

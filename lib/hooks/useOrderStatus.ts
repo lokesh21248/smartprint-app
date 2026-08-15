@@ -25,43 +25,55 @@ export function useOrderStatus(orderId: string, options?: UseOrderStatusOptions)
       });
 
       if (!res.ok) {
-        // Read the actual error from the server instead of showing a generic message
         let serverError = "Action failed. Please try again.";
         try {
           const body = await res.json();
           if (body?.error && typeof body.error === "string") {
-            if (res.status === 401) {
-              serverError = "Session expired. Please refresh the page and log in again.";
+            if (res.status === 400) {
+              serverError = body.error;
+            } else if (res.status === 401) {
+              serverError = "Session expired. Please log in again.";
             } else if (res.status === 403) {
               serverError = "You do not have permission to update this order.";
             } else if (res.status === 404) {
-              serverError = "Order not found. It may have been deleted.";
-            } else if (res.status === 429) {
-              serverError = "Too many requests. Please wait a moment and try again.";
+              serverError = "Order not found. It may have been removed.";
+            } else if (res.status === 409) {
+              serverError = body.error || "Order status conflict. Refreshing orders...";
             } else if (res.status === 422) {
-              // Use the server's message — it's already user-safe
               serverError = body.error;
+            } else if (res.status === 429) {
+              serverError = "Too many requests. Please wait a moment.";
             } else {
-              serverError = "The server could not update this order. Please try again.";
+              serverError = body.error || "Could not update order status.";
             }
           }
         } catch {
-          // JSON parse failed — use status-based fallback
           if (res.status === 0 || res.type === "error") {
-            serverError = "Network error. Please check your connection and try again.";
+            serverError = "Network error. Please check your connection.";
           }
         }
+
         toast.error(serverError);
+
+        // Reconcile client state with actual database state
+        queryClient.invalidateQueries({ queryKey: ["orders"] });
+        queryClient.invalidateQueries({ queryKey: ["new-orders"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
         return;
       }
 
       const successMessage =
-        newStatus === "ACCEPTED" ? "✅ Order accepted!" :
-        newStatus === "PRINTING" ? "🖨️ Started printing" :
-        newStatus === "READY" ? "📦 Marked as ready" :
-        newStatus === "COMPLETED" ? "✅ Order completed!" :
-        newStatus === "CANCELLED" ? "Order cancelled." :
-        "Order updated";
+        newStatus === "ACCEPTED"
+          ? "✅ Order accepted!"
+          : newStatus === "PRINTING"
+          ? "🖨️ Started printing"
+          : newStatus === "READY"
+          ? "📦 Marked as ready"
+          : newStatus === "COMPLETED"
+          ? "✅ Order completed!"
+          : newStatus === "CANCELLED"
+          ? "Order cancelled."
+          : "Order updated";
 
       toast.success(successMessage);
 
@@ -71,9 +83,10 @@ export function useOrderStatus(orderId: string, options?: UseOrderStatusOptions)
 
       options?.onSuccess?.(newStatus);
     } catch {
-      // Unhandled network/fetch exception
       toast.error("Network error. Please check your connection and try again.");
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["new-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     } finally {
       setProcessing(false);
     }
