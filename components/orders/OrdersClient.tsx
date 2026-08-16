@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OrderCard } from "@/components/orders/OrderCard";
 import { OrderFilters } from "@/components/orders/OrderFilters";
 import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
+import { useOrderStore } from "@/stores/orderStore";
 import type { Order, OrderStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,8 +79,19 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
+  const storeOrders = useOrderStore((s) => s.orders);
+  const isHydrated = useOrderStore((s) => s.isHydrated);
+  const setOrders = useOrderStore((s) => s.setOrders);
+  const updateOrder = useOrderStore((s) => s.updateOrder);
+
+  // Hydrate store on mount if not yet hydrated or if SSR provided data
+  useEffect(() => {
+    if (initialOrders.length > 0 && (!isHydrated || storeOrders.length === 0)) {
+      setOrders(initialOrders);
+    }
+  }, [initialOrders, isHydrated, storeOrders.length, setOrders]);
+
   // ── URL-persisted filter state ────────────────────────────────────────────
-  // Defaults: status=ALL  date=all  sort=newest
   const activeTab = searchParams.get("status") ?? "ALL";
   const search = searchParams.get("q") ?? "";
   const sortBy = (searchParams.get("sort") ?? "newest") as "newest" | "amount";
@@ -97,38 +109,28 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     [pathname, router, searchParams]
   );
 
-  // ── React Query ───────────────────────────────────────────────────────────
-  // initialData hydrates the cache from the SSR payload — no blank flash.
-  // staleTime: 0  → always revalidate in background on mount.
-  // placeholderData keeps the previous data visible during background refetch.
-  const {
-    data: allOrders = initialOrders,
-    isLoading,
-    isFetching,
-  } = useQuery({
+  // ── Background synchronization with React Query ─────────────────────────
+  const { isFetching } = useQuery({
     queryKey: ["orders", shopId],
-    queryFn: () => fetchOrders(shopId),
+    queryFn: async () => {
+      const fetched = await fetchOrders(shopId);
+      if (fetched && fetched.length > 0) {
+        setOrders(fetched);
+      }
+      return fetched;
+    },
     enabled: !!shopId,
-    initialData: initialOrders,
-    // Mark initialData as instantly stale so React Query always fires a
-    // background refetch on mount — without this the SSR data never updates.
-    initialDataUpdatedAt: 0,
     staleTime: 60000,
     gcTime: 300000,
     refetchOnMount: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
-    // keepPreviousData keeps the SSR orders visible during the background
-    // refetch — this is what prevents orders from going blank on refresh.
-    placeholderData: keepPreviousData,
   });
 
-  // ── Realtime subscription (INSERT / UPDATE / DELETE) ─────────────────────
-  // Realtime subscription is now handled globally in ShopStoreInitializer
+  // Source of truth is centralized orderStore
+  const allOrders = storeOrders.length > 0 ? storeOrders : initialOrders;
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  // Step 1: Apply date + search filters FIRST to get the base dataset.
-  // Tab counts are derived from this so they always reflect the active date range.
   const dateFilteredOrders = useMemo(() => {
     let orders = allOrders;
 
@@ -155,7 +157,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     return orders;
   }, [allOrders, dateFilter, search]);
 
-  // Step 2: Count per-status from the date-filtered set — NOT from allOrders.
+  // Step 2: Count per-status from the date-filtered set
   const tabCounts = useMemo(() => {
     return TABS.reduce(
       (acc, tab) => {
@@ -169,7 +171,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     );
   }, [dateFilteredOrders]);
 
-  // Step 3: Apply tab (status) filter and sort on top of the date-filtered set.
+  // Step 3: Apply tab (status) filter and sort on top of the date-filtered set
   const filteredOrders = useMemo(() => {
     const orders =
       activeTab === "ALL"
@@ -182,31 +184,19 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     });
   }, [dateFilteredOrders, activeTab, sortBy]);
 
-  // Optimistic status update — patch cache immediately without API roundtrip
+  // Optimistic status update — updates centralized store & query cache immediately
   const handleStatusChange = useCallback(
     (orderId: string, newStatus: OrderStatus) => {
+      updateOrder(orderId, { order_status: newStatus });
       queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
         (prev ?? []).map((o) =>
           o.id === orderId ? { ...o, order_status: newStatus } : o
         )
       );
     },
-    [queryClient, shopId]
+    [updateOrder, queryClient, shopId]
   );
 
-  // ── Initial hard-loading state ────────────────────────────────────────────
-  // Only show skeleton when there is ZERO data — never when we have
-  // initialOrders already hydrated from the server.
-  if (isLoading && allOrders.length === 0) {
-    return (
-      <div className="space-y-6">
-        <div className="h-11 w-full rounded-xl bg-gray-100 animate-pulse" />
-        <OrdersSkeleton />
-      </div>
-    );
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
       {/* ── Filters bar ─────────────────────────────────────────────────── */}
@@ -257,11 +247,9 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
             value={tab.value}
             className="mt-4 focus-visible:outline-none"
           >
-            {/* Show skeleton ONLY while background-fetching AND no data yet */}
-            {isFetching && allOrders.length === 0 ? (
+            {allOrders.length === 0 ? (
               <OrdersSkeleton />
             ) : filteredOrders.length === 0 ? (
-              /* Empty state — only after data is confirmed empty */
               <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in duration-300">
                 <div className="w-20 h-20 rounded-3xl bg-gray-50 flex items-center justify-center mb-6 shadow-sm border border-gray-100">
                   <span className="text-4xl">
@@ -283,8 +271,8 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
               <Virtuoso
                 style={{ height: "calc(100vh - 290px)", minHeight: "400px" }}
                 data={filteredOrders}
-                computeItemKey={(index, order) => order.id}
-                itemContent={(index, order) => (
+                computeItemKey={(_index, order) => order.id}
+                itemContent={(_index, order) => (
                   <div className="pb-4">
                     <OrderCard
                       order={order}

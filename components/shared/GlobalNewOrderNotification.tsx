@@ -1,39 +1,21 @@
 "use client";
 
-/**
- * GlobalNewOrderNotification
- *
- * A rich, fixed-position notification overlay that appears on ANY admin page
- * when a new order arrives via Supabase Realtime. It subscribes to the global
- * orderStore.newOrders array — which is populated by useRealtimeOrders
- * (mounted in ShopStoreInitializer in the dashboard layout) — so it works
- * regardless of which page is currently active.
- *
- * Features:
- * - Fixed position, high z-index (above everything)
- * - Shows order ID, amount, customer name
- * - "View Order" button navigates to the existing order detail route
- * - "Close" button and automatic 12s dismissal
- * - Deduplicates by order.id — one notification per order, ever
- * - Mobile-responsive layout
- * - Smooth slide-in / fade-in animation
- *
- * Mounted ONCE in the authenticated dashboard layout. Renders nothing until
- * a new order arrives.
- */
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useOrderStore } from "@/stores/orderStore";
 import { X, Bell, ShoppingBag } from "lucide-react";
 import type { Order } from "@/types";
 
-// Module-level set so it persists across re-renders and even hot-reloads
-// in dev. Ensures we never show a duplicate notification for the same order ID.
-const shownOrderIds = new Set<string>();
+// Module-level set so it persists across re-renders.
+// Ensures we never show a duplicate notification for the same order ID.
+export const shownOrderIds = new Set<string>();
+
+export function markNotificationsAsSeen(orderIds: string[]) {
+  orderIds.forEach((id) => shownOrderIds.add(id));
+}
 
 interface NotificationState {
   order: Order;
-  dismissAt: number; // timestamp when auto-dismiss fires
+  dismissAt: number;
 }
 
 export function GlobalNewOrderNotification() {
@@ -41,8 +23,7 @@ export function GlobalNewOrderNotification() {
   const [queue, setQueue] = useState<NotificationState[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Watch newOrders from the global store — when a genuinely new order arrives
-  // (one we haven't shown a notification for), add it to our local queue.
+  // Watch newOrders from the global store
   useEffect(() => {
     if (!newOrders.length) return;
 
@@ -51,8 +32,6 @@ export function GlobalNewOrderNotification() {
 
     unseen.forEach((o) => shownOrderIds.add(o.id));
 
-    // Keep the deduplication set bounded so it doesn't grow unboundedly over
-    // a long session. 500 entries is more than enough for any shift.
     if (shownOrderIds.size > 500) {
       const oldest = shownOrderIds.values().next().value;
       if (oldest !== undefined) shownOrderIds.delete(oldest);
@@ -61,18 +40,16 @@ export function GlobalNewOrderNotification() {
     const now = Date.now();
     const newEntries: NotificationState[] = unseen.map((order) => ({
       order,
-      dismissAt: now + 12_000, // 12 seconds auto-dismiss
+      dismissAt: now + 12_000,
     }));
 
     setQueue((prev) => [...prev, ...newEntries]);
   }, [newOrders]);
 
-  // Dismiss a single notification by order ID
   const dismiss = useCallback((orderId: string) => {
     setQueue((prev) => prev.filter((n) => n.order.id !== orderId));
   }, []);
 
-  // Auto-dismiss — schedule a re-check whenever the queue changes
   useEffect(() => {
     if (!queue.length) return;
 
@@ -84,14 +61,13 @@ export function GlobalNewOrderNotification() {
     timerRef.current = setTimeout(() => {
       const now = Date.now();
       setQueue((prev) => prev.filter((n) => n.dismissAt > now));
-    }, delay + 50); // +50ms buffer so the timer fires after the deadline
+    }, delay + 50);
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [queue]);
 
-  // Navigate to order detail via existing OrderNavigationHandler event bus
   const handleViewOrder = useCallback((orderId: string) => {
     dismiss(orderId);
     if (typeof window !== "undefined") {
@@ -105,7 +81,6 @@ export function GlobalNewOrderNotification() {
 
   if (!queue.length) return null;
 
-  // Show at most 3 stacked notifications to avoid flooding the screen
   const visible = queue.slice(0, 3);
 
   return (
@@ -136,8 +111,6 @@ export function GlobalNewOrderNotification() {
   );
 }
 
-// ─── Individual notification card ──────────────────────────────────────────
-
 interface NewOrderCardProps {
   order: Order;
   onDismiss: (id: string) => void;
@@ -149,7 +122,6 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
 
   const handleDismiss = () => {
     setExiting(true);
-    // Wait for the exit animation before removing from queue
     setTimeout(() => onDismiss(order.id), 250);
   };
 
@@ -176,14 +148,11 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
           : "slideIn 300ms cubic-bezier(0.34, 1.56, 0.64, 1)",
       }}
     >
-      {/* Accent bar */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-emerald-400 to-emerald-600 rounded-l-2xl" />
 
       <div className="pl-4 pr-3 pt-3 pb-3">
-        {/* Header row */}
         <div className="flex items-start justify-between gap-2 mb-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
-            {/* Bell icon with pulse ring */}
             <div className="relative flex-shrink-0">
               <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
                 <Bell className="h-4.5 w-4.5 text-emerald-600" aria-hidden="true" />
@@ -204,7 +173,6 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
             </div>
           </div>
 
-          {/* Close button */}
           <button
             type="button"
             onClick={handleDismiss}
@@ -216,7 +184,6 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
           </button>
         </div>
 
-        {/* Order details */}
         <div className="bg-slate-50 rounded-xl p-2.5 mb-3 space-y-1">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-slate-500 font-medium">Amount</span>
@@ -245,7 +212,6 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
           )}
         </div>
 
-        {/* Action button */}
         <button
           type="button"
           id={`view-order-notification-${order.id}`}
@@ -257,13 +223,10 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
         </button>
       </div>
 
-      {/* Progress bar — visual countdown for auto-dismiss */}
       <AutoDismissBar durationMs={12_000} />
     </div>
   );
 }
-
-// ─── Auto-dismiss progress bar ──────────────────────────────────────────────
 
 function AutoDismissBar({ durationMs }: { durationMs: number }) {
   return (

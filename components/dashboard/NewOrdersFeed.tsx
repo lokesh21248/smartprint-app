@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, memo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, memo, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,14 +14,8 @@ import { FileText, Phone, Check, X, Printer, ShieldAlert, ShieldCheck, Clock } f
 import Link from "next/link";
 import type { Order } from "@/types";
 
-// ─── Scan Status Badge ────────────────────────────────────────────────────────
-// Shown on order cards to surface file security state.
-// Clean files show nothing — noise reduction for normal operations.
-
 type ScanStatus = "pending" | "scanning" | "clean" | "infected" | "failed" | null;
 
-// Wrapped in React.memo: scan status rarely changes; prevents re-renders
-// when the parent NewOrdersFeed re-renders due to realtime order updates.
 const ScanStatusBadge = memo(function ScanStatusBadge({ status }: { status: ScanStatus }) {
   if (!status || status === "clean") return null;
 
@@ -64,19 +58,6 @@ const ScanStatusBadge = memo(function ScanStatusBadge({ status }: { status: Scan
   return null;
 });
 
-/**
- * Fetches new orders via the authenticated server API route.
- * Uses status=PLACED filter and maps DB columns correctly.
- */
-async function fetchNewOrders(shopId: string): Promise<Order[]> {
-  const res = await fetch(`/api/shop/orders-list?shopId=${encodeURIComponent(shopId)}&status=PLACED`, {
-    credentials: "include",
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return Array.isArray(data.orders) ? data.orders.slice(0, 5) : [];
-}
-
 interface NewOrdersFeedProps {
   initialOrders: Order[];
   shopId: string;
@@ -85,24 +66,20 @@ interface NewOrdersFeedProps {
 export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
   const queryClient = useQueryClient();
   const [processing, setProcessing] = useState<Record<string, boolean>>({});
-  const { decrementPending } = useOrderStore();
+  const storeOrders = useOrderStore((s) => s.orders);
+  const isHydrated = useOrderStore((s) => s.isHydrated);
+  const updateOrder = useOrderStore((s) => s.updateOrder);
   const { clearNotifications } = useShopStore();
 
-  const { data: orders, isLoading } = useQuery({
-    queryKey: ["new-orders", shopId],
-    queryFn: () => fetchNewOrders(shopId),
-    initialData: initialOrders,
-    // Mark initialData as immediately stale so a background refetch fires on
-    // every mount. This catches new orders that arrived while the Dashboard was
-    // inactive or while a realtime event was missed / not yet delivered.
-    initialDataUpdatedAt: 0,
-    staleTime: 60_000, // 60 s — prevents repeated fetches on fast nav
-    refetchOnWindowFocus: false,
-    refetchOnMount: true, // always background-refetch on mount to catch missed orders
-    refetchOnReconnect: true,
-  });
-
-  // Realtime subscription is now handled globally in ShopStoreInitializer
+  // Derive new/placed orders from the centralized global store
+  const orders = useMemo(() => {
+    if (isHydrated || storeOrders.length > 0) {
+      return storeOrders
+        .filter((o) => o.order_status?.toUpperCase() === "PLACED")
+        .slice(0, 5);
+    }
+    return initialOrders.filter((o) => o.order_status?.toUpperCase() === "PLACED").slice(0, 5);
+  }, [storeOrders, initialOrders, isHydrated]);
 
   const handleAction = async (
     orderId: string,
@@ -110,18 +87,28 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
   ) => {
     setProcessing((p) => ({ ...p, [orderId]: true }));
 
-    // Optimistic updates — instant badge feedback
+    const updatedStatus = newStatus === "accepted" ? "ACCEPTED" : "CANCELLED";
+
+    // 1. Instant optimistic update in global order store
+    updateOrder(orderId, { order_status: updatedStatus });
+    clearNotifications();
+
+    // 2. Instant optimistic update in React Query cache
     queryClient.setQueryData<Order[]>(["new-orders", shopId], (prev) =>
       (prev ?? []).filter((o) => o.id !== orderId)
     );
-    decrementPending();   // ← drop bell/sidebar badge immediately
-    clearNotifications(); // ← clear the secondary notification dot
+    queryClient.setQueryData<Order[]>(["orders", shopId], (prev) =>
+      (prev ?? []).map((o) => (o.id === orderId ? { ...o, order_status: updatedStatus } : o))
+    );
 
     try {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newStatus, rejectionReason: newStatus === "cancelled" ? "Rejected by shop" : undefined }),
+        body: JSON.stringify({
+          newStatus,
+          rejectionReason: newStatus === "cancelled" ? "Rejected by shop" : undefined,
+        }),
       });
       if (!res.ok) {
         let errorMsg = "Action failed. Please try again.";
@@ -139,7 +126,6 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
     } catch (err) {
-      // Rollback — re-fetch to restore correct state
       queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
@@ -171,13 +157,7 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
 
       {/* Body */}
       <div className="divide-y divide-[#F3F4F6]">
-        {isLoading ? (
-          <div className="p-4 space-y-4">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <OrderCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : !orders || orders.length === 0 ? (
+        {!orders || orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-6">
             <div className="w-14 h-14 rounded-2xl bg-[#F3F4F6] flex items-center justify-center mb-3">
               <Printer className="h-7 w-7 text-[#9CA3AF]" />
@@ -252,7 +232,6 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
 
               {/* Action buttons */}
               <div className="flex gap-2 mt-3">
-                {/* Hide Accept for infected files — shop owner must not process quarantined orders */}
                 {(order as Order & { file_scan_status?: ScanStatus }).file_scan_status !== "infected" && (
                   <Button
                     id={`accept-${order.id}`}

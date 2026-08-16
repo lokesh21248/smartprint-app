@@ -14,19 +14,17 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Global, module-level cache for duplicate insert protection
 // Prevents duplicate notification sound triggers if network hiccups cause duplicate events
-const playedOrderIds = new Set<string>();
+export const knownOrderIds = new Set<string>();
+
+export function markOrdersAsKnown(orderIds: string[]) {
+  orderIds.forEach((id) => knownOrderIds.add(id));
+}
 
 // Single source of truth — avoids repeated process.env.NODE_ENV lookups
 const isDev = process.env.NODE_ENV !== "production";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Audio notification — delegates to the singleton audio manager.
-//
-// The singleton (lib/audio/orderNotification.ts) holds ONE HTMLAudioElement
-// for the page lifetime, shared with AudioInitializer's unlock handler.
-// This is required because browser autoplay policy tracks unlock state
-// PER-OBJECT: unlocking a different Audio instance (the old bug) did nothing
-// for the playback object created here.
 // ─────────────────────────────────────────────────────────────────────────────
 function playNotificationSound(orderId: string) {
   const { soundEnabled } = useSettingsStore.getState();
@@ -34,27 +32,16 @@ function playNotificationSound(orderId: string) {
     if (isDev) console.log(`[ORDER_NOTIFY] 🔇 Sound skipped (disabled) for order: ${orderId}`);
     return;
   }
-  // playOrderNotification is async but we intentionally don't await here —
-  // the realtime handler is synchronous and the sound plays fire-and-forget.
-  // Errors are caught inside the singleton and never propagate.
   if (isDev) console.log(`[ORDER_NOTIFY] 🔊 Sound triggered for order: ${orderId}`);
   playOrderNotification(orderId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Browser push notification
-// Permission is requested proactively in useRealtimeOrders via a useEffect
-// so it is attached to an explicit user gesture (page load interaction),
-// not inside an async event handler where browsers block permission prompts.
-//
-// Clicking the browser notification focuses the window and navigates to the
-// specific order detail page via the same "navigate-to-order" DOM event
-// mechanism used by the toast action — avoiding a full page reload.
 // ─────────────────────────────────────────────────────────────────────────────
 function showBrowserNotification(order: Order) {
   if (typeof window === "undefined") return;
 
-  // Check both the browser permission AND the user's preference in settingsStore
   const { browserNotificationsEnabled } = useSettingsStore.getState();
   if (!browserNotificationsEnabled) {
     if (isDev) {
@@ -74,7 +61,6 @@ function showBrowserNotification(order: Order) {
       icon: "/favicon.ico",
       tag: order.id, // deduplication: same order won't show twice
     });
-    // Clicking the notification focuses the window and navigates to the order
     n.onclick = () => {
       window.focus();
       const href = `/dashboard/orders/${order.id}`;
@@ -91,15 +77,8 @@ function showBrowserNotification(order: Order) {
 }
 
 // Map raw DB row → Order type
-// Normalises DB column names to client field names:
-//   is_color        → color
-//   is_double_sided → double_sided
-//   status          → order_status  (also uppercases + maps "NEW" → "PLACED")
-// –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 function normalizeStatus(raw: unknown): Order["order_status"] {
   const s = String(raw ?? "").trim().toUpperCase();
-  // "NEW" is a legacy DB value for newly-placed orders; normalise to "PLACED"
-  // so realtime payloads have the same order_status as API-returned orders.
   if (s === "NEW") return "PLACED" as Order["order_status"];
   return s as Order["order_status"];
 }
@@ -107,41 +86,36 @@ function normalizeStatus(raw: unknown): Order["order_status"] {
 function mapRawToOrder(raw: Record<string, unknown>): Order {
   return {
     ...(raw as unknown as Order),
-    color: raw.is_color as boolean,
-    double_sided: raw.is_double_sided as boolean,
+    color: Boolean(raw.is_color),
+    double_sided: Boolean(raw.is_double_sided),
     order_status: normalizeStatus(raw.status),
+    total_amount: Number(raw.total_amount) || 0,
+    page_count: Number(raw.page_count) || 0,
+    copies: Number(raw.copies) || 1,
+    created_at: (raw.created_at as string) || new Date().toISOString(),
+    updated_at: (raw.updated_at as string) || (raw.created_at as string) || new Date().toISOString(),
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hook
-// ─────────────────────────────────────────────────────────────────────────────
 // Module-level caches for single realtime channel management
+// ─────────────────────────────────────────────────────────────────────────────
 let activeChannel: RealtimeChannel | null = null;
 let activeChannelShopId: string | null = null;
 let subscriberCount = 0;
 
-// Deferred teardown timer — gives a short grace window so React Strict Mode's
-// synchronous unmount+remount cycle (or fast navigation back to the same page)
-// can cancel the teardown before the WebSocket is actually closed.
-// Without this, Strict Mode fires: mount → unmount → removeChannel → remount
-// which logs "WebSocket is closed before the connection is established" every
-// time the dashboard loads, even though the subscription eventually succeeds.
 let teardownTimer: ReturnType<typeof setTimeout> | null = null;
-const TEARDOWN_GRACE_MS = 200; // enough for a Strict Mode re-mount cycle
+const TEARDOWN_GRACE_MS = 200;
 
-// Controlled reconnection manager variables
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 let isReconnecting = false;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000;
 
-// Module-level reference to setRealtimeStatus so initSubscription can call it
 type StatusSetter = (s: import("@/stores/orderStore").RealtimeStatus) => void;
 let _setStatus: StatusSetter | null = null;
 
-/** Call this from the "Reconnect" button — resets backoff and retries immediately */
 export function forceReconnect() {
   if (!activeChannelShopId) return;
   reconnectAttempts = 0;
@@ -154,22 +128,18 @@ export function forceReconnect() {
   initSubscription(activeChannelShopId, () => {});
 }
 
-// Supabase realtime channel exposes internal state not in the public types; use a narrow interface instead of any
 interface ChannelWithState {
   state: string;
 }
 
-// Payload type from Supabase postgres_changes events
 type RealtimePayload = {
   eventType: "INSERT" | "UPDATE" | "DELETE";
   new: Record<string, unknown>;
   old: Record<string, unknown>;
 };
 
-// Set of active event handlers across all mounted hook instances
 const activeHandlers = new Set<(payload: RealtimePayload) => void>();
 
-// Centralized reconnect helper with exponential backoff
 function handleReconnect(
   shopId: string,
   setRealtimeChannel: (c: RealtimeChannel | null) => void
@@ -197,7 +167,6 @@ function handleReconnect(
       if (isDev) {
         console.log(`[Realtime] 🚀 Executing scheduled reconnect attempt ${reconnectAttempts} for shop "${shopId}"...`);
       }
-      // Ensure we remove the channel before establishing a new one
       if (activeChannel) {
         const channelToCleanup = activeChannel;
         activeChannel = null;
@@ -212,12 +181,10 @@ function handleReconnect(
   }, delay);
 }
 
-// Centralized subscription initializer
 async function initSubscription(
   shopId: string,
   setRealtimeChannel: (c: RealtimeChannel | null) => void
 ) {
-  // If we are already subscribed to this shopId, reuse the channel if it's active!
   if (activeChannel && activeChannelShopId === shopId) {
     const state = (activeChannel as unknown as ChannelWithState).state;
     if (state === "joined" || state === "joining") {
@@ -236,11 +203,9 @@ async function initSubscription(
     }
   }
 
-  // Guard against placeholder / demo configs
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   if (!url || url.includes("your-project")) return;
 
-  // Cleanup old channel if shopId changed
   if (activeChannel && activeChannelShopId !== shopId) {
     if (isDev) {
       console.log(`[Realtime] 🔌 Shop ID changed from ${activeChannelShopId} to ${shopId}. Cleaning up old channel.`);
@@ -256,7 +221,6 @@ async function initSubscription(
   const channelName = `shop:${shopId}:orders:v3`;
   const channelTopic = `realtime:${channelName}`;
 
-  // Registry cleanup
   const existingChannel = supabase
     .getChannels()
     .find((c) => c.topic === channelTopic);
@@ -283,25 +247,17 @@ async function initSubscription(
         filter: `shop_id=eq.${shopId}`,
       },
       (payload: RealtimePayload) => {
-        // DIAGNOSTIC — always log raw channel events to confirm delivery
-        console.log(`[Realtime] 📡 RAW channel event: type=${payload.eventType} id=${(payload.new as Record<string,unknown>)?.id ?? (payload.old as Record<string,unknown>)?.id ?? "?"}`);
-        // Dispatch to all active handlers across hook instances
+        if (isDev) {
+          console.log(`[Realtime] 📡 RAW channel event: type=${payload.eventType} id=${(payload.new as Record<string,unknown>)?.id ?? (payload.old as Record<string,unknown>)?.id ?? "?"}`);
+        }
         activeHandlers.forEach((handler) => handler(payload));
       }
     );
 
   channel.subscribe((status: string, err?: Error) => {
     if (status === "SUBSCRIBED") {
-      // Only log in development — this message exposes the shop UUID and
-      // internal infrastructure hints (ALTER PUBLICATION, migration filenames)
-      // in the production browser console.
       if (isDev) {
-        console.log(
-          `[ORDER_SYNC] ✅ Realtime connected — channel "${channelName}" for shop "${shopId}".`,
-          `\n  → If no INSERT events arrive, verify:`,
-          `\n  1. orders table is in supabase_realtime publication (run: ALTER PUBLICATION supabase_realtime ADD TABLE orders;)`,
-          `\n  2. RLS policy allows anon SELECT on orders (run migration 20260709000001_enable_realtime_orders.sql)`,
-        );
+        console.log(`[ORDER_SYNC] ✅ Realtime connected — channel "${channelName}" for shop "${shopId}".`);
       }
       reconnectAttempts = 0;
       isReconnecting = false;
@@ -311,8 +267,6 @@ async function initSubscription(
         reconnectTimer = null;
       }
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      // Keep this warn in both dev and prod — connection failures are actionable
-      // and help diagnose issues from Vercel/Sentry error monitoring.
       if (isDev) console.warn(`[ORDER_SYNC] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
       handleReconnect(shopId, setRealtimeChannel);
     } else {
@@ -327,12 +281,6 @@ async function initSubscription(
   setRealtimeChannel(channel);
 }
 
-// Centralized subscription teardown
-// Uses a short grace period (TEARDOWN_GRACE_MS) before actually closing the
-// channel. This eliminates the "WebSocket is closed before the connection is
-// established" console error caused by React Strict Mode's synchronous
-// mount → unmount → remount cycle, and also prevents unnecessary channel
-// destruction when navigating quickly between pages that share the hook.
 function terminateSubscription(
   setRealtimeChannel: (c: RealtimeChannel | null) => void
 ) {
@@ -344,7 +292,6 @@ function terminateSubscription(
   reconnectAttempts = 0;
   isReconnecting = false;
 
-  // Cancel any previously pending teardown — a new subscriber may arrive soon
   if (teardownTimer) {
     clearTimeout(teardownTimer);
     teardownTimer = null;
@@ -352,11 +299,8 @@ function terminateSubscription(
 
   if (!activeChannel) return;
 
-  // Schedule actual teardown after the grace period.
-  // The mount path in the main effect will cancel this if subscriberCount > 0.
   teardownTimer = setTimeout(async () => {
     teardownTimer = null;
-    // Re-check: a new subscriber may have arrived during the grace window
     if (subscriberCount > 0) {
       if (isDev) {
         console.log(`[Realtime] 🛡️ Teardown cancelled — ${subscriberCount} active subscriber(s) still present.`);
@@ -377,10 +321,8 @@ function terminateSubscription(
 export function useRealtimeOrders(shopId: string | null) {
   const queryClient = useQueryClient();
   const { incrementNotifications } = useShopStore();
-  const { addNewOrder, incrementPending, decrementPending, setRealtimeChannel, setRealtimeStatus } = useOrderStore();
+  const { addOrder, updateOrder, removeOrder, setRealtimeChannel, setRealtimeStatus } = useOrderStore();
 
-  // Wire the module-level status setter so non-hook code (forceReconnect, handleReconnect)
-  // can update the store without prop-drilling.
   useEffect(() => {
     _setStatus = setRealtimeStatus;
     return () => { _setStatus = null; };
@@ -388,12 +330,9 @@ export function useRealtimeOrders(shopId: string | null) {
 
   const realtimeStatus = useOrderStore((s) => s.realtimeStatus);
 
-  // Synchronise state when WebSocket transitions to "connected".
-  // This handles the connection race condition and ensures we catch up on any
-  // events missed during subscription setup or network reconnect window.
   useEffect(() => {
     if (realtimeStatus === "connected" && shopId) {
-      if (process.env.NODE_ENV !== "production") {
+      if (isDev) {
         console.log(`[Realtime] Syncing data on connection for shop: ${shopId}`);
       }
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
@@ -401,59 +340,38 @@ export function useRealtimeOrders(shopId: string | null) {
     }
   }, [realtimeStatus, shopId, queryClient]);
 
-  // Proactively request browser notification permission on mount.
-  // Must be done here (inside a useEffect, linked to a page-load event) NOT inside
-  // the realtime event handler — browsers block permission prompts in async callbacks.
   useEffect(() => {
     if (typeof window === "undefined" || typeof Notification === "undefined") return;
     if (Notification.permission === "default") {
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[Realtime] 🔔 Requesting browser notification permission...");
-      }
-      Notification.requestPermission().then((perm) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] 🔔 Browser notification permission: "${perm}"`);
-        }
-      }).catch((err) => {
+      Notification.requestPermission().catch((err) => {
         console.warn("[Realtime] Failed to request notification permission:", err);
       });
-    } else if (process.env.NODE_ENV !== "production") {
-      console.log(`[Realtime] 🔔 Browser notification permission already set: "${Notification.permission}"`);
     }
   }, []);
 
-  // Create refs to keep handler callbacks always fresh without re-subscribing
   const handlersRef = useRef({
-    addNewOrder,
-    incrementPending,
-    decrementPending,
+    addOrder,
+    updateOrder,
+    removeOrder,
     incrementNotifications,
     queryClient,
   });
 
   useEffect(() => {
     handlersRef.current = {
-      addNewOrder,
-      incrementPending,
-      decrementPending,
+      addOrder,
+      updateOrder,
+      removeOrder,
       incrementNotifications,
       queryClient,
     };
-  }, [addNewOrder, incrementPending, decrementPending, incrementNotifications, queryClient]);
+  }, [addOrder, updateOrder, removeOrder, incrementNotifications, queryClient]);
 
-  // Keep timers at the local hook level
-  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingInserts = useRef<Order[]>([]);
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Flush the INSERT batch
   const flushInsertBatch = useCallback(() => {
     const batch = pendingInserts.current.splice(0);
-    // FIX: Read shopId from the module-level activeChannelShopId instead of
-    // closing over the hook's shopId prop. The hook's shopId may be null during
-    // the initial mount race condition (ShopStoreInitializer runs useEffect
-    // asynchronously, so the first render may have shopId=null before the shop
-    // is loaded). activeChannelShopId is set synchronously when the channel
-    // is actually established and is always accurate.
     const activeShopId = activeChannelShopId;
     if (!batch.length || !activeShopId) return;
 
@@ -461,66 +379,53 @@ export function useRealtimeOrders(shopId: string | null) {
       console.log(`[ORDER_SYNC] 📦 Flushing batch of ${batch.length} new order event(s)...`);
     }
 
-    batch.forEach((order) => {
-      if (isDev) console.log(`[ORDER_SYNC] Processing INSERT for order="${order.id}"`);
+    const brandNewOrders: Order[] = [];
 
-      if (playedOrderIds.has(order.id)) {
-        if (isDev) console.log(`[ORDER_SYNC] 🛡️ Duplicate ignored — order "${order.id}" already notified.`);
+    batch.forEach((order) => {
+      // 1. Immediately update centralized Zustand orderStore
+      handlersRef.current.addOrder(order);
+
+      // 2. Immediately update React Query cache
+      handlersRef.current.queryClient.setQueryData<Order[]>(["orders", activeShopId], (prev) => {
+        if (!prev) return [order];
+        const exists = prev.some((o) => o.id === order.id);
+        return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [order, ...prev];
+      });
+
+      handlersRef.current.queryClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) => {
+        if (!prev) return [order];
+        const exists = prev.some((o) => o.id === order.id);
+        return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [order, ...prev];
+      });
+
+      // 3. Deduplicate alert/notification triggers
+      if (knownOrderIds.has(order.id)) {
+        if (isDev) console.log(`[ORDER_SYNC] 🛡️ Order "${order.id}" already known — skipping alert.`);
         return;
       }
 
-      playedOrderIds.add(order.id);
-      // Keep the deduplication set bounded to prevent memory leaks over long sessions
-      if (playedOrderIds.size > 200) {
-        const oldestKey = playedOrderIds.keys().next().value;
-        if (oldestKey !== undefined) {
-          playedOrderIds.delete(oldestKey);
-        }
+      knownOrderIds.add(order.id);
+      if (knownOrderIds.size > 500) {
+        const oldest = knownOrderIds.values().next().value;
+        if (oldest !== undefined) knownOrderIds.delete(oldest);
       }
 
-      const { addNewOrder: addOrder, incrementPending: incPending, incrementNotifications: incNotifications, queryClient: qClient } = handlersRef.current;
-
-      if (isDev) console.log(`[ORDER_SYNC] Order "${order.id}" added to global store`);
-
-      // Update the full orders list cache — now always has a cache entry because
-      // GlobalOrderCacheSeeder pre-seeds it at layout mount time.
-      qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) => {
-        if (!prev) return [order];
-        const exists = prev.some((o) => o.id === order.id);
-        return exists ? prev : [order, ...prev];
-      });
-      // Update the new/pending orders feed cache
-      qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) => {
-        if (!prev) return [order];
-        const exists = prev.some((o) => o.id === order.id);
-        return exists ? prev : [order, ...prev];
-      });
-
-      addOrder(order);
-      incPending();
-      incNotifications();
+      brandNewOrders.push(order);
+      handlersRef.current.incrementNotifications();
       playNotificationSound(order.id);
       showBrowserNotification(order);
     });
 
     handlersRef.current.queryClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
-    // Safety net: mark ["new-orders"] stale so that if setQueryData silently
-    // skipped the update (React Query v5 does not call functional updaters when
-    // there is no existing cache entry), the next active observer refetches.
-    handlersRef.current.queryClient.invalidateQueries({ queryKey: ["new-orders", activeShopId] });
 
-    if (batch.length === 1) {
-      const order = batch[0];
-      if (isDev) console.log(`[ORDER_NOTIFY] 🔔 Toast triggered for order: ${order.id}`);
+    if (brandNewOrders.length === 1) {
+      const order = brandNewOrders[0];
       toast.success(`🔔 New Order Received`, {
         description: `Order #${order.short_token} · ₹${order.total_amount?.toFixed(2)}${order.customer_name ? ` · ${order.customer_name}` : ""}`,
         duration: 12_000,
         action: {
           label: "View Order",
           onClick: () => {
-            // FIX: Dispatch a DOM event instead of using window.location.href
-            // so the OrderNavigationHandler picks it up and calls router.push()
-            // — avoiding a full page reload.
             if (typeof window !== "undefined") {
               window.dispatchEvent(
                 new CustomEvent("navigate-to-order", {
@@ -531,9 +436,8 @@ export function useRealtimeOrders(shopId: string | null) {
           },
         },
       });
-    } else {
-      if (isDev) console.log(`[ORDER_NOTIFY] 🔔 Batch toast triggered for ${batch.length} orders`);
-      toast.success(`🔔 ${batch.length} New Orders Received`, {
+    } else if (brandNewOrders.length > 1) {
+      toast.success(`🔔 ${brandNewOrders.length} New Orders Received`, {
         description: "New orders are waiting for your action",
         duration: 10_000,
         action: {
@@ -549,13 +453,12 @@ export function useRealtimeOrders(shopId: string | null) {
       });
     }
 
-    // Flash the browser tab title to alert the shop owner when the tab is in background
-    if (typeof window !== "undefined") {
+    if (brandNewOrders.length > 0 && typeof window !== "undefined") {
       const originalTitle = document.title;
       let flashes = 0;
       const interval = setInterval(() => {
         document.title =
-          flashes % 2 === 0 ? `🔔 (${batch.length}) NEW ORDER!` : originalTitle;
+          flashes % 2 === 0 ? `🔔 (${brandNewOrders.length}) NEW ORDER!` : originalTitle;
         flashes++;
         if (flashes >= 10) {
           clearInterval(interval);
@@ -563,26 +466,14 @@ export function useRealtimeOrders(shopId: string | null) {
         }
       }, 600);
     }
-  }, [/* intentionally empty — reads from module-level vars and handlersRef */]);
+  }, []);
 
-  // Realtime event handler
   const handleRealtimeEvent = useCallback(
-    (payload: {
-      eventType: "INSERT" | "UPDATE" | "DELETE";
-      new: Record<string, unknown>;
-      old: Record<string, unknown>;
-    }) => {
-      // FIX: Use module-level activeChannelShopId instead of the React closure's
-      // shopId prop. The closure value can be null during the initial mount cycle
-      // (when ShopStoreInitializer first renders before shop data is available),
-      // causing ALL events to be silently dropped via the null-guard below.
-      // activeChannelShopId is set synchronously by initSubscription and is always
-      // accurate once the channel is established — the same pattern used correctly
-      // by flushInsertBatch (which never had this bug).
+    (payload: RealtimePayload) => {
       const activeShopId = activeChannelShopId;
       if (!activeShopId) return;
 
-      const { queryClient: qClient } = handlersRef.current;
+      const { updateOrder: storeUpdateOrder, removeOrder: storeRemoveOrder, queryClient: qClient } = handlersRef.current;
 
       if (payload.eventType === "INSERT") {
         const order = mapRawToOrder(payload.new);
@@ -591,46 +482,40 @@ export function useRealtimeOrders(shopId: string | null) {
         }
         pendingInserts.current.push(order);
         if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
-        batchTimerRef.current = setTimeout(flushInsertBatch, 300);
+        batchTimerRef.current = setTimeout(flushInsertBatch, 150);
       } else if (payload.eventType === "UPDATE") {
         const updated = mapRawToOrder(payload.new);
-        const oldStatus = (payload.old as Record<string, unknown>).status as string | undefined;
-        const newStatus = updated.order_status as string;
-        const wasPlaced = oldStatus?.toUpperCase() === "PLACED";
-        const isStillPlaced = newStatus?.toUpperCase() === "PLACED";
-
         if (isDev) {
-          console.log(`[ORDER_SYNC] 📥 Order status update received: ID="${updated.id}", ${oldStatus} → ${newStatus}`);
+          console.log(`[ORDER_SYNC] 📥 Order status update received: ID="${updated.id}", status=${updated.order_status}`);
         }
 
-        // If order left PLACED status (accepted/rejected by another tab/device)
-        // decrement the pending badge and remove from the new-orders feed.
-        if (wasPlaced && !isStillPlaced) {
-          handlersRef.current.decrementPending();
-          qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) =>
-            (prev ?? []).filter((o) => o.id !== updated.id)
-          );
-        }
+        // 1. Immediately update centralized store
+        storeUpdateOrder(updated.id, updated);
 
+        // 2. Immediately update React Query caches
         qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) =>
-          (prev ?? []).map((o) =>
-            o.id === updated.id ? { ...o, ...updated } : o
-          )
+          (prev ?? []).map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
         );
-        // Only keep in new-orders cache if still PLACED
-        if (isStillPlaced) {
-          qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) =>
-            (prev ?? []).map((o) =>
-              o.id === updated.id ? { ...o, ...updated } : o
-            )
-          );
-        }
+
+        const isStillPlaced = updated.order_status === "PLACED";
+        qClient.setQueryData<Order[]>(["new-orders", activeShopId], (prev) => {
+          if (!prev) return isStillPlaced ? [updated] : [];
+          if (isStillPlaced) {
+            const exists = prev.some((o) => o.id === updated.id);
+            return exists
+              ? prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
+              : [updated, ...prev];
+          }
+          return prev.filter((o) => o.id !== updated.id);
+        });
+
         qClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
       } else if (payload.eventType === "DELETE") {
         const id = (payload.old as { id: string }).id;
         if (isDev) {
           console.log(`[ORDER_SYNC] 📥 Order deleted: ID="${id}"`);
         }
+        storeRemoveOrder(id);
         qClient.setQueryData<Order[]>(["orders", activeShopId], (prev) =>
           (prev ?? []).filter((o) => o.id !== id)
         );
@@ -642,7 +527,6 @@ export function useRealtimeOrders(shopId: string | null) {
     [flushInsertBatch]
   );
 
-  // Register event handler with global listener set
   useEffect(() => {
     const handler = (payload: RealtimePayload) => handleRealtimeEvent(payload);
     activeHandlers.add(handler);
@@ -651,11 +535,9 @@ export function useRealtimeOrders(shopId: string | null) {
     };
   }, [handleRealtimeEvent]);
 
-  // Main lifecycle effect
   useEffect(() => {
     if (!shopId) return;
 
-    // Cancel any pending deferred teardown — we have a live subscriber now
     if (teardownTimer) {
       clearTimeout(teardownTimer);
       teardownTimer = null;
@@ -664,8 +546,6 @@ export function useRealtimeOrders(shopId: string | null) {
       }
     }
 
-    // Clamp to 0 before incrementing to prevent negative counts from
-    // React Strict Mode double-unmount cycles
     if (subscriberCount < 0) subscriberCount = 0;
     subscriberCount++;
     if (isDev) {
@@ -676,8 +556,8 @@ export function useRealtimeOrders(shopId: string | null) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[Realtime] Visibility visible: Refreshing queries for shop: ${shopId} to fetch background updates...`);
+        if (isDev) {
+          console.log(`[Realtime] Visibility visible: Refreshing queries for shop: ${shopId}...`);
         }
         queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
         queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
