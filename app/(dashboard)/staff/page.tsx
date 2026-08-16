@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function StaffPage() {
+  const start = Date.now();
   const { userId } = await auth();
 
   if (!userId) redirect("/login");
@@ -25,12 +26,15 @@ export default async function StaffPage() {
 
   const supabase = createAdminClient();
 
-  // Get staff
   const { data: staffData } = await supabase
     .from("shop_staff")
     .select("id, user_id, role, permissions, created_at")
     .eq("shop_id", shop.id)
     .order("created_at", { ascending: false });
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[PERF] Staff page render: ${Date.now() - start} ms`);
+  }
 
   return <StaffList initialStaff={(staffData as ShopStaff[]) ?? []} shopId={shop.id} />;
 }

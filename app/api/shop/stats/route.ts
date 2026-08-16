@@ -26,6 +26,7 @@ export const dynamic = "force-dynamic";
  * the status normalization fix.
  */
 export async function GET(request: Request) {
+  const start = Date.now();
   try {
     // 1. Strict Role Guard
     const { authorized, response, userId, clerkRole } = await validateApiAccess([
@@ -193,6 +194,10 @@ export async function GET(request: Request) {
       location,
       shop_name:         shopData?.name ?? "",
     });
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[PERF] Dashboard API: ${Date.now() - start} ms`);
+    }
 
     // Allow CDN/browser to serve stale stats for up to 30s while revalidating.
     // Realtime subscription invalidates on every INSERT/UPDATE, making this

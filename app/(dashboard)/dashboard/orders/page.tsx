@@ -29,7 +29,7 @@ async function getInitialOrders(
       )
       .eq("shop_id", shop.id)
       .order("created_at", { ascending: false })
-      .limit(70);
+      .limit(30);
 
     if (error) {
       console.error("[getInitialOrders] DB error:", error.message);
@@ -66,6 +66,7 @@ async function getInitialOrders(
 }
 
 export default async function OrdersPage() {
+  const start = Date.now();
   const { userId } = await auth();
   const { orders, shopId } = userId
     ? await getInitialOrders(userId)
@@ -75,15 +76,11 @@ export default async function OrdersPage() {
     (o) => o.order_status?.toUpperCase() === "PLACED"
   ).length;
 
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[PERF] Orders page render: ${Date.now() - start} ms (${orders.length} orders)`);
+  }
+
   return (
-    /**
-     * CRITICAL: OrdersClient calls useSearchParams() which opts out of SSR
-     * unless wrapped in <Suspense>. Without this boundary Next.js renders a
-     * blank shell on the client during hydration — causing the empty-state
-     * flash and the "orders disappear on refresh" bug.
-     *
-     * The fallback uses the real OrdersSkeleton so the transition is seamless.
-     */
     <>
       <PendingCountSeeder count={placedCount} />
       <Suspense fallback={<OrdersSkeleton />}>

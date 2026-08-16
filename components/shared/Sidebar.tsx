@@ -108,6 +108,7 @@ export function Sidebar() {
         <Link
           key={item.href}
           href={item.href}
+          prefetch={false}
           className={cn(
             "sidebar-link",
             isActive && "active",

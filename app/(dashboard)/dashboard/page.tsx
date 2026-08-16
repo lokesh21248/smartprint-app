@@ -129,7 +129,7 @@ async function getDashboardData(userId: string): Promise<{
 }
 
 export default async function DashboardPage() {
-  // Parallelize auth — single auth() call, no currentUser() needed
+  const start = Date.now();
   const { userId } = await auth();
   
   const data = userId
@@ -142,6 +142,10 @@ export default async function DashboardPage() {
   const ownerDisplayName = shop?.owner_name || "N/A";
   const shopDisplayName = shop?.name || "N/A";
   const emailDisplay = shop?.owner_email || "N/A";
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[PERF] Dashboard page render: ${Date.now() - start} ms`);
+  }
 
   return (
     <div className="space-y-6">

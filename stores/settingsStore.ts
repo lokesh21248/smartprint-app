@@ -28,34 +28,34 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   fetchSettings: async (shopId) => {
     if (!shopId) return;
+    // Skip if already loaded for this shop (prevents double-fetch in StrictMode / hot reloads)
+    if (get().isLoading) return;
     set({ isLoading: true });
     try {
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`[SettingsStore] Fetching settings for shop: "${shopId}"`);
+        console.log(`[PERF] Settings API: fetching for shop "${shopId}"...`);
+        const t0 = Date.now();
+        const response = await fetch(`/api/shop/settings?shopId=${shopId}`);
+        console.log(`[PERF] Settings API: ${Date.now() - t0} ms`);
+        if (!response.ok) throw new Error(`Failed to fetch settings: status ${response.status}`);
+        const data = await response.json();
+        const permissionGranted =
+          typeof Notification !== "undefined" ? Notification.permission === "granted" : false;
+        set({
+          soundEnabled: data.soundEnabled ?? true,
+          browserNotificationsEnabled: get().browserNotificationsEnabled || permissionGranted,
+        });
+      } else {
+        const response = await fetch(`/api/shop/settings?shopId=${shopId}`);
+        if (!response.ok) throw new Error(`Failed to fetch settings: status ${response.status}`);
+        const data = await response.json();
+        const permissionGranted =
+          typeof Notification !== "undefined" ? Notification.permission === "granted" : false;
+        set({
+          soundEnabled: data.soundEnabled ?? true,
+          browserNotificationsEnabled: get().browserNotificationsEnabled || permissionGranted,
+        });
       }
-      const response = await fetch(`/api/shop/settings?shopId=${shopId}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch settings: status ${response.status}`);
-      }
-      const data = await response.json();
-      if (process.env.NODE_ENV !== 'production') {
-        console.log("[SettingsStore] ✅ Settings loaded successfully:", data);
-      }
-
-      // Re-check browser permission at fetch time in case the user granted/denied
-      // permission after the store was first initialized.
-      const permissionGranted =
-        typeof Notification !== "undefined"
-          ? Notification.permission === "granted"
-          : false;
-
-      set({
-        soundEnabled: data.soundEnabled ?? true,
-        // Keep browserNotificationsEnabled in sync with actual browser permission.
-        // If the user has granted permission, honour it; if denied/default and
-        // our stored value is true, keep it true (permission prompt will be shown).
-        browserNotificationsEnabled: get().browserNotificationsEnabled || permissionGranted,
-      });
     } catch (err) {
       console.error("[SettingsStore] ❌ Unexpected error in fetchSettings:", err);
     } finally {

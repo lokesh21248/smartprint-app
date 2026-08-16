@@ -6,7 +6,7 @@ import { canManageShop } from "@/lib/auth/shop-access";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 70;
+const PAGE_SIZE = 30;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -68,9 +68,7 @@ function normalizeOrderStatus(raw: string): string {
 // ── Route Handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
-  // Move dynamic headers and URL reading OUTSIDE the try-catch!
-  // Next.js uses an internal DYNAMIC_SERVER_USAGE error to bailout. 
-  // Swallowing it causes fatal API errors on Vercel.
+  const start = Date.now();
   const { searchParams } = new URL(request.url);
   const { authorized, response, userId, clerkRole } = await validateApiAccess([
     "admin",
@@ -213,6 +211,10 @@ export async function GET(request: Request) {
       // Aggregated security status — null means no files linked yet
       file_scan_status: worstScanStatus(orderFilesMap[ord.id]),
     }));
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[PERF] Orders API: ${Date.now() - start} ms (${orders.length} orders)`);
+    }
 
     return NextResponse.json({
       success: true,

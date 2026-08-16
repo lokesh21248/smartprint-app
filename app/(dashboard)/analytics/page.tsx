@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
+import { getShopByUserId } from "@/lib/data/shop";
 import nextDynamic from "next/dynamic";
 
 const AnalyticsCharts = nextDynamic(() => import("@/components/dashboard/AnalyticsCharts"), {
@@ -21,25 +21,21 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
+  const start = Date.now();
   const { userId } = await auth();
 
   if (!userId) redirect("/login");
 
-  const supabase = createAdminClient();
-
-  // Get shop — uses idx_shops_clerk_owner_id index
-  const { data: shop } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("clerk_owner_id", userId)
-    .limit(1)
-    .maybeSingle();
+  // Reuses the request-cached shop lookup from layout (0 additional DB queries)
+  const shop = await getShopByUserId(userId);
 
   if (!shop) {
     return <AnalyticsCharts orders={[]} />;
   }
 
-  // Fetch orders — either 30 days ago or start of current month, whichever is earlier
+  const supabase = createAdminClient();
+
+  // Fetch orders for the last 30 days or start of month (whichever is earlier)
   const now = new Date();
   const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -52,10 +48,8 @@ export default async function AnalyticsPage() {
     .eq("shop_id", shop.id)
     .gte("created_at", rangeStartIso)
     .order("created_at", { ascending: false })
-    .limit(1500); // slightly increased cap to accommodate up to 1500 orders
+    .limit(500);
 
-  // Minimal shape required by AnalyticsCharts — avoids `any[]`
-  // updated_at must be string (non-nullable) to match the AnalyticsCharts.RawOrder interface
   type RawOrder = {
     total_amount: number;
     status: string;
@@ -75,6 +69,10 @@ export default async function AnalyticsPage() {
     customer_phone: (o.customer_phone as string | null) ?? null,
     is_color: Boolean(o.is_color),
   }));
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[PERF] Analytics page render: ${Date.now() - start} ms (${rawOrders.length} orders)`);
+  }
 
   return <AnalyticsCharts orders={rawOrders} />;
 }
