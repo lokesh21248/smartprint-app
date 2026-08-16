@@ -132,8 +132,18 @@ export default async function QRLandingPage({ params }: PageProps) {
           </div>
         </div>
 
+        {/* Entry Form Card */}
+        <div className="bg-white rounded-3xl shadow-xl shadow-emerald-900/[0.03] border border-slate-100/80 p-8 md:p-10 space-y-8 animate-slide-in-up [animation-delay:150ms]">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Let&apos;s get started</h2>
+            <p className="text-sm text-slate-500 font-medium">Enter your name below to start your private upload session.</p>
+          </div>
+
+          <StartSessionForm shopSlug={shop.slug} />
+        </div>
+
         {/* Store Overview & Services Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 md:p-8 space-y-6 animate-slide-in-up [animation-delay:150ms]">
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 md:p-8 space-y-6 animate-slide-in-up [animation-delay:200ms]">
           <div>
             <h2 className="text-lg font-black text-slate-900 tracking-tight mb-2">About Our Store</h2>
             <p className="text-sm text-slate-500 leading-relaxed font-medium">
@@ -181,16 +191,6 @@ export default async function QRLandingPage({ params }: PageProps) {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Entry Form Card */}
-        <div className="bg-white rounded-3xl shadow-xl shadow-emerald-900/[0.03] border border-slate-100/80 p-8 md:p-10 space-y-8 animate-slide-in-up [animation-delay:200ms]">
-          <div className="space-y-2">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Let&apos;s get started</h2>
-            <p className="text-sm text-slate-500 font-medium">Enter your name below to start your private upload session.</p>
-          </div>
-
-          <StartSessionForm shopSlug={shop.slug} />
         </div>
 
         {/* Feature Highlights */}
