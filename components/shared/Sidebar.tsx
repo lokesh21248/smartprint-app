@@ -50,8 +50,8 @@ export function Sidebar() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [toggling, setToggling] = useState(false);
-  // Mobile drawer open state — controlled by "open-mobile-sidebar" custom event from Header
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const shopName = shop?.name || "Shop Panel";
 
@@ -63,6 +63,7 @@ export function Sidebar() {
   // Initial set on mount
   useEffect(() => {
     setSidebarWidthVar(SIDEBAR_FULL_W);
+    setMounted(true);
   }, []);
 
   // Listen for mobile sidebar open events dispatched by the Header hamburger button
@@ -117,7 +118,7 @@ export function Sidebar() {
         >
           <div className="relative flex-shrink-0">
             <Icon className="h-5 w-5" aria-hidden="true" />
-            {item.badge && pendingCount > 0 && (
+            {mounted && item.badge && pendingCount > 0 && (
               <span
                 className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white"
                 aria-label={!isMobile && isCollapsed ? `${pendingCount} pending orders` : undefined}
@@ -127,7 +128,7 @@ export function Sidebar() {
             )}
           </div>
           {!isCollapsed && <span>{item.label}</span>}
-          {!isCollapsed && item.badge && pendingCount > 0 && (
+          {!isCollapsed && mounted && item.badge && pendingCount > 0 && (
             <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FEE2E2] px-1 text-[11px] font-bold text-[#B91C1C]">
               {pendingCount}
             </span>
@@ -135,7 +136,7 @@ export function Sidebar() {
         </Link>
       );
     });
-  }, [collapsed, pathname, pendingCount]);
+  }, [collapsed, pathname, pendingCount, mounted]);
 
   const sidebarContent = (
     <aside

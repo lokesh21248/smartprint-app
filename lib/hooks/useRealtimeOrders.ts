@@ -257,7 +257,8 @@ async function initSubscription(
   channel.subscribe((status: string, err?: Error) => {
     if (status === "SUBSCRIBED") {
       if (isDev) {
-        console.log(`[ORDER_SYNC] ✅ Realtime connected — channel "${channelName}" for shop "${shopId}".`);
+        console.log(`[ORDER REALTIME] subscription created: shop:${shopId}`);
+        console.log(`[ORDER REALTIME] status: SUBSCRIBED`);
       }
       reconnectAttempts = 0;
       isReconnecting = false;
@@ -267,11 +268,11 @@ async function initSubscription(
         reconnectTimer = null;
       }
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      if (isDev) console.warn(`[ORDER_SYNC] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
+      if (isDev) console.warn(`[ORDER REALTIME] ⚠️ Subscription status "${status}" for shop "${shopId}"`, err);
       handleReconnect(shopId, setRealtimeChannel);
     } else {
       if (isDev) {
-        console.log(`[ORDER_SYNC] ℹ️ Subscription status: "${status}" for shop "${shopId}"`);
+        console.log(`[ORDER REALTIME] status: ${status}`);
       }
     }
   });
@@ -308,7 +309,7 @@ function terminateSubscription(
       return;
     }
     if (!activeChannel) return;
-    if (isDev) console.log("[Realtime] Unsubscribing:", shopId);
+    if (isDev) console.log(`[ORDER REALTIME] subscription closed: shop:${shopId}`);
     const channelToCleanup = activeChannel;
     activeChannel = null;
     activeChannelShopId = null;
@@ -384,6 +385,9 @@ export function useRealtimeOrders(shopId: string | null) {
     batch.forEach((order) => {
       // 1. Immediately update centralized Zustand orderStore
       handlersRef.current.addOrder(order);
+      if (isDev) {
+        console.log(`[ORDER REALTIME] global store updated: ${order.id}`);
+      }
 
       // 2. Immediately update React Query cache
       handlersRef.current.queryClient.setQueryData<Order[]>(["orders", activeShopId], (prev) => {
@@ -400,7 +404,7 @@ export function useRealtimeOrders(shopId: string | null) {
 
       // 3. Deduplicate alert/notification triggers
       if (knownOrderIds.has(order.id)) {
-        if (isDev) console.log(`[ORDER_SYNC] 🛡️ Order "${order.id}" already known — skipping alert.`);
+        if (isDev) console.log(`[ORDER REALTIME] 🛡️ Order "${order.id}" already known — skipping alert.`);
         return;
       }
 
@@ -412,6 +416,10 @@ export function useRealtimeOrders(shopId: string | null) {
 
       brandNewOrders.push(order);
       handlersRef.current.incrementNotifications();
+      if (isDev) {
+        console.log(`[ORDER REALTIME] sound triggered: ${order.id}`);
+        console.log(`[ORDER REALTIME] notification triggered: ${order.id}`);
+      }
       playNotificationSound(order.id);
       showBrowserNotification(order);
     });
@@ -478,7 +486,7 @@ export function useRealtimeOrders(shopId: string | null) {
       if (payload.eventType === "INSERT") {
         const order = mapRawToOrder(payload.new);
         if (isDev) {
-          console.log(`[ORDER_SYNC] 📥 New order received: ID="${order.id}"`);
+          console.log(`[ORDER REALTIME] INSERT received: orderId=${order.id}, shopId=${order.shop_id}`);
         }
         pendingInserts.current.push(order);
         if (batchTimerRef.current) clearTimeout(batchTimerRef.current);

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -10,9 +11,15 @@ interface PendingOrdersBannerProps {
 }
 
 export function PendingOrdersBanner({ count: initialCount }: PendingOrdersBannerProps) {
+  const [mounted, setMounted] = useState(false);
   const { pendingCount } = useOrderStore();
-  // Use the store value if it's been updated by realtime, otherwise use server-rendered value
-  const count = pendingCount > 0 ? pendingCount : initialCount;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Use the store value once mounted on client, otherwise use server-rendered value
+  const count = mounted && pendingCount > 0 ? pendingCount : initialCount;
 
   if (count === 0) return null;
 

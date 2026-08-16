@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo, useMemo } from "react";
+import { useState, memo, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -65,21 +65,26 @@ interface NewOrdersFeedProps {
 
 export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
   const queryClient = useQueryClient();
+  const [mounted, setMounted] = useState(false);
   const [processing, setProcessing] = useState<Record<string, boolean>>({});
   const storeOrders = useOrderStore((s) => s.orders);
   const isHydrated = useOrderStore((s) => s.isHydrated);
   const updateOrder = useOrderStore((s) => s.updateOrder);
   const { clearNotifications } = useShopStore();
 
-  // Derive new/placed orders from the centralized global store
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Derive new/placed orders from the centralized global store once mounted
   const orders = useMemo(() => {
-    if (isHydrated || storeOrders.length > 0) {
+    if (mounted && (isHydrated || storeOrders.length > 0)) {
       return storeOrders
         .filter((o) => o.order_status?.toUpperCase() === "PLACED")
         .slice(0, 5);
     }
     return initialOrders.filter((o) => o.order_status?.toUpperCase() === "PLACED").slice(0, 5);
-  }, [storeOrders, initialOrders, isHydrated]);
+  }, [mounted, storeOrders, initialOrders, isHydrated]);
 
   const handleAction = async (
     orderId: string,

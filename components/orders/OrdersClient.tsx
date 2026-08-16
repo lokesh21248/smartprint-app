@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
@@ -79,10 +79,15 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
+  const [mounted, setMounted] = useState(false);
   const storeOrders = useOrderStore((s) => s.orders);
   const isHydrated = useOrderStore((s) => s.isHydrated);
   const setOrders = useOrderStore((s) => s.setOrders);
   const updateOrder = useOrderStore((s) => s.updateOrder);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Hydrate store on mount if not yet hydrated or if SSR provided data
   useEffect(() => {
@@ -127,8 +132,8 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     refetchOnWindowFocus: false,
   });
 
-  // Source of truth is centralized orderStore
-  const allOrders = storeOrders.length > 0 ? storeOrders : initialOrders;
+  // Source of truth is centralized orderStore once mounted
+  const allOrders = mounted && storeOrders.length > 0 ? storeOrders : initialOrders;
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const dateFilteredOrders = useMemo(() => {

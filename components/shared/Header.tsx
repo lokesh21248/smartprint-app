@@ -147,7 +147,7 @@ export function Header() {
           }
         >
           <Bell className="h-5 w-5" aria-hidden="true" />
-          {pendingCount + notificationCount > 0 && (
+          {mounted && pendingCount + notificationCount > 0 && (
             <span
               className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-pulse-ring shadow-sm"
               aria-hidden="true"
