@@ -209,3 +209,33 @@ body {
 /* ── Print Config Icons ─────────────────────────────────────────────────────── */
 .config-bw    { background: #F3F4F6; color: #374151; }
 .config-color { background: #EDE9FE; color: #5B21B6; }
+
+/* ── Global New Order Notification Animations ────────────────────────────────── */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(100% + 1rem));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(calc(100% + 1rem));
+  }
+}
+
+/* Auto-dismiss progress bar — shrinks from full-width to zero */
+@keyframes shrink {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+

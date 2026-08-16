@@ -12,6 +12,7 @@ import { ShopStoreInitializer } from "@/components/shared/ShopStoreInitializer";
 import { AudioInitializer } from "@/components/shared/AudioInitializer";
 import { GlobalOrderCacheSeeder } from "@/components/shared/GlobalOrderCacheSeeder";
 import { OrderNavigationHandler } from "@/components/shared/OrderNavigationHandler";
+import { GlobalNewOrderNotification } from "@/components/shared/GlobalNewOrderNotification";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { ConnectionStatusBanner } from "@/components/shared/ConnectionStatusBanner";
 
@@ -141,6 +142,14 @@ export default async function DashboardLayout({
         (dispatched by the realtime hook) into a Next.js router.push() call.
       */}
       <OrderNavigationHandler />
+      {/*
+        GlobalNewOrderNotification — FIXES the "no notification on non-Orders
+        pages" UX gap. Subscribes to orderStore.newOrders (populated by the
+        global realtime hook in ShopStoreInitializer) and shows a rich
+        fixed-position overlay card on any admin page when a new order arrives.
+        Deduplicates by order ID, auto-dismisses after 12s.
+      */}
+      <GlobalNewOrderNotification />
       {/*
         Layout strategy:
         - Sidebar is `fixed` at left edge, full height.

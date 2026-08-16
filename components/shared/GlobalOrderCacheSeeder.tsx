@@ -19,7 +19,7 @@
  * The OrdersClient (orders page) and NewOrdersFeed (dashboard) each create
  * observers for their respective query keys — BUT only while those pages are
  * mounted. When the shop owner is on Profile, Settings, Analytics, etc.,
- * NEITHER observer is active, so every realtime INSERT is silently dropped.
+ * NEITHER observer is active, so every realtime INSERT would be silently dropped.
  *
  * FIX
  * ───
@@ -27,6 +27,9 @@
  * mount time. Once a cache entry exists (even an empty array), setQueryData
  * with a functional updater will correctly insert/update the entry and all
  * downstream observers will update when they next mount.
+ *
+ * IMPORTANT: We always seed with a DIRECT VALUE (not a functional updater)
+ * so React Query creates the cache entry even with no active observer.
  *
  * This component is mounted ONCE in the authenticated dashboard layout,
  * alongside ShopStoreInitializer. It renders nothing.
@@ -68,19 +71,30 @@ export function GlobalOrderCacheSeeder({
       );
     }
 
-    // Seed the full orders list cache if it doesn't already have data.
-    // We use setQueryData (not initialData) so the cache entry exists
-    // before any component mounts — allowing realtime setQueryData calls
-    // to find a recipient immediately.
+    // ── Seed full orders cache ─────────────────────────────────────────────
+    // Always seed with a direct value (not a functional updater) so React Query
+    // creates the cache entry even when no observer is mounted.
+    //
+    // We ONLY skip if the cache already has a non-empty entry — this means a
+    // previous page visit (e.g. OrdersClient mount) has already fetched fresh
+    // data. We never want to overwrite newer realtime-updated data with stale
+    // SSR data.
     const existingOrders = queryClient.getQueryData<Order[]>(["orders", shopId]);
     if (!existingOrders || existingOrders.length === 0) {
+      // Direct value assignment — creates the cache entry unconditionally.
+      // This is the key fix: a missing cache entry causes setQueryData with
+      // a functional updater to silently no-op in React Query v5.
       queryClient.setQueryData<Order[]>(["orders", shopId], initialOrders);
       if (process.env.NODE_ENV !== "production") {
         console.log(`[ORDER_SYNC] Seeded ["orders", "${shopId}"] with ${initialOrders.length} orders`);
       }
+    } else {
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[ORDER_SYNC] Cache already has ${existingOrders.length} orders — skipping seed to preserve realtime updates`);
+      }
     }
 
-    // Seed the new-orders (PLACED) feed cache
+    // ── Seed new-orders (PLACED) feed cache ───────────────────────────────
     const existingNew = queryClient.getQueryData<Order[]>(["new-orders", shopId]);
     if (!existingNew || existingNew.length === 0) {
       queryClient.setQueryData<Order[]>(["new-orders", shopId], initialNewOrders);
@@ -89,13 +103,13 @@ export function GlobalOrderCacheSeeder({
       }
     }
 
-    // Seed pending badge count so the bell shows correctly before any
-    // realtime event arrives (important on pages other than Dashboard/Orders)
+    // ── Always seed bell badge count ──────────────────────────────────────
+    // The layout-fetched count is the most authoritative on initial load.
+    // Realtime incrementPending() / decrementPending() drive the count after this.
+    // We always set it (even if other seeders have run) because the layout fetch
+    // happens latest (server-side, most recent DB read).
     setPendingCount(pendingCount);
 
-    // Note: We do NOT mark these as stale here — individual page components
-    // (OrdersClient, NewOrdersFeed) have their own staleTime and refetchOnMount
-    // settings that will trigger background refreshes on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
   // Intentionally only runs on shopId change (i.e. on mount and on shop change).

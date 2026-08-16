@@ -572,7 +572,14 @@ export function useRealtimeOrders(shopId: string | null) {
       new: Record<string, unknown>;
       old: Record<string, unknown>;
     }) => {
-      const activeShopId = shopId;
+      // FIX: Use module-level activeChannelShopId instead of the React closure's
+      // shopId prop. The closure value can be null during the initial mount cycle
+      // (when ShopStoreInitializer first renders before shop data is available),
+      // causing ALL events to be silently dropped via the null-guard below.
+      // activeChannelShopId is set synchronously by initSubscription and is always
+      // accurate once the channel is established — the same pattern used correctly
+      // by flushInsertBatch (which never had this bug).
+      const activeShopId = activeChannelShopId;
       if (!activeShopId) return;
 
       const { queryClient: qClient } = handlersRef.current;
@@ -632,7 +639,7 @@ export function useRealtimeOrders(shopId: string | null) {
         );
       }
     },
-    [shopId, flushInsertBatch]
+    [flushInsertBatch]
   );
 
   // Register event handler with global listener set
