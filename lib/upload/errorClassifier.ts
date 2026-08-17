@@ -372,7 +372,7 @@ export function classifyUploadError(
   if (context === "presign") {
     return {
       code: "PRESIGN_FAILED",
-      userMessage: "Connection interrupted",
+      userMessage: rawMessage.length > 0 && rawMessage.length < 200 ? rawMessage : "Upload initialization failed",
       retryable: true,
     };
   }
