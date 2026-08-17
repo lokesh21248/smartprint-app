@@ -1095,7 +1095,10 @@ export class UploadQueueManager {
             err.message?.toLowerCase().includes("network") ||
             err.message?.toLowerCase().includes("fetch") ||
             err.message?.toLowerCase().includes("timeout") ||
-            err.message?.toLowerCase().includes("aborted")
+            err.message?.toLowerCase().includes("aborted") ||
+            err.message?.toLowerCase().includes("server error") ||
+            err.message?.toLowerCase().includes("invalid api response") ||
+            err.message?.toLowerCase().includes("gateway")
           ));
 
         if (!isNetworkError && i === 0) {

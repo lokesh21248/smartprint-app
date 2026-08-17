@@ -120,6 +120,7 @@ export type UploadStatus =
   | "idle"
   | "queued"
   | "preparing"
+  | "requesting_url"
   | "uploading"
   | "paused"
   | "retrying"

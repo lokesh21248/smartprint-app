@@ -437,6 +437,7 @@ const ReorderItemRow = memo(function ReorderItemRow({
     fileItem.status === "uploading" ||
     fileItem.status === "queued" ||
     fileItem.status === "preparing" ||
+    fileItem.status === "requesting_url" ||
     fileItem.status === "verifying" ||
     fileItem.status === "retrying";
 
@@ -598,6 +599,14 @@ const ReorderItemRow = memo(function ReorderItemRow({
                     <Clock className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
                     <span className="text-slate-700">
                       {fileItem.error ? fileItem.error : "Preparing…"}
+                    </span>
+                  </>
+                )}
+                {fileItem.status === "requesting_url" && (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 text-slate-500 animate-spin shrink-0" />
+                    <span className="text-slate-700">
+                      {fileItem.error ? fileItem.error : "Connecting…"}
                     </span>
                   </>
                 )}
