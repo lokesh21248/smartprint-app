@@ -39,7 +39,7 @@ function playNotificationSound(orderId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Browser push notification
 // ─────────────────────────────────────────────────────────────────────────────
-function showBrowserNotification(order: Order) {
+function showBrowserNotification(orderId: string, title: string, body: string) {
   if (typeof window === "undefined") return;
 
   const { browserNotificationsEnabled } = useSettingsStore.getState();
@@ -56,20 +56,20 @@ function showBrowserNotification(order: Order) {
     return;
   }
   try {
-    const n = new Notification("🔔 New Order Received", {
-      body: `Order #${order.short_token} · ₹${order.total_amount}${order.customer_name ? ` · ${order.customer_name}` : ""}`,
+    const n = new Notification(title, {
+      body,
       icon: "/favicon.ico",
-      tag: order.id, // deduplication: same order won't show twice
+      tag: orderId, // deduplication: same order won't show twice
     });
     n.onclick = () => {
       window.focus();
-      const href = `/dashboard/orders/${order.id}`;
+      const href = `/dashboard/orders/${orderId}`;
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("navigate-to-order", { detail: href }));
       }
     };
     if (isDev) {
-      console.log("[ORDER_NOTIFY] 🔔 Browser notification dispatched for order:", order.id);
+      console.log("[ORDER_NOTIFY] 🔔 Browser notification dispatched for order:", orderId);
     }
   } catch (err) {
     if (isDev) console.error("[ORDER_NOTIFY] ❌ Browser notification failed:", err);
@@ -134,6 +134,7 @@ interface ChannelWithState {
 
 type RealtimePayload = {
   eventType: "INSERT" | "UPDATE" | "DELETE";
+  table: string;
   new: Record<string, unknown>;
   old: Record<string, unknown>;
 };
@@ -248,7 +249,22 @@ async function initSubscription(
       },
       (payload: RealtimePayload) => {
         if (isDev) {
-          console.log(`[Realtime] 📡 RAW channel event: type=${payload.eventType} id=${(payload.new as Record<string,unknown>)?.id ?? (payload.old as Record<string,unknown>)?.id ?? "?"}`);
+          console.log(`[Realtime] 📡 RAW channel event (orders): type=${payload.eventType} id=${(payload.new as Record<string,unknown>)?.id ?? (payload.old as Record<string,unknown>)?.id ?? "?"}`);
+        }
+        activeHandlers.forEach((handler) => handler(payload));
+      }
+    )
+    .on(
+      "postgres_changes" as any,
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `shop_id=eq.${shopId}`,
+      },
+      (payload: RealtimePayload) => {
+        if (isDev) {
+          console.log(`[Realtime] 📡 RAW channel event (notifications): type=${payload.eventType} id=${(payload.new as Record<string,unknown>)?.id ?? "?"}`);
         }
         activeHandlers.forEach((handler) => handler(payload));
       }
@@ -380,8 +396,6 @@ export function useRealtimeOrders(shopId: string | null) {
       console.log(`[ORDER_SYNC] 📦 Flushing batch of ${batch.length} new order event(s)...`);
     }
 
-    const brandNewOrders: Order[] = [];
-
     batch.forEach((order) => {
       // 1. Immediately update centralized Zustand orderStore
       handlersRef.current.addOrder(order);
@@ -401,85 +415,70 @@ export function useRealtimeOrders(shopId: string | null) {
         const exists = prev.some((o) => o.id === order.id);
         return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [order, ...prev];
       });
-
-      // 3. Deduplicate alert/notification triggers
-      if (knownOrderIds.has(order.id)) {
-        if (isDev) console.log(`[ORDER REALTIME] 🛡️ Order "${order.id}" already known — skipping alert.`);
-        return;
-      }
-
-      knownOrderIds.add(order.id);
-      if (knownOrderIds.size > 500) {
-        const oldest = knownOrderIds.values().next().value;
-        if (oldest !== undefined) knownOrderIds.delete(oldest);
-      }
-
-      brandNewOrders.push(order);
-      handlersRef.current.incrementNotifications();
-      if (isDev) {
-        console.log(`[ORDER REALTIME] sound triggered: ${order.id}`);
-        console.log(`[ORDER REALTIME] notification triggered: ${order.id}`);
-      }
-      playNotificationSound(order.id);
-      showBrowserNotification(order);
     });
 
     handlersRef.current.queryClient.invalidateQueries({ queryKey: ["dashboard-stats", activeShopId] });
-
-    if (brandNewOrders.length === 1) {
-      const order = brandNewOrders[0];
-      toast.success(`🔔 New Order Received`, {
-        description: `Order #${order.short_token} · ₹${order.total_amount?.toFixed(2)}${order.customer_name ? ` · ${order.customer_name}` : ""}`,
-        duration: 12_000,
-        action: {
-          label: "View Order",
-          onClick: () => {
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("navigate-to-order", {
-                  detail: `/dashboard/orders/${order.id}`,
-                })
-              );
-            }
-          },
-        },
-      });
-    } else if (brandNewOrders.length > 1) {
-      toast.success(`🔔 ${brandNewOrders.length} New Orders Received`, {
-        description: "New orders are waiting for your action",
-        duration: 10_000,
-        action: {
-          label: "View Orders",
-          onClick: () => {
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("navigate-to-order", { detail: "/dashboard/orders" })
-              );
-            }
-          },
-        },
-      });
-    }
-
-    if (brandNewOrders.length > 0 && typeof window !== "undefined") {
-      const originalTitle = document.title;
-      let flashes = 0;
-      const interval = setInterval(() => {
-        document.title =
-          flashes % 2 === 0 ? `🔔 (${brandNewOrders.length}) NEW ORDER!` : originalTitle;
-        flashes++;
-        if (flashes >= 10) {
-          clearInterval(interval);
-          document.title = originalTitle;
-        }
-      }, 600);
-    }
   }, []);
 
   const handleRealtimeEvent = useCallback(
     (payload: RealtimePayload) => {
       const activeShopId = activeChannelShopId;
       if (!activeShopId) return;
+
+      if (payload.table === "notifications" && payload.eventType === "INSERT") {
+        const notif = payload.new;
+        const orderId = notif.id as string;
+        
+        if (knownOrderIds.has(orderId)) {
+          if (isDev) console.log(`[ORDER REALTIME] 🛡️ Notification for "${orderId}" already known — skipping alert.`);
+          return;
+        }
+        knownOrderIds.add(orderId);
+        if (knownOrderIds.size > 500) {
+          const oldest = knownOrderIds.values().next().value;
+          if (oldest !== undefined) knownOrderIds.delete(oldest);
+        }
+        
+        handlersRef.current.incrementNotifications();
+        
+        if (isDev) {
+          console.log(`[ORDER REALTIME] sound triggered: ${orderId}`);
+          console.log(`[ORDER REALTIME] notification triggered: ${orderId}`);
+        }
+        playNotificationSound(orderId);
+        showBrowserNotification(orderId, notif.title as string, notif.body as string);
+        
+        toast.success(notif.title as string, {
+          description: notif.body as string,
+          duration: 12_000,
+          action: {
+            label: "View Order",
+            onClick: () => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                  new CustomEvent("navigate-to-order", {
+                    detail: `/dashboard/orders/${orderId}`,
+                  })
+                );
+              }
+            },
+          },
+        });
+        
+        if (typeof window !== "undefined") {
+          const originalTitle = document.title;
+          let flashes = 0;
+          const interval = setInterval(() => {
+            document.title = flashes % 2 === 0 ? `🔔 NEW ORDER!` : originalTitle;
+            flashes++;
+            if (flashes >= 10) {
+              clearInterval(interval);
+              document.title = originalTitle;
+            }
+          }, 600);
+        }
+        return;
+      }
 
       const { updateOrder: storeUpdateOrder, removeOrder: storeRemoveOrder, queryClient: qClient } = handlersRef.current;
 

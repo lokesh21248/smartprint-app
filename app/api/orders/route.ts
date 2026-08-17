@@ -512,6 +512,8 @@ export async function POST(request: Request) {
               // Dynamic import() forced a Promise microtask + V8 module re-evaluation per order.
               fn: async () => {
                 NotificationService.alertNewOrder(clerkOwnerId, {
+                  shop_id: shopId,
+                  order_id: data.id,
                   customer_name: data.customer_name,
                   total_amount: data.total_amount,
                 });

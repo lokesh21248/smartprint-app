@@ -32,23 +32,47 @@
 const SOUND_PATH = "/api/audio/notification";
 const isDev = process.env.NODE_ENV !== "production";
 
-/**
- * Modern browsers (Chrome, Safari, Edge) track user activation at the document level.
- * Once the user clicks anywhere on the page, the document is granted autoplay rights.
- * We no longer need a complex singleton or unlock gestures—just create and play.
- */
+let audioInstance: HTMLAudioElement | null = null;
+
+function getAudioInstance(): HTMLAudioElement {
+  if (typeof window === "undefined") return null as any;
+  if (!audioInstance) {
+    audioInstance = new Audio(SOUND_PATH);
+    audioInstance.preload = "auto";
+  }
+  return audioInstance;
+}
 
 export async function unlockAudio(): Promise<boolean> {
-  // Autoplay is handled by the browser's document-level user activation.
-  // This function is kept for backward compatibility with AudioInitializer.
-  return true;
+  if (typeof window === "undefined") return false;
+  
+  try {
+    const audio = getAudioInstance();
+    // Play and immediately pause at volume 0 to unlock without sound
+    audio.volume = 0;
+    const playPromise = audio.play();
+    
+    if (playPromise !== undefined) {
+      await playPromise;
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = 1; // restore volume for actual notifications
+      return true;
+    }
+    return false;
+  } catch (err) {
+    if (isDev) console.warn("[ORDER AUDIO] ⚠️ Audio unlock failed", err);
+    return false;
+  }
 }
 
 export function playOrderNotification(orderId: string): void {
   if (typeof window === "undefined") return;
 
   try {
-    const audio = new Audio(SOUND_PATH);
+    const audio = getAudioInstance();
+    audio.currentTime = 0;
+    audio.volume = 1;
     audio.play().then(() => {
       if (isDev) console.log(`[ORDER AUDIO] ✅ Notification played for order: ${orderId}`);
     }).catch((err) => {

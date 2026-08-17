@@ -55,7 +55,7 @@ export class NotificationService {
    */
   static alertNewOrder(
     shopOwnerId: string,
-    orderDetails: Pick<Order, "total_amount" | "customer_name">
+    orderDetails: Pick<Order, "total_amount" | "customer_name"> & { shop_id: string; order_id: string }
   ): void {
     const supabase = createAdminClient();
     const amountInRupees = orderDetails.total_amount.toFixed(2);
@@ -68,10 +68,13 @@ export class NotificationService {
       supabase
         .from("notifications")
         .insert({
+          id: orderDetails.order_id, // deduplication key using existing order ID
           user_id: shopOwnerId,
+          shop_id: orderDetails.shop_id,
           type: "new_order",
           title: "New Order Received",
           body: message,
+          is_read: false,
         })
     ).then(null, (err) => console.error("[Notification] alertNewOrder insert failed:", err));
   }
