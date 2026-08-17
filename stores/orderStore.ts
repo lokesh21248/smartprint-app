@@ -65,13 +65,8 @@ export const useOrderStore = create<OrderState>()((set, get) => ({
     }
 
     const pendingCount = calculatePendingCount(mergedOrders);
-    const placedOrders = mergedOrders
-      .filter((o) => o.order_status?.toUpperCase() === "PLACED")
-      .slice(0, 10);
-
     set({
       orders: mergedOrders,
-      newOrders: placedOrders,
       pendingCount,
       isHydrated: true,
     });

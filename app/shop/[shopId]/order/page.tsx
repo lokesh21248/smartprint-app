@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { 
   Upload, FileText, Settings, User, CheckCircle2, 
   ArrowRight, ArrowLeft, Loader2,
-  ShieldCheck, AlertCircle, Trash2, Printer
+  ShieldCheck, AlertCircle, Trash2, Printer, MapPin, Navigation, Store
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -13,8 +13,9 @@ import { toast } from "sonner";
 import { formatFileSize, formatCurrency } from "@/lib/utils";
 import pLimit from "p-limit";
 import type { Shop, PrintConfig } from "@/types";
+import { LocationFlow, type LocationData } from "@/components/location";
 
-type Step = "upload" | "config" | "details" | "otp" | "success";
+type Step = "upload" | "config" | "delivery_method" | "location" | "details" | "otp" | "success";
 
 export default function OrderFlowPage() {
   const params = useParams();
@@ -36,9 +37,13 @@ export default function OrderFlowPage() {
   });
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [otp, setOtp] = useState("");
-  const [notes] = useState("");
+  const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState<{ id: string; token: string } | null>(null);
+
+  // Delivery State
+  const [deliveryMethod, setDeliveryMethod] = useState<"pickup" | "delivery">("pickup");
+  const [deliveryLocation, setDeliveryLocation] = useState<LocationData | null>(null);
 
   // Fetch shop details via Public API (No direct DB access)
   useEffect(() => {
@@ -113,8 +118,9 @@ export default function OrderFlowPage() {
     setFiles(prev => [...prev, ...newFiles]);
   };
 
-  const sendOtp = async () => {
-    if (!customer.phone || customer.phone.length < 10) {
+  const sendOtp = async (overridePhone?: string) => {
+    const targetPhone = overridePhone || customer.phone;
+    if (!targetPhone || targetPhone.length < 10) {
       toast.error("Enter a valid phone number");
       return;
     }
@@ -124,7 +130,7 @@ export default function OrderFlowPage() {
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: customer.phone }),
+        body: JSON.stringify({ phone: targetPhone }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to send OTP");
@@ -195,6 +201,13 @@ export default function OrderFlowPage() {
       // 3. Create Order
       const totalPages = files.reduce((sum, f) => sum + f.pages, 0);
       
+      // Format delivery details into notes if applicable
+      let finalNotes = notes || "";
+      if (deliveryMethod === "delivery" && deliveryLocation) {
+        const deliveryDetails = `\n\n--- DELIVERY DETAILS ---\nAddress: ${deliveryLocation.formattedAddress}\nHouse/Apt: ${deliveryLocation.houseDetails || "N/A"}\nCoordinates: ${deliveryLocation.latitude}, ${deliveryLocation.longitude}`;
+        finalNotes = finalNotes ? `${finalNotes}${deliveryDetails}` : deliveryDetails.trim();
+      }
+
       const orderRes = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -207,7 +220,7 @@ export default function OrderFlowPage() {
           copies: config.copies,
           color: config.color === "color",
           doubleSided: config.duplex,
-          notes: notes || "",
+          notes: finalNotes,
         }),
       });
       
@@ -250,15 +263,18 @@ export default function OrderFlowPage() {
           <div className="text-right">
             <p className="text-xs text-gray-400 uppercase tracking-widest font-bold">Step</p>
             <p className="text-lg font-black text-emerald-600 leading-none">
-              {currentStep === "upload" ? "1/3" : currentStep === "config" ? "2/3" : currentStep === "details" ? "3/3" : "Done"}
+              {currentStep === "upload" ? "1/4" : 
+               currentStep === "config" ? "2/4" : 
+               (currentStep === "delivery_method" || currentStep === "location" || currentStep === "details") ? "3/4" : 
+               "Done"}
             </p>
           </div>
         </div>
         <Progress 
           value={
-            currentStep === "upload" ? 33 : 
-            currentStep === "config" ? 66 : 
-            currentStep === "details" ? 90 : 
+            currentStep === "upload" ? 25 : 
+            currentStep === "config" ? 50 : 
+            (currentStep === "delivery_method" || currentStep === "location" || currentStep === "details") ? 75 : 
             100
           } 
           className="h-1 rounded-none bg-gray-100"
@@ -468,16 +484,81 @@ export default function OrderFlowPage() {
                 </Button>
                 <Button 
                   className="bg-white text-emerald-900 hover:bg-emerald-50 flex-[2] py-6 rounded-2xl font-black text-lg"
-                  onClick={() => setCurrentStep("details")}
+                  onClick={() => setCurrentStep("delivery_method")}
                 >
-                  Next: Checkout
+                  Next: Delivery
                 </Button>
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 3: DETAILS */}
+        {/* STEP 3A: DELIVERY METHOD */}
+        {currentStep === "delivery_method" && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white rounded-3xl shadow-sm border p-8 text-center space-y-6">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+                <Navigation className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h2 className="text-2xl font-black text-gray-900">How would you like to receive your prints?</h2>
+              <p className="text-gray-500">Choose to pick it up from the shop or get it delivered to you.</p>
+
+              <div className="grid grid-cols-2 gap-4 mt-8">
+                <button
+                  onClick={() => {
+                    setDeliveryMethod("pickup");
+                    setCurrentStep("details");
+                  }}
+                  className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-gray-100 hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
+                >
+                  <Store className="w-10 h-10 text-gray-400 group-hover:text-emerald-600 mb-3 transition-colors" />
+                  <span className="font-black text-lg text-gray-900">Store Pickup</span>
+                  <span className="text-xs font-medium text-gray-500 mt-1">Pick it up yourself</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setDeliveryMethod("delivery");
+                    setCurrentStep("location");
+                  }}
+                  className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-gray-100 hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
+                >
+                  <MapPin className="w-10 h-10 text-gray-400 group-hover:text-emerald-600 mb-3 transition-colors" />
+                  <span className="font-black text-lg text-gray-900">Delivery</span>
+                  <span className="text-xs font-medium text-gray-500 mt-1">We'll deliver it to you</span>
+                </button>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => setCurrentStep("config")}
+              className="w-full text-center text-gray-400 font-bold text-sm hover:text-gray-600 transition"
+            >
+              Go back to print options
+            </button>
+          </div>
+        )}
+
+        {/* STEP 3B: LOCATION (if Delivery) */}
+        {currentStep === "location" && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <LocationFlow 
+              type="drop"
+              initialData={deliveryLocation || undefined}
+              onComplete={(data) => {
+                setDeliveryLocation(data);
+                // Also pre-fill the customer details for the OTP step
+                if (data.receiverName) setCustomer(prev => ({ ...prev, name: data.receiverName || "" }));
+                if (data.receiverMobile) setCustomer(prev => ({ ...prev, phone: data.receiverMobile || "" }));
+                
+                // Go straight to OTP since location captures details
+                sendOtp(data.receiverMobile || "");
+              }}
+              onCancel={() => setCurrentStep("delivery_method")}
+            />
+          </div>
+        )}
+
+        {/* STEP 3: DETAILS (if Store Pickup) */}
         {currentStep === "details" && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white rounded-3xl shadow-sm border p-8 space-y-6">

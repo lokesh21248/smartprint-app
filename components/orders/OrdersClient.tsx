@@ -132,8 +132,16 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     refetchOnWindowFocus: false,
   });
 
-  // Source of truth is centralized orderStore once mounted
-  const allOrders = mounted && storeOrders.length > 0 ? storeOrders : initialOrders;
+  // Source of truth is centralized orderStore + server initialOrders
+  const allOrders = useMemo(() => {
+    const mergedMap = new Map(initialOrders.map(o => [o.id, o]));
+    
+    if (mounted && storeOrders.length > 0) {
+      storeOrders.forEach(o => mergedMap.set(o.id, o));
+    }
+    
+    return Array.from(mergedMap.values());
+  }, [mounted, storeOrders, initialOrders]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const dateFilteredOrders = useMemo(() => {

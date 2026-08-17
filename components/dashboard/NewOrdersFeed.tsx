@@ -76,15 +76,23 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
     setMounted(true);
   }, []);
 
-  // Derive new/placed orders from the centralized global store once mounted
+  // Derive new/placed orders from the centralized global store + server initialOrders
   const orders = useMemo(() => {
-    if (mounted && (isHydrated || storeOrders.length > 0)) {
-      return storeOrders
-        .filter((o) => o.order_status?.toUpperCase() === "PLACED")
-        .slice(0, 5);
+    // We want the most up-to-date data.
+    // storeOrders might contain new realtime events, while initialOrders contains server data.
+    // By merging them, we ensure we don't lose initialOrders if storeOrders was cleared,
+    // while still prioritizing any fresh updates from storeOrders.
+    const mergedMap = new Map(initialOrders.map(o => [o.id, o]));
+    
+    if (mounted && storeOrders.length > 0) {
+      storeOrders.forEach(o => mergedMap.set(o.id, o));
     }
-    return initialOrders.filter((o) => o.order_status?.toUpperCase() === "PLACED").slice(0, 5);
-  }, [mounted, storeOrders, initialOrders, isHydrated]);
+    
+    return Array.from(mergedMap.values())
+      .filter((o) => o.order_status?.toUpperCase() === "PLACED")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5);
+  }, [mounted, storeOrders, initialOrders]);
 
   const handleAction = async (
     orderId: string,

@@ -29,114 +29,32 @@
  *    play never crashes the UI.
  */
 
-const SOUND_PATH = "/sounds/new-order.mp3";
+const SOUND_PATH = "/api/audio/notification";
 const isDev = process.env.NODE_ENV !== "production";
 
-let _audio: HTMLAudioElement | null = null;
-let _unlocked = false;
-let _unlocking = false;
-
-/** Initialize the singleton audio element inside a user gesture. */
-function getAudio(): HTMLAudioElement | null {
-  if (typeof window === "undefined") return null;
-  if (!_audio) {
-    try {
-      _audio = new Audio(SOUND_PATH);
-      _audio.preload = "auto";
-      if (isDev) console.log("[ORDER AUDIO] Audio object initialized");
-    } catch (err) {
-      if (isDev) console.error("[ORDER AUDIO] Failed to initialize audio:", err);
-    }
-  }
-  return _audio;
-}
-
 /**
- * Call on user gesture to satisfy browser autoplay policies.
- * Returns true if successfully unlocked, false otherwise.
+ * Modern browsers (Chrome, Safari, Edge) track user activation at the document level.
+ * Once the user clicks anywhere on the page, the document is granted autoplay rights.
+ * We no longer need a complex singleton or unlock gestures—just create and play.
  */
+
 export async function unlockAudio(): Promise<boolean> {
-  if (_unlocked) return true;
-  if (_unlocking) return false;
-  
-  _unlocking = true;
-  
-  const audio = getAudio();
-  if (!audio) {
-    _unlocking = false;
-    return false;
-  }
-
-  try {
-    audio.volume = 0;
-    // Play then pause immediately to register as user-activated
-    await audio.play();
-    audio.pause();
-    audio.currentTime = 0;
-    audio.volume = 1;
-    _unlocked = true;
-    if (isDev) console.log("[ORDER AUDIO] ✅ Autoplay unlocked via user gesture.");
-    return true;
-  } catch (err) {
-    if (isDev) console.warn("[ORDER AUDIO] Unlock failed (will retry):", err);
-    return false;
-  } finally {
-    _unlocking = false;
-  }
-}
-
-const playQueue: string[] = [];
-let isPlaying = false;
-
-async function processQueue() {
-  if (isPlaying || playQueue.length === 0) return;
-  isPlaying = true;
-
-  const audio = getAudio();
-  if (!audio) {
-    playQueue.length = 0; // Clear queue
-    isPlaying = false;
-    return;
-  }
-
-  while (playQueue.length > 0) {
-    const orderId = playQueue.shift();
-    if (!orderId) continue;
-    
-    try {
-      audio.currentTime = 0;
-      audio.volume = 1;
-      await audio.play();
-      
-      if (isDev) console.log(`[ORDER AUDIO] ✅ Notification played for order: ${orderId}`);
-      
-      // Wait for audio to finish before playing the next
-      await new Promise<void>((resolve) => {
-        const onEnded = () => {
-          audio.removeEventListener("ended", onEnded);
-          audio.removeEventListener("pause", onEnded);
-          resolve();
-        };
-        audio.addEventListener("ended", onEnded);
-        audio.addEventListener("pause", onEnded);
-        // Fallback in case events don't fire
-        setTimeout(onEnded, 5000);
-      });
-      
-    } catch (err) {
-      if (isDev) {
-        console.warn(`[ORDER AUDIO] ⚠️ Playback blocked for order "${orderId}"`, err);
-      }
-      // If playback fails, stop processing the queue
-      playQueue.length = 0; 
-      break;
-    }
-  }
-
-  isPlaying = false;
+  // Autoplay is handled by the browser's document-level user activation.
+  // This function is kept for backward compatibility with AudioInitializer.
+  return true;
 }
 
 export function playOrderNotification(orderId: string): void {
-  playQueue.push(orderId);
-  processQueue();
+  if (typeof window === "undefined") return;
+
+  try {
+    const audio = new Audio(SOUND_PATH);
+    audio.play().then(() => {
+      if (isDev) console.log(`[ORDER AUDIO] ✅ Notification played for order: ${orderId}`);
+    }).catch((err) => {
+      if (isDev) console.warn(`[ORDER AUDIO] ⚠️ Playback blocked for order "${orderId}"`, err);
+    });
+  } catch (err) {
+    if (isDev) console.error(`[ORDER AUDIO] Failed to initialize audio for order: ${orderId}`, err);
+  }
 }
