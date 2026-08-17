@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { HomeAuthRedirect } from "@/components/shared/HomeAuthRedirect";
-import { LatestArticles } from "@/components/shared/LatestArticles";
-import { allPosts } from "@/lib/blog/posts";
 
 // Static page rendered at build time, revalidated every hour (ISR).
 // Authenticated-user → /dashboard redirect happens in middleware at the
@@ -99,18 +97,6 @@ const jsonLd = {
   ],
 };
 
-// Slice posts at module evaluation time — avoids re-slicing on every ISR
-// revalidation when the post list hasn't changed.
-const latestPosts = allPosts.slice(0, 3).map((post) => ({
-  slug: post.slug,
-  title: post.title,
-  description: post.description,
-  category: post.category,
-  coverImage: post.coverImage,
-  coverImageAlt: post.coverImageAlt,
-  date: post.date,
-  readingTime: post.readingTime,
-}));
 
 export default function Home() {
   return (
@@ -151,8 +137,6 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Latest Articles Section — Server Component: no CLS, always indexed by Googlebot */}
-        <LatestArticles posts={latestPosts} />
 
         <nav aria-label="Site links" className="mt-10 flex flex-wrap gap-6 justify-center text-sm text-gray-500">
           <Link href="/features" className="hover:text-emerald-700 transition">Features</Link>
