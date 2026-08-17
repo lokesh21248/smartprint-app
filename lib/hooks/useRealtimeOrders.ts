@@ -162,7 +162,7 @@ function handleReconnect(
   }
 
   if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(async () => {
+  reconnectTimer = setTimeout(() => {
     isReconnecting = false;
     try {
       if (isDev) {
@@ -172,9 +172,9 @@ function handleReconnect(
         const channelToCleanup = activeChannel;
         activeChannel = null;
         const supabase = createClient();
-        await supabase.removeChannel(channelToCleanup).catch(() => {});
+        supabase.removeChannel(channelToCleanup).catch(() => {});
       }
-      await initSubscription(shopId, setRealtimeChannel);
+      initSubscription(shopId, setRealtimeChannel);
     } catch (e) {
       if (isDev) console.error(`[Realtime] ❌ Reconnect attempt ${reconnectAttempts} failed:`, e);
       handleReconnect(shopId, setRealtimeChannel);
@@ -182,7 +182,7 @@ function handleReconnect(
   }, delay);
 }
 
-async function initSubscription(
+function initSubscription(
   shopId: string,
   setRealtimeChannel: (c: RealtimeChannel | null) => void
 ) {
@@ -200,7 +200,7 @@ async function initSubscription(
       const oldChannel = activeChannel;
       activeChannel = null;
       const supabase = createClient();
-      await supabase.removeChannel(oldChannel).catch(() => {});
+      supabase.removeChannel(oldChannel).catch(() => {});
     }
   }
 
@@ -215,7 +215,7 @@ async function initSubscription(
     activeChannel = null;
     activeChannelShopId = null;
     const supabase = createClient();
-    await supabase.removeChannel(oldChannel).catch(() => {});
+    supabase.removeChannel(oldChannel).catch(() => {});
   }
 
   const supabase = createClient();
@@ -230,15 +230,21 @@ async function initSubscription(
     if (isDev) {
       console.log(`[Realtime] 🗑️ Removing duplicate channel from Supabase registry: ${channelName}`);
     }
-    await supabase.removeChannel(existingChannel).catch(() => {});
+    supabase.removeChannel(existingChannel).catch(() => {});
   }
 
   if (isDev) {
     console.log(`[ORDER_SYNC] Subscribing to channel "${channelName}" for shop: ${shopId}`);
   }
 
-  const channel = supabase
-    .channel(channelName)
+  const channel = supabase.channel(channelName);
+  
+  // IMMEDIATELY assign active channel so concurrent calls see it in "joining" state.
+  activeChannel = channel;
+  activeChannelShopId = shopId;
+  setRealtimeChannel(channel);
+
+  channel
     .on(
       "postgres_changes" as any,
       {
@@ -292,10 +298,6 @@ async function initSubscription(
       }
     }
   });
-
-  activeChannel = channel;
-  activeChannelShopId = shopId;
-  setRealtimeChannel(channel);
 }
 
 function terminateSubscription(
@@ -316,7 +318,7 @@ function terminateSubscription(
 
   if (!activeChannel) return;
 
-  teardownTimer = setTimeout(async () => {
+  teardownTimer = setTimeout(() => {
     teardownTimer = null;
     if (subscriberCount > 0) {
       if (isDev) {
@@ -331,7 +333,7 @@ function terminateSubscription(
     activeChannelShopId = null;
     setRealtimeChannel(null);
     const supabase = createClient();
-    await supabase.removeChannel(channelToCleanup).catch(() => {});
+    supabase.removeChannel(channelToCleanup).catch(() => {});
   }, TEARDOWN_GRACE_MS);
 }
 
