@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNotificationStore, type AppNotification } from "@/stores/notificationStore";
 import { X, Bell, ShoppingBag } from "lucide-react";
+import { markNotificationAsRead } from "@/lib/actions/notifications";
 
 // Module-level set so it persists across re-renders.
 // Ensures we never show a duplicate notification for the same notification ID.
@@ -49,6 +50,7 @@ export function GlobalNewOrderNotification() {
   const dismiss = useCallback((id: string) => {
     setQueue((prev) => prev.filter((n) => n.notification.id !== id));
     markAsRead(id);
+    markNotificationAsRead(id).catch((err) => console.error("Failed to mark read:", err));
   }, [markAsRead]);
 
   useEffect(() => {

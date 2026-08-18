@@ -19,6 +19,7 @@ import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
 import { cn } from "@/lib/utils";
 import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { toast } from "sonner";
 import { useState, useEffect, useCallback } from "react";
 import { Switch } from "@/components/ui/switch";
@@ -46,7 +47,8 @@ function setSidebarWidthVar(width: number) {
 export function Sidebar() {
   const pathname = usePathname();
   const { shop, toggleShopOpen } = useShopStore();
-  const { pendingCount } = useOrderStore();
+  const { pendingCount } = useOrderStore(); // used elsewhere if needed, but badge uses unreadCount
+  const { unreadCount } = useNotificationStore();
 
   const [collapsed, setCollapsed] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -119,25 +121,25 @@ export function Sidebar() {
         >
           <div className="relative flex-shrink-0">
             <Icon className="h-5 w-5" aria-hidden="true" />
-            {mounted && item.badge && pendingCount > 0 && (
+            {mounted && item.badge && unreadCount > 0 && (
               <span
                 className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white"
-                aria-label={!isMobile && isCollapsed ? `${pendingCount} pending orders` : undefined}
+                aria-label={!isMobile && isCollapsed ? `${unreadCount} unread orders` : undefined}
               >
-                {pendingCount > 9 ? "9+" : pendingCount}
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
           </div>
           {!isCollapsed && <span>{item.label}</span>}
-          {!isCollapsed && mounted && item.badge && pendingCount > 0 && (
+          {!isCollapsed && mounted && item.badge && unreadCount > 0 && (
             <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FEE2E2] px-1 text-[11px] font-bold text-[#B91C1C]">
-              {pendingCount}
+              {unreadCount}
             </span>
           )}
         </Link>
       );
     });
-  }, [collapsed, pathname, pendingCount, mounted]);
+  }, [collapsed, pathname, unreadCount, mounted]);
 
   const sidebarContent = (
     <aside

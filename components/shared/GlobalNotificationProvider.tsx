@@ -70,9 +70,10 @@ export function forceReconnect(shopId: string | null) {
 
 interface GlobalNotificationProviderProps {
   shopId: string | null;
+  initialNotifications: AppNotification[];
 }
 
-export function GlobalNotificationProvider({ shopId }: GlobalNotificationProviderProps) {
+export function GlobalNotificationProvider({ shopId, initialNotifications }: GlobalNotificationProviderProps) {
   const queryClient = useQueryClient();
   const { addOrder, updateOrder, removeOrder, setRealtimeChannel, setRealtimeStatus } = useOrderStore();
   const { addNotification, notifications } = useNotificationStore();
@@ -222,33 +223,8 @@ export function GlobalNotificationProvider({ shopId }: GlobalNotificationProvide
   useEffect(() => {
     if (!shopId) return;
     
-    // Fetch initial notifications
-    const fetchInitialNotifications = async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("shop_id", shopId)
-        .order("created_at", { ascending: false })
-        .limit(50);
-        
-      if (!error && data) {
-        useNotificationStore.getState().setNotifications(
-          data.map((raw) => ({
-            id: raw.id as string,
-            shop_id: raw.shop_id as string,
-            type: raw.type as string,
-            title: raw.title as string,
-            body: raw.body as string,
-            data: (raw.data as Record<string, any>) || {},
-            is_read: Boolean(raw.is_read),
-            created_at: raw.created_at as string,
-          }))
-        );
-      }
-    };
-    
-    fetchInitialNotifications();
+    // Seed initial notifications immediately
+    useNotificationStore.getState().setNotifications(initialNotifications);
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
     if (!url || url.includes("your-project")) return;
