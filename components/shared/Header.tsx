@@ -5,6 +5,7 @@ import { Bell, Menu, User, Settings, LogOut, Loader2, ChevronDown } from "lucide
 import { usePathname } from "next/navigation";
 import { useShopStore } from "@/stores/shopStore";
 import { useOrderStore } from "@/stores/orderStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { useClerk } from "@clerk/nextjs";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -37,7 +38,8 @@ function openMobileSidebar() {
 
 export function Header() {
   const pathname = usePathname();
-  const { shop, notificationCount } = useShopStore();
+  const { shop } = useShopStore();
+  const { unreadCount } = useNotificationStore();
   const { pendingCount } = useOrderStore();
   const { signOut } = useClerk();
   const title = useMemo(() => getPageTitle(pathname), [pathname]);
@@ -141,18 +143,18 @@ export function Header() {
           id="notification-bell"
           className="relative p-2.5 rounded-xl text-slate-500 border border-transparent hover:border-slate-100 hover:bg-slate-50/50 hover:text-slate-850 transition-all duration-200 min-tap flex items-center justify-center"
           aria-label={
-            pendingCount + notificationCount > 0
-              ? `${pendingCount + notificationCount} notifications`
+            unreadCount > 0
+              ? `${unreadCount} notifications`
               : "Notifications — no new items"
           }
         >
           <Bell className="h-5 w-5" aria-hidden="true" />
-          {mounted && pendingCount + notificationCount > 0 && (
+          {mounted && unreadCount > 0 && (
             <span
               className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white animate-pulse-ring shadow-sm"
               aria-hidden="true"
             >
-              {Math.min(pendingCount + notificationCount, 99)}
+              {Math.min(unreadCount, 99)}
             </span>
           )}
         </button>

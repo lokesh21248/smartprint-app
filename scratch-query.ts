@@ -1,21 +1,26 @@
-import { createClient } from "@supabase/supabase-js";
-import * as dotenv from "dotenv";
-import { join } from "path";
+import { NotificationService } from "./lib/notifications";
+import { randomUUID } from "crypto";
+import { config } from "dotenv";
 
-dotenv.config({ path: join(process.cwd(), ".env.local") });
+config({ path: ".env.local" });
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+async function test() {
+  const shopOwnerId = "test_owner_" + Date.now();
+  const shopId = randomUUID();
+  const orderId = randomUUID();
 
-async function main() {
-  const { data, error } = await supabase.rpc("get_table_columns", { table_name: "notifications" });
-  console.log("RPC Error:", error);
-  
-  const { data: q2, error: err2 } = await supabase.from("notifications").select("*").limit(1);
-  console.log("Data:", q2);
-  console.log("Error:", err2);
+  console.log("Testing NotificationService.alertNewOrder");
+  try {
+    await NotificationService.alertNewOrder(shopOwnerId, {
+      shop_id: shopId,
+      order_id: orderId,
+      customer_name: "Test User",
+      total_amount: 150.5,
+    });
+    console.log("TEST SUCCESS! Notification inserted.");
+  } catch (err) {
+    console.error("TEST FAILED", err);
+  }
 }
 
-main().catch(console.error);
+test();

@@ -53,29 +53,45 @@ export class NotificationService {
    *
    * 🔴 C2 FIX: Changed from async → void (fire-and-forget).
    */
-  static alertNewOrder(
+  static async alertNewOrder(
     shopOwnerId: string,
     orderDetails: Pick<Order, "total_amount" | "customer_name"> & { shop_id: string; order_id: string }
-  ): void {
+  ): Promise<void> {
     const supabase = createAdminClient();
     const amountInRupees = orderDetails.total_amount.toFixed(2);
     const message = `🖨️ New order from ${orderDetails.customer_name}! Amount: ₹${amountInRupees}`;
 
-    console.log(`[Notification] New order alert → owner ${shopOwnerId}`);
+    console.log("[NOTIFICATION] preparing notification");
+    console.log("[NOTIFICATION] user_id:\n" + shopOwnerId);
+    console.log("[NOTIFICATION] shop_id:\n" + orderDetails.shop_id);
+    console.log("[NOTIFICATION] inserting");
 
-    // Fire-and-forget DB log — triggers real-time dashboard alert
-    void Promise.resolve(
-      supabase
-        .from("notifications")
-        .insert({
-          id: orderDetails.order_id, // deduplication key using existing order ID
-          user_id: shopOwnerId,
-          shop_id: orderDetails.shop_id,
-          type: "new_order",
-          title: "New Order Received",
-          body: message,
-          is_read: false,
-        })
-    ).then(null, (err) => console.error("[Notification] alertNewOrder insert failed:", err));
+    const { data, error } = await supabase
+      .from("notifications")
+      .insert({
+        id: orderDetails.order_id, // deduplication key using existing order ID
+        user_id: shopOwnerId,
+        shop_id: orderDetails.shop_id,
+        type: "new_order",
+        title: "New Order Received",
+        body: message,
+        is_read: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+       console.error('[NOTIFICATION INSERT FAILED]', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+       });
+       throw error;
+    }
+
+    if (data) {
+       console.log('[NOTIFICATION INSERT SUCCESS]', data.id);
+    }
   }
 }

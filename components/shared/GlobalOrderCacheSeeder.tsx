@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOrderStore } from "@/stores/orderStore";
-import { markOrdersAsKnown } from "@/lib/hooks/useRealtimeOrders";
+import { markOrdersAsKnown } from "@/components/shared/GlobalNotificationProvider";
 import { markNotificationsAsSeen } from "@/components/shared/GlobalNewOrderNotification";
 import type { Order } from "@/types";
 

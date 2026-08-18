@@ -13,6 +13,7 @@ import { AudioInitializer } from "@/components/shared/AudioInitializer";
 import { GlobalOrderCacheSeeder } from "@/components/shared/GlobalOrderCacheSeeder";
 import { OrderNavigationHandler } from "@/components/shared/OrderNavigationHandler";
 import { GlobalNewOrderNotification } from "@/components/shared/GlobalNewOrderNotification";
+import { GlobalNotificationProvider } from "@/components/shared/GlobalNotificationProvider";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { ConnectionStatusBanner } from "@/components/shared/ConnectionStatusBanner";
 import { getShopByUserId } from "@/lib/data/shop";
@@ -42,6 +43,7 @@ export default async function DashboardLayout({
 
   return (
     <>
+      <GlobalNotificationProvider shopId={shop?.id ?? null} />
       <ShopStoreInitializer shop={shop} />
       <AudioInitializer shopId={shop?.id ?? null} />
       {/*

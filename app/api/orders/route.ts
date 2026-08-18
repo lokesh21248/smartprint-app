@@ -380,6 +380,7 @@ export async function POST(request: Request) {
     };
 
     perfStart("[orders:POST:insert]");
+    console.log("[ORDER] order creation started");
     const { data, error } = await supabase
       .from("orders")
       .insert(orderInsertPayload)
@@ -440,6 +441,8 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+    
+    console.log("[ORDER] order created:\n" + data.id);
 
     // ── 7. Cache idempotency result ──────────────────────────────────────────────────
     if (idempotencyKey) {
@@ -511,7 +514,7 @@ export async function POST(request: Request) {
               // M2 FIX: NotificationService is now a static import at the top of this file.
               // Dynamic import() forced a Promise microtask + V8 module re-evaluation per order.
               fn: async () => {
-                NotificationService.alertNewOrder(clerkOwnerId, {
+                await NotificationService.alertNewOrder(clerkOwnerId, {
                   shop_id: shopId,
                   order_id: data.id,
                   customer_name: data.customer_name,

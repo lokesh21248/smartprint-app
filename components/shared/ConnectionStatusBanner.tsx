@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { WifiOff, RefreshCw, Wifi } from "lucide-react";
 import { useOrderStore } from "@/stores/orderStore";
-import { forceReconnect } from "@/lib/hooks/useRealtimeOrders";
+import { useShopStore } from "@/stores/shopStore";
+import { forceReconnect } from "@/components/shared/GlobalNotificationProvider";
 
 /**
  * ConnectionStatusBanner
@@ -18,6 +19,7 @@ import { forceReconnect } from "@/lib/hooks/useRealtimeOrders";
  */
 export function ConnectionStatusBanner() {
   const status = useOrderStore((s) => s.realtimeStatus);
+  const shopId = useShopStore((s) => s.shop?.id ?? null);
   const [visible, setVisible] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,7 +42,7 @@ export function ConnectionStatusBanner() {
 
   const handleReconnect = () => {
     setIsSpinning(true);
-    forceReconnect();
+    forceReconnect(shopId);
     // Stop spinner after 4 s regardless — the status update will drive UI from there
     setTimeout(() => setIsSpinning(false), 4000);
   };

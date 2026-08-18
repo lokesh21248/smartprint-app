@@ -1,54 +1,55 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useOrderStore } from "@/stores/orderStore";
+import { useNotificationStore, type AppNotification } from "@/stores/notificationStore";
 import { X, Bell, ShoppingBag } from "lucide-react";
-import type { Order } from "@/types";
 
 // Module-level set so it persists across re-renders.
-// Ensures we never show a duplicate notification for the same order ID.
-export const shownOrderIds = new Set<string>();
+// Ensures we never show a duplicate notification for the same notification ID.
+export const shownNotificationIds = new Set<string>();
 
-export function markNotificationsAsSeen(orderIds: string[]) {
-  orderIds.forEach((id) => shownOrderIds.add(id));
+export function markNotificationsAsSeen(ids: string[]) {
+  ids.forEach((id) => shownNotificationIds.add(id));
 }
 
-interface NotificationState {
-  order: Order;
+interface NotificationUIState {
+  notification: AppNotification;
   dismissAt: number;
 }
 
 export function GlobalNewOrderNotification() {
-  const newOrders = useOrderStore((s) => s.newOrders);
-  const [queue, setQueue] = useState<NotificationState[]>([]);
+  const notifications = useNotificationStore((s) => s.notifications);
+  const markAsRead = useNotificationStore((s) => s.markAsRead);
+  const [queue, setQueue] = useState<NotificationUIState[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Watch newOrders from the global store
+  // Watch notifications from the global store
   useEffect(() => {
-    if (!newOrders.length) return;
+    if (!notifications.length) return;
 
-    const unseen = newOrders.filter((o) => !shownOrderIds.has(o.id));
+    const unseen = notifications.filter((n) => !shownNotificationIds.has(n.id) && !n.is_read);
     if (!unseen.length) return;
 
-    unseen.forEach((o) => shownOrderIds.add(o.id));
+    unseen.forEach((n) => shownNotificationIds.add(n.id));
 
-    if (shownOrderIds.size > 500) {
-      const oldest = shownOrderIds.values().next().value;
-      if (oldest !== undefined) shownOrderIds.delete(oldest);
+    if (shownNotificationIds.size > 500) {
+      const oldest = shownNotificationIds.values().next().value;
+      if (oldest !== undefined) shownNotificationIds.delete(oldest);
     }
 
     const now = Date.now();
-    const newEntries: NotificationState[] = unseen.map((order) => ({
-      order,
+    const newEntries: NotificationUIState[] = unseen.map((notification) => ({
+      notification,
       dismissAt: now + 12_000,
     }));
 
     setQueue((prev) => [...prev, ...newEntries]);
-  }, [newOrders]);
+  }, [notifications]);
 
-  const dismiss = useCallback((orderId: string) => {
-    setQueue((prev) => prev.filter((n) => n.order.id !== orderId));
-  }, []);
+  const dismiss = useCallback((id: string) => {
+    setQueue((prev) => prev.filter((n) => n.notification.id !== id));
+    markAsRead(id);
+  }, [markAsRead]);
 
   useEffect(() => {
     if (!queue.length) return;
@@ -60,6 +61,8 @@ export function GlobalNewOrderNotification() {
 
     timerRef.current = setTimeout(() => {
       const now = Date.now();
+      // Auto-dismiss from queue, don't necessarily mark as read in store, 
+      // but the user can click it in the header later.
       setQueue((prev) => prev.filter((n) => n.dismissAt > now));
     }, delay + 50);
 
@@ -68,12 +71,12 @@ export function GlobalNewOrderNotification() {
     };
   }, [queue]);
 
-  const handleViewOrder = useCallback((orderId: string) => {
-    dismiss(orderId);
-    if (typeof window !== "undefined") {
+  const handleViewOrder = useCallback((notification: AppNotification) => {
+    dismiss(notification.id);
+    if (typeof window !== "undefined" && notification.data?.order_id) {
       window.dispatchEvent(
         new CustomEvent("navigate-to-order", {
-          detail: `/dashboard/orders/${orderId}`,
+          detail: `/dashboard/orders/${notification.data.order_id}`,
         })
       );
     }
@@ -87,16 +90,16 @@ export function GlobalNewOrderNotification() {
     <div
       aria-live="polite"
       aria-atomic="false"
-      aria-label="New order notifications"
+      aria-label="New notifications"
       className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 pointer-events-none"
       style={{ maxWidth: "min(400px, calc(100vw - 2rem))" }}
     >
-      {visible.map((notification) => (
+      {visible.map(({ notification }) => (
         <NewOrderCard
-          key={notification.order.id}
-          order={notification.order}
+          key={notification.id}
+          notification={notification}
           onDismiss={dismiss}
-          onViewOrder={handleViewOrder}
+          onViewOrder={() => handleViewOrder(notification)}
         />
       ))}
       {queue.length > 3 && (
@@ -104,7 +107,7 @@ export function GlobalNewOrderNotification() {
           className="pointer-events-auto bg-slate-800 text-white text-xs font-semibold rounded-xl px-4 py-2.5 shadow-lg text-center"
           style={{ animation: "slideIn 200ms ease-out" }}
         >
-          +{queue.length - 3} more new order{queue.length - 3 === 1 ? "" : "s"}
+          +{queue.length - 3} more new notification{queue.length - 3 === 1 ? "" : "s"}
         </div>
       )}
     </div>
@@ -112,35 +115,38 @@ export function GlobalNewOrderNotification() {
 }
 
 interface NewOrderCardProps {
-  order: Order;
+  notification: AppNotification;
   onDismiss: (id: string) => void;
-  onViewOrder: (id: string) => void;
+  onViewOrder: () => void;
 }
 
-function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
+function NewOrderCard({ notification, onDismiss, onViewOrder }: NewOrderCardProps) {
   const [exiting, setExiting] = useState(false);
 
   const handleDismiss = () => {
     setExiting(true);
-    setTimeout(() => onDismiss(order.id), 250);
+    setTimeout(() => onDismiss(notification.id), 250);
   };
 
   const handleView = () => {
     setExiting(true);
-    setTimeout(() => onViewOrder(order.id), 150);
+    setTimeout(() => onViewOrder(), 150);
   };
 
-  const formattedAmount = new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(order.total_amount ?? 0);
+  const orderData = notification.data || {};
+  const formattedAmount = orderData.total_amount
+    ? new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      }).format(Number(orderData.total_amount))
+    : null;
 
   return (
     <div
       role="alert"
-      aria-label={`New order received: ${order.short_token}`}
+      aria-label={`${notification.title}: ${notification.body}`}
       className="pointer-events-auto relative bg-white border border-emerald-200 rounded-2xl shadow-2xl overflow-hidden"
       style={{
         animation: exiting
@@ -165,10 +171,10 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
 
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-widest text-emerald-600 leading-none mb-0.5">
-                🔔 New Order
+                🔔 {notification.title}
               </p>
               <p className="text-sm font-black text-slate-900 truncate leading-tight">
-                #{order.short_token}
+                {notification.body}
               </p>
             </div>
           </div>
@@ -176,7 +182,7 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
           <button
             type="button"
             onClick={handleDismiss}
-            id={`dismiss-order-notification-${order.id}`}
+            id={`dismiss-notification-${notification.id}`}
             aria-label="Dismiss notification"
             className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150 active:scale-90"
           >
@@ -184,42 +190,52 @@ function NewOrderCard({ order, onDismiss, onViewOrder }: NewOrderCardProps) {
           </button>
         </div>
 
-        <div className="bg-slate-50 rounded-xl p-2.5 mb-3 space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-slate-500 font-medium">Amount</span>
-            <span className="text-sm font-black text-slate-900">{formattedAmount}</span>
-          </div>
+        {orderData.order_id && (
+          <div className="bg-slate-50 rounded-xl p-2.5 mb-3 space-y-1">
+            {formattedAmount && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-500 font-medium">Amount</span>
+                <span className="text-sm font-black text-slate-900">{formattedAmount}</span>
+              </div>
+            )}
 
-          {order.customer_name && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-slate-500 font-medium">Customer</span>
-              <span className="text-xs font-semibold text-slate-700 truncate max-w-[160px]">
-                {order.customer_name}
-              </span>
-            </div>
-          )}
-
-          {(order.page_count > 0 || order.copies > 0) && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-slate-500 font-medium">Print</span>
-              <span className="text-xs font-semibold text-slate-600">
-                {order.page_count}pg × {order.copies}{" "}
-                <span className={order.color ? "text-blue-600" : "text-slate-500"}>
-                  ({order.color ? "Color" : "B&W"})
+            {orderData.customer_name && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-500 font-medium">Customer</span>
+                <span className="text-xs font-semibold text-slate-700 truncate max-w-[160px]">
+                  {orderData.customer_name}
                 </span>
-              </span>
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+
+            {(orderData.page_count > 0 || orderData.copies > 0) && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-500 font-medium">Print</span>
+                <span className="text-xs font-semibold text-slate-600">
+                  {orderData.page_count}pg × {orderData.copies}{" "}
+                  <span className={orderData.color ? "text-blue-600" : "text-slate-500"}>
+                    ({orderData.color ? "Color" : "B&W"})
+                  </span>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           type="button"
-          id={`view-order-notification-${order.id}`}
+          id={`view-notification-${notification.id}`}
           onClick={handleView}
           className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-bold rounded-xl px-4 py-2.5 transition-all duration-150 active:scale-[0.98] shadow-sm"
         >
-          <ShoppingBag className="h-4 w-4" aria-hidden="true" />
-          View Order
+          {orderData.order_id ? (
+            <>
+              <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+              View Order
+            </>
+          ) : (
+            "View Details"
+          )}
         </button>
       </div>
 
