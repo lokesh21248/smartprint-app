@@ -76,6 +76,15 @@ export class NotificationService {
         title: "New Order Received",
         body: message,
         is_read: false,
+        // IMPORTANT: `data` is the JSONB payload read by the frontend notification card.
+        // Without this, notification.data?.order_id is undefined and the
+        // "View Order" button does not navigate to the correct order.
+        data: {
+          order_id: orderDetails.order_id,
+          shop_id: orderDetails.shop_id,
+          customer_name: orderDetails.customer_name,
+          total_amount: orderDetails.total_amount,
+        },
       })
       .select()
       .single();

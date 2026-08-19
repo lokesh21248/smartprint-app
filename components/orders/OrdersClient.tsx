@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
@@ -88,30 +88,40 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const updateOrder = useOrderStore((s) => s.updateOrder);
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
 
+  // Guard: ensure the mark-as-read action fires exactly once per mount.
+  // Without this, the dep array [mounted, shopId, initialOrders] could cause
+  // re-execution if initialOrders reference changes, zeroing the badge twice.
+  const hasMarkedReadRef = useRef(false);
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Acknowledge all new-order notifications when the Orders page is opened and data is loaded
+  // Acknowledge all new-order notifications when the Orders page is opened.
+  // This fires once on mount (guarded by hasMarkedReadRef) so that:
+  //   1. The badge is cleared when the admin is actually viewing the orders.
+  //   2. The DB is updated (is_read = true) exactly once per visit.
+  //   3. If the admin navigates away and back, the badge is already 0 in the
+  //      DB, so the layout's initial fetch won't re-inflate it.
   useEffect(() => {
-    if (mounted && shopId && initialOrders) {
-      // Find unread new_order notifications
-      const state = useNotificationStore.getState();
-      let hasUnread = false;
-      state.notifications.forEach((n) => {
-        if (n.type === "new_order" && !n.is_read) {
-          hasUnread = true;
-          state.markAsRead(n.id);
-        }
-      });
-      
-      if (hasUnread) {
-        markShopNotificationsAsRead(shopId).catch((err) => {
-          console.error("Failed to mark shop notifications as read:", err);
-        });
+    if (!mounted || !shopId || hasMarkedReadRef.current) return;
+    hasMarkedReadRef.current = true;
+
+    const state = useNotificationStore.getState();
+    let hasUnread = false;
+    state.notifications.forEach((n) => {
+      if (n.type === "new_order" && !n.is_read) {
+        hasUnread = true;
+        state.markAsRead(n.id);
       }
+    });
+
+    if (hasUnread) {
+      markShopNotificationsAsRead(shopId).catch((err) => {
+        console.error("[OrdersClient] Failed to mark shop notifications as read:", err);
+      });
     }
-  }, [mounted, shopId, initialOrders]);
+  }, [mounted, shopId]); // initialOrders removed — guard handles idempotency
 
   // Hydrate store on mount if not yet hydrated or if SSR provided data
   useEffect(() => {
