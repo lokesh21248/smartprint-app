@@ -9,6 +9,8 @@ import { OrderCard } from "@/components/orders/OrderCard";
 import { OrderFilters } from "@/components/orders/OrderFilters";
 import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
 import { useOrderStore } from "@/stores/orderStore";
+import { useNotificationStore } from "@/stores/notificationStore";
+import { markShopNotificationsAsRead } from "@/lib/actions/notifications";
 import type { Order, OrderStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,10 +86,32 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const isHydrated = useOrderStore((s) => s.isHydrated);
   const setOrders = useOrderStore((s) => s.setOrders);
   const updateOrder = useOrderStore((s) => s.updateOrder);
+  const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Acknowledge all new-order notifications when the Orders page is opened and data is loaded
+  useEffect(() => {
+    if (mounted && shopId && initialOrders) {
+      // Find unread new_order notifications
+      const state = useNotificationStore.getState();
+      let hasUnread = false;
+      state.notifications.forEach((n) => {
+        if (n.type === "new_order" && !n.is_read) {
+          hasUnread = true;
+          state.markAsRead(n.id);
+        }
+      });
+      
+      if (hasUnread) {
+        markShopNotificationsAsRead(shopId).catch((err) => {
+          console.error("Failed to mark shop notifications as read:", err);
+        });
+      }
+    }
+  }, [mounted, shopId, initialOrders]);
 
   // Hydrate store on mount if not yet hydrated or if SSR provided data
   useEffect(() => {
@@ -206,6 +230,18 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
           o.id === orderId ? { ...o, order_status: newStatus } : o
         )
       );
+
+      // If accepting or cancelling, mark the related new_order notification as read
+      if (newStatus === "ACCEPTED" || newStatus === "CANCELLED") {
+        import("@/lib/actions/notifications").then(({ markOrderNotificationAsRead }) => {
+          markOrderNotificationAsRead(orderId, shopId).then((res) => {
+            if (res.success && res.updatedIds && res.updatedIds.length > 0) {
+              const state = useNotificationStore.getState();
+              res.updatedIds.forEach((id) => state.markAsRead(id));
+            }
+          });
+        });
+      }
     },
     [updateOrder, queryClient, shopId]
   );

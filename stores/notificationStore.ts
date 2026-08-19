@@ -30,7 +30,8 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
   lastNotificationId: null,
 
   setNotifications: (notifs) => {
-    const unreadCount = notifs.filter((n) => !n.is_read).length;
+    // Only count 'new_order' notifications that are unread
+    const unreadCount = notifs.filter((n) => !n.is_read && n.type === 'new_order').length;
     set({
       notifications: notifs,
       unreadCount,
@@ -46,9 +47,11 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
       return;
     }
     const nextNotifs = [notif, ...state.notifications];
+    const isUnreadNewOrder = !notif.is_read && notif.type === 'new_order';
+    
     set({
       notifications: nextNotifs,
-      unreadCount: state.unreadCount + (notif.is_read ? 0 : 1),
+      unreadCount: state.unreadCount + (isUnreadNewOrder ? 1 : 0),
       latestNotification: notif,
       lastNotificationId: notif.id,
     });
@@ -57,17 +60,23 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
   markAsRead: (id) => {
     set((state) => {
       let isChanged = false;
+      let wasNewOrder = false;
       const nextNotifs = state.notifications.map((n) => {
         if (n.id === id && !n.is_read) {
           isChanged = true;
+          if (n.type === 'new_order') {
+            wasNewOrder = true;
+          }
           return { ...n, is_read: true };
         }
         return n;
       });
+      
       if (!isChanged) return state;
+      
       return {
         notifications: nextNotifs,
-        unreadCount: Math.max(0, state.unreadCount - 1),
+        unreadCount: Math.max(0, state.unreadCount - (wasNewOrder ? 1 : 0)),
       };
     });
   },

@@ -31,3 +31,60 @@ export async function markNotificationAsRead(id: string) {
     return { success: false, error: "Internal server error" };
   }
 }
+
+export async function markShopNotificationsAsRead(shopId: string) {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    const supabase = createAdminClient();
+    
+    // Using admin client so we bypass RLS, but we scope it by shopId and type.
+    const { data, error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("shop_id", shopId)
+      .eq("type", "new_order")
+      .eq("is_read", false)
+      .select("id");
+      
+    if (error) {
+      console.error("[markShopNotificationsAsRead] DB error:", error.message);
+      return { success: false, error: error.message };
+    }
+    
+    return { success: true, updatedIds: data?.map(d => d.id) || [] };
+  } catch (err) {
+    console.error("[markShopNotificationsAsRead] Unexpected error:", err);
+    return { success: false, error: "Internal server error" };
+  }
+}
+
+export async function markOrderNotificationAsRead(orderId: string, shopId: string) {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    const supabase = createAdminClient();
+    
+    // We update any 'new_order' notification for this shop that has the given order_id in its JSONB data.
+    const { data, error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("shop_id", shopId)
+      .eq("type", "new_order")
+      .eq("is_read", false)
+      .filter("data->>order_id", "eq", orderId)
+      .select("id");
+      
+    if (error) {
+      console.error("[markOrderNotificationAsRead] DB error:", error.message);
+      return { success: false, error: error.message };
+    }
+    
+    return { success: true, updatedIds: data?.map(d => d.id) || [] };
+  } catch (err) {
+    console.error("[markOrderNotificationAsRead] Unexpected error:", err);
+    return { success: false, error: "Internal server error" };
+  }
+}

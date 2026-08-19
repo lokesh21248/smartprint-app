@@ -236,13 +236,20 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
       createClient().removeChannel(oldChannel).catch(() => {});
     }
 
-    const initSubscription = () => {
+    const initSubscription = async () => {
       const supabase = createClient();
       const channelName = `shop:${shopId}:realtime:v4`;
       
+      // If we already have this exact channel in memory and it's for this shop,
+      // just re-bind to it or return.
+      if (activeChannel && activeChannelShopId === shopId && !isReconnecting) {
+        setRealtimeChannel(activeChannel);
+        return;
+      }
+      
       const existingChannel = supabase.getChannels().find((c) => c.topic === `realtime:${channelName}`);
       if (existingChannel) {
-        supabase.removeChannel(existingChannel).catch(() => {});
+        await supabase.removeChannel(existingChannel).catch(() => {});
       }
 
       const channel = supabase.channel(channelName);

@@ -173,6 +173,15 @@ export async function PATCH(
         });
         return NextResponse.json({ error: "Failed to update order status" }, { status: 500 });
       }
+
+      // If the order is moving out of NEW/PLACED, automatically mark its new_order notification as read
+      if (currentStatus === "placed" && normalizedTarget !== "placed") {
+        await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("id", params.id); // Notification ID matches Order ID for new orders
+      }
+
       const tUpdate = performance.now() - tUpdate0;
 
       // 7. Fire-and-forget customer notification (never blocks API response)

@@ -52,12 +52,11 @@ export const useOrderStore = create<OrderState>()((set, get) => ({
     if (existingOrders.length === 0) {
       mergedOrders = orders;
     } else {
-      // Merge: keep all new orders from existing state + append any older ones from incoming batch
+      // Merge: Keep all new orders from incoming batch + append older ones from existing state if missing
       const existingMap = new Map(existingOrders.map((o) => [o.id, o]));
       orders.forEach((o) => {
-        if (!existingMap.has(o.id)) {
-          existingMap.set(o.id, o);
-        }
+        // Always overwrite with the fresher incoming order data
+        existingMap.set(o.id, o);
       });
       mergedOrders = Array.from(existingMap.values()).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
