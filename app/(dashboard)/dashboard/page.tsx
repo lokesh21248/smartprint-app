@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { auth } from "@clerk/nextjs/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 
-import type { DashboardStats, Order, Shop } from "@/types";
+import type { Shop } from "@/types";
 import { User as UserIcon, Store, Mail } from "lucide-react";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { getShopByUserId } from "@/lib/data/shop";
+import { getDashboardInitialState, computeStatsFromOrders } from "@/lib/data/dashboard";
 import { PendingCountSeeder } from "@/components/dashboard/PendingCountSeeder";
 
 import { StatsSection } from "@/components/dashboard/StatsSection";
@@ -21,130 +21,36 @@ export const metadata: Metadata = {
 // and serve it to others sharing the same CDN cache key.
 export const dynamic = "force-dynamic";
 
-// ── Empty fallback — avoids repeating the same literal in 3 places ──────────
-const EMPTY_STATS: DashboardStats = {
-  pendingOrders: 0,
-  ordersToday: 0,
-  revenueToday: 0,
-  avgCompletionMins: 0,
-  activeCustomers: 0,
-  completedToday: 0,
-};
-
-async function getDashboardData(userId: string): Promise<{
-  stats: DashboardStats;
-  newOrders: Order[];
-  shop: Shop | null;
-}> {
-  try {
-    const supabase = createAdminClient();
-    const shop = await getShopByUserId(userId);
-
-    if (!shop) {
-      return { stats: EMPTY_STATS, newOrders: [], shop: null };
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const [ordersResult, newOrdersResult] = await Promise.all([
-      supabase
-        .from("orders")
-        .select("total_amount, status, created_at, updated_at, completed_at, customer_phone")
-        .eq("shop_id", shop.id)
-        .or(`created_at.gte.${today.toISOString()},completed_at.gte.${today.toISOString()}`)
-        .limit(200), // Cap to prevent unbounded payload on high-volume shops
-      supabase
-        .from("orders")
-        .select("id, short_token, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, status_history, created_at, updated_at")
-        .eq("shop_id", shop.id)
-        .in("status", ["PLACED", "placed", "new", "NEW"])
-        .order("created_at", { ascending: false })
-        .limit(10),
-    ]);
-
-    const rawOrders = ordersResult.data ?? [];
-    
-    // ── Aggregate completed orders in a single pass ─────────────────────────
-    let totalRevenue = 0;
-    let completedCount = 0;
-    let totalCompletionMins = 0;
-
-    for (const o of rawOrders) {
-      const s = o.status?.toUpperCase();
-      if (s !== "COMPLETED" && s !== "SUCCESS") continue;
-      const compDate = o.completed_at ? new Date(o.completed_at) : new Date(o.updated_at);
-      if (compDate < today) continue;
-
-      totalRevenue += Number(o.total_amount) || 0;
-      completedCount++;
-      const compTime = compDate.getTime();
-      totalCompletionMins += (compTime - new Date(o.created_at).getTime()) / 60_000;
-    }
-
-    const avgMins = completedCount > 0 ? totalCompletionMins / completedCount : 0;
-
-    const ordersToday = rawOrders.filter(o => new Date(o.created_at) >= today);
-    const uniqueCustomers = new Set(
-      ordersToday.map((o) => o.customer_phone || "anonymous")
-    ).size;
-
-    const mappedNewOrders = (newOrdersResult.data ?? []).map((ord) => ({
-      id: ord.id as string,
-      short_token: ord.short_token as string,
-      customer_name: ord.customer_name as string,
-      customer_phone: ord.customer_phone as string,
-      file_name: ord.file_name as string,
-      page_count: (ord.page_count as number) || 0,
-      copies: (ord.copies as number) || 1,
-      color: (ord.is_color as boolean) || false,
-      double_sided: (ord.is_double_sided as boolean) || false,
-      notes: (ord.notes as string) || undefined,
-      total_amount: ord.total_amount as number,
-      order_status: ord.status as Order["order_status"],
-      status_history: (ord.status_history as Order["status_history"]) || [],
-      created_at: ord.created_at as string,
-      updated_at: ord.updated_at as string,
-    }));
-
-    return {
-      stats: {
-        pendingOrders: rawOrders.filter((o) => {
-          const s = o.status?.toUpperCase();
-          return s === "PLACED" || s === "NEW";
-        }).length,
-        ordersToday: rawOrders.length,
-        revenueToday: totalRevenue,
-        avgCompletionMins: Math.round(avgMins),
-        activeCustomers: uniqueCustomers,
-        completedToday: completedCount,
-      },
-      newOrders: mappedNewOrders as unknown as Order[],
-      shop: shop as Shop,
-    };
-  } catch (err) {
-    console.error("[getDashboardData] ❌ Error:", err);
-    return { stats: EMPTY_STATS, newOrders: [], shop: null };
-  }
-}
-
 export default async function DashboardPage() {
   const start = Date.now();
   const { userId } = await auth();
-  
-  const data = userId
-    ? await getDashboardData(userId)
-    : { stats: EMPTY_STATS, newOrders: [], shop: null };
 
-  if (!data.shop) return <div>Shop not found. Please log in properly.</div>;
-  
-  const { stats, newOrders, shop } = data;
+  if (!userId) {
+    return <div>Please log in.</div>;
+  }
+
+  // getShopByUserId is React.cache()-wrapped — free if layout already called it.
+  const shop = await getShopByUserId(userId);
+  if (!shop) {
+    return <div>Shop not found. Please log in properly.</div>;
+  }
+
+  // getDashboardInitialState is React.cache()-memoized in lib/data/dashboard.ts.
+  // The layout calls this first; this call returns the already-resolved result
+  // with ZERO additional DB round-trips.
+  const { orders, pendingOrders, pendingCount } = await getDashboardInitialState(shop.id);
+
+  // Compute stats from the already-fetched 30-order sample — no extra DB queries.
+  // StatsSection fetches accurate all-time stats client-side via /api/shop/stats
+  // (Postgres RPC) after the initial render, so this is only the SSR placeholder.
+  const stats = computeStatsFromOrders(orders);
+
   const ownerDisplayName = shop?.owner_name || "N/A";
   const shopDisplayName = shop?.name || "N/A";
   const emailDisplay = shop?.owner_email || "N/A";
 
   if (process.env.NODE_ENV !== "production") {
-    console.log(`[PERF] Dashboard page render: ${Date.now() - start} ms`);
+    console.log(`[PERF] Dashboard page render: ${Date.now() - start} ms (0 extra DB queries)`);
   }
 
   return (
@@ -182,18 +88,18 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <PendingOrdersBanner count={stats?.pendingOrders || 0} />
+      <PendingOrdersBanner count={pendingCount} />
       {/* Seed the orderStore.pendingCount so the bell badge is correct immediately */}
-      <PendingCountSeeder count={stats?.pendingOrders || 0} />
+      <PendingCountSeeder count={pendingCount} />
 
       <StatsSection initialStats={stats} shopId={shop.id} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <NewOrdersFeed initialOrders={newOrders} shopId={shop.id} />
+          <NewOrdersFeed initialOrders={pendingOrders} shopId={shop.id} />
         </div>
         <div>
-          <QuickActions shop={shop} />
+          <QuickActions shop={shop as Shop} />
         </div>
       </div>
     </div>

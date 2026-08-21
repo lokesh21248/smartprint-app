@@ -6,7 +6,6 @@ import { useOrderStore } from "@/stores/orderStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { playOrderNotification } from "@/lib/audio/orderNotification";
 import type { Order } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { AppNotification } from "@/stores/notificationStore";
@@ -21,6 +20,17 @@ let activeChannelShopId: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 let isReconnecting = false;
+
+// ─── Polling state (module-level for same reason as above) ───────────────────
+// Exactly ONE polling interval per session. Module scope prevents a React
+// re-render or StrictMode double-invocation from spawning a second interval.
+let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
+let pollingShopId: string | null = null;
+let consecutiveErrors = 0;
+const MAX_CONSECUTIVE_ERRORS = 3;
+const POLLING_INTERVAL_MS = 8_000; // 8 seconds — Realtime is the fast path
+const ERROR_BACKOFF_MS = 60_000;   // After 3+ errors, back off to 60s
+let errorBackoffTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Tracks order IDs we already know about so realtime inserts of pre-existing
 // orders (e.g. from initial SSR load) are not treated as new arrivals.
@@ -70,6 +80,155 @@ export function forceReconnect(shopId: string | null) {
   }
 }
 
+// ─── Polling helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Fetch unread notifications from the API and dispatch them into the store.
+ *
+ * The store's addNotification() owns the deduplication logic — notifications
+ * already in the store (whether from Realtime or a previous poll) are silently
+ * ignored. Sound is also gated in the store via processedSoundIds, so the same
+ * notification arriving via both Realtime and polling never plays sound twice.
+ *
+ * Error handling:
+ * - Network failure: keeps existing state, increments error counter.
+ * - After MAX_CONSECUTIVE_ERRORS failures: backs off to ERROR_BACKOFF_MS.
+ * - 401/404 responses: stops polling (user likely logged out or shop gone).
+ * - Monitoring (Sentry/etc.) is NOT called here — polling failures are expected
+ *   network events, not application exceptions. No 429 flood risk.
+ */
+async function fetchUnreadNotifications(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (!navigator.onLine) return; // skip while offline
+
+  try {
+    const response = await fetch("/api/shop/notifications/unread", {
+      // No credentials needed — Clerk session cookie is sent automatically
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      // 401 = logged out, 404 = no shop — stop polling, these won't self-heal
+      if (response.status === 401 || response.status === 404) {
+        if (isDev) console.warn("[POLL] Stopping poll — status", response.status);
+        stopPolling();
+        return;
+      }
+      // Other errors (500, 429, etc.) — count as transient failure
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const json = await response.json() as {
+      unreadCount: number;
+      notifications: Array<{
+        id: string;
+        type: string;
+        orderId?: string;
+        title: string;
+        message: string;
+        createdAt: string;
+        data: Record<string, unknown>;
+      }>;
+    };
+
+    // Reset error counter on success
+    consecutiveErrors = 0;
+    if (errorBackoffTimer) {
+      clearTimeout(errorBackoffTimer);
+      errorBackoffTimer = null;
+      // Resume normal polling interval after a successful request post-backoff
+      if (pollingShopId) startPolling(pollingShopId);
+    }
+
+    if (!json.notifications?.length) return;
+
+    const { addNotification } = useNotificationStore.getState();
+
+    for (const n of json.notifications) {
+      // Shape the API response into AppNotification for the store
+      const notif: AppNotification = {
+        id: n.id,
+        shop_id: pollingShopId ?? "",
+        type: n.type,
+        title: n.title,
+        body: n.message,
+        data: n.data ?? {},
+        is_read: false,
+        created_at: n.createdAt,
+      };
+      // addNotification handles:
+      //   1. Duplicate suppression (by notification ID)
+      //   2. Sound playback (exactly once per ID via processedSoundIds)
+      //   3. Badge count update
+      addNotification(notif);
+    }
+
+    if (isDev) {
+      console.log(`[POLL] ✅ Fetched ${json.notifications.length} unread notification(s), unreadCount=${json.unreadCount}`);
+    }
+  } catch (err) {
+    consecutiveErrors++;
+
+    if (isDev) {
+      console.warn(`[POLL] ⚠️ Fetch failed (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, err);
+    }
+
+    // After too many consecutive failures, back off for 60s
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      stopPolling();
+      if (isDev) console.warn(`[POLL] Backing off for ${ERROR_BACKOFF_MS / 1000}s after ${consecutiveErrors} failures`);
+
+      errorBackoffTimer = setTimeout(() => {
+        errorBackoffTimer = null;
+        consecutiveErrors = 0;
+        if (pollingShopId) startPolling(pollingShopId);
+      }, ERROR_BACKOFF_MS);
+    }
+    // Do NOT re-throw — polling failures must never crash the UI
+  }
+}
+
+/**
+ * Start exactly one polling interval for a given shop.
+ * Guards against duplicate intervals via module-level singleton state.
+ */
+function startPolling(shopId: string): void {
+  if (pollingIntervalId !== null && pollingShopId === shopId) {
+    // Already polling for this shop — no-op
+    return;
+  }
+
+  stopPolling(); // clean up any stale interval for a different shop
+
+  pollingShopId = shopId;
+  consecutiveErrors = 0;
+
+  if (isDev) console.log("[POLL] 🟢 Starting notification polling for shop:", shopId);
+
+  // Immediate first fetch so the dashboard doesn't wait 8s on load
+  void fetchUnreadNotifications();
+
+  pollingIntervalId = setInterval(() => {
+    void fetchUnreadNotifications();
+  }, POLLING_INTERVAL_MS);
+}
+
+/**
+ * Stop the active polling interval.
+ * Safe to call even if no interval is running.
+ */
+function stopPolling(): void {
+  if (pollingIntervalId !== null) {
+    clearInterval(pollingIntervalId);
+    pollingIntervalId = null;
+    if (isDev) console.log("[POLL] 🔴 Stopped notification polling");
+  }
+  // Note: we do NOT reset pollingShopId here so startPolling() can detect
+  // a shop change vs. a temporary stop.
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface GlobalNotificationProviderProps {
   shopId: string | null;
   initialNotifications: AppNotification[];
@@ -108,10 +267,9 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
 
   // ─── One-time seeding guard ────────────────────────────────────────────────
   // We seed the notification store exactly ONCE when this component first
-  // mounts. Subsequent re-renders (caused by unreadCount changing, route
-  // transitions, etc.) must NOT overwrite the store with the stale SSR
-  // snapshot — that would erase any realtime notifications that arrived after
-  // the initial server render.
+  // mounts. Subsequent re-renders must NOT overwrite the store with the stale
+  // SSR snapshot — that would erase any realtime notifications that arrived
+  // after the initial server render.
   const hasSeededNotificationsRef = useRef(false);
 
   // Batch insert timer — coalesces rapid realtime ORDER inserts into one flush
@@ -152,14 +310,11 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
         console.log("[ORDER_SYNC] 🔔 Realtime notification received:", notif.id, notif.type);
       }
 
-      // addNotification has built-in duplicate protection (checks notif.id)
+      // addNotification owns deduplication AND sound playback.
+      // If the API poller already processed this ID, the sound will not replay.
       storeAddNotification(notif);
 
-      const { soundEnabled } = useSettingsStore.getState();
-      if (soundEnabled) {
-        playOrderNotification(notif.id);
-      }
-
+      // ── Browser push notification (desktop) ────────────────────────────
       const { browserNotificationsEnabled } = useSettingsStore.getState();
       if (
         browserNotificationsEnabled &&
@@ -274,9 +429,7 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
   }, []); // empty deps — intentional; handler reads from ref
 
   // ─── Main subscription effect — deps: [shopId] ONLY ──────────────────────
-  // This effect runs exactly once on mount, and re-runs only if shopId changes
-  // (i.e., the admin somehow changes shops without a full page reload, which
-  // should not happen but is handled defensively).
+  // This effect runs exactly once on mount, and re-runs only if shopId changes.
   useEffect(() => {
     if (!shopId) return;
 
@@ -292,6 +445,12 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
         );
       }
     }
+
+    // ── Start API polling (reliable fallback) ──────────────────────────────
+    // startPolling() is idempotent — safe to call even if already running
+    // for the same shopId. If shopId changed, it tears down the old interval
+    // and starts a new one.
+    startPolling(shopId);
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
     if (!url || url.includes("your-project")) return;
@@ -367,6 +526,7 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
           }
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           stateRef.current.setRealtimeStatus("disconnected");
+          // API polling continues — Realtime disconnect does NOT stop notifications
           handleReconnect();
         }
       });
@@ -400,23 +560,38 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
 
     initSubscription();
 
+    // ── Online/offline handling ────────────────────────────────────────────
+    // When browser goes offline, the next poll would fail — not a problem,
+    // the error counter handles it. But when it comes back online, we want
+    // an immediate fetch without waiting for the next interval tick.
+    const handleOnline = () => {
+      if (isDev) console.log("[POLL] 🌐 Browser came online — fetching immediately");
+      consecutiveErrors = 0;
+      void fetchUnreadNotifications();
+    };
+
     // Re-validate orders cache when the tab becomes visible again
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         const { queryClient: qc, shopId: sid } = stateRef.current;
         qc.invalidateQueries({ queryKey: ["orders", sid] });
         qc.invalidateQueries({ queryKey: ["new-orders", sid] });
+        // Also fetch notifications immediately on tab focus
+        void fetchUnreadNotifications();
       }
     };
 
+    window.addEventListener("online", handleOnline);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      window.removeEventListener("online", handleOnline);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
-      // NOTE: We intentionally do NOT destroy activeChannel here.
-      // The channel must survive route changes within the same session.
-      // It is only destroyed when: (a) shopId changes, or (b) the user logs out.
+      // NOTE: We intentionally do NOT destroy activeChannel or the polling
+      // interval here. Both must survive route changes within the same session.
+      // They are only destroyed when: (a) shopId changes (handled above), or
+      // (b) the user logs out (which triggers a full page reload, clearing all state).
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]); // ← ONLY shopId. All other values accessed via stateRef.

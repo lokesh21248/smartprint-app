@@ -56,8 +56,14 @@ export async function GET(request: Request) {
       {
         soundEnabled: data?.sound_alerts ?? true,
       },
-      { headers: { "Cache-Control": "no-store" } }
+      {
+        // soundEnabled almost never changes. Cache for 5 minutes client-side.
+        // AudioInitializer reads this once on mount — stale data is safe because
+        // the settings store does optimistic updates on every PATCH.
+        headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" },
+      }
     );
+
   } catch (err) {
     console.error("[GET /api/shop/settings] Unhandled error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

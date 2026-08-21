@@ -12,7 +12,6 @@ const PAGE_SIZE = 30;
 
 type OrderFileRow = {
   id: string;
-  order_id: string;
   scan_status: string | null;
   infected?: boolean | null;
 };
@@ -33,6 +32,8 @@ type OrderRow = {
   status: string;
   created_at: string;
   updated_at: string;
+  // Embedded one-to-many join from Supabase relational select
+  order_files: OrderFileRow[] | null;
 };
 
 const VALID_STATUSES = ["PLACED", "ACCEPTED", "PRINTING", "READY", "COMPLETED", "CANCELLED", "DRAFT"] as const;
@@ -44,7 +45,7 @@ type ValidStatus = (typeof VALID_STATUSES)[number];
  * Derives the worst file scan status across all files in an order.
  * Priority: infected > scanning > failed > pending > clean
  */
-function worstScanStatus(files: OrderFileRow[] | undefined): string | null {
+function worstScanStatus(files: OrderFileRow[] | null | undefined): string | null {
   if (!files || files.length === 0) return null;
   const statuses = files.map((f) => f.scan_status ?? "pending");
   if (statuses.includes("infected")) return "infected";
@@ -96,6 +97,7 @@ export async function GET(request: Request) {
     }
 
     // Verify user access to this shop
+    // canManageShop has a 30s process-level TTL cache — near-zero cost on warm instances
     const isAuthorized = await canManageShop(userId, shopId, clerkRole);
     if (!isAuthorized) {
       return NextResponse.json({ success: false, error: "Shop not found or access denied" }, { status: 404 });
@@ -103,7 +105,14 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    // 3. Build query — only the fields the client actually needs.
+    // ── PERFORMANCE FIX ─────────────────────────────────────────────────────
+    // Previous: 2 serial queries (orders → collect IDs → order_files IN (...))
+    // Now:      1 relational query with embedded order_files — single round-trip
+    //
+    // Supabase PostgREST resolves the foreign key order_files(order_id) → orders(id)
+    // and returns order_files as a nested array on each order row. This eliminates
+    // a ~300ms serial wait for the second query.
+    // ────────────────────────────────────────────────────────────────────────
     let query = supabase
       .from("orders")
       .select(
@@ -123,6 +132,8 @@ export async function GET(request: Request) {
           "status",
           "created_at",
           "updated_at",
+          // Embedded join — one DB round-trip total instead of two serial queries
+          "order_files(id, scan_status, infected)",
         ].join(", "),
         { count: "estimated" }
       )
@@ -146,7 +157,6 @@ export async function GET(request: Request) {
     const { data, error, count } = await query;
 
     if (error) {
-      // FIX S9: log full error internally, never expose Supabase internals to client
       console.error("[orders-list] DB error:", {
         code: error.code,
         message: error.message,
@@ -158,40 +168,8 @@ export async function GET(request: Request) {
     }
 
     const rows = (data ?? []) as unknown as OrderRow[];
-    const orderIds = rows.map((o) => o.id);
-    const orderFilesMap: Record<string, OrderFileRow[]> = {};
 
-    // 4. Fetch order_files in a single query using the batch of order IDs
-    if (orderIds.length > 0) {
-      const { data: filesData, error: filesError } = await supabase
-        .from("order_files")
-        .select("id, order_id, scan_status, infected")
-        .in("order_id", orderIds);
-
-      if (filesError) {
-        // Non-fatal: log and continue without file scan status
-        console.error("[orders-list] order_files fetch error:", {
-          code: filesError.code,
-          message: filesError.message,
-        });
-      } else if (filesData) {
-        // FIX R3: replaced the `any` cast with properly typed OrderFileRow
-        for (const file of filesData as OrderFileRow[]) {
-          if (!orderFilesMap[file.order_id]) {
-            orderFilesMap[file.order_id] = [];
-          }
-          orderFilesMap[file.order_id].push({
-            id: file.id,
-            order_id: file.order_id,
-            scan_status: file.scan_status,
-            infected: file.infected,
-          });
-        }
-      }
-    }
-
-
-    // 5. Map DB column names → client field names
+    // Map DB column names → client field names
     const orders = rows.map((ord) => ({
       id: ord.id,
       short_token: ord.short_token,
@@ -201,19 +179,19 @@ export async function GET(request: Request) {
       file_name: ord.file_name,
       page_count: ord.page_count,
       copies: ord.copies,
-      color: ord.is_color, // DB: is_color       → client: color
+      color: ord.is_color,           // DB: is_color       → client: color
       double_sided: ord.is_double_sided, // DB: is_double_sided → client: double_sided
       order_status: normalizeOrderStatus(ord.status), // DB: status → client: order_status (uppercase)
       notes: ord.notes ?? "",
       total_amount: ord.total_amount,
       created_at: ord.created_at,
       updated_at: ord.updated_at,
-      // Aggregated security status — null means no files linked yet
-      file_scan_status: worstScanStatus(orderFilesMap[ord.id]),
+      // Embedded order_files array — no second query needed
+      file_scan_status: worstScanStatus(ord.order_files),
     }));
 
     if (process.env.NODE_ENV !== "production") {
-      console.log(`[PERF] Orders API: ${Date.now() - start} ms (${orders.length} orders)`);
+      console.log(`[PERF] Orders API: ${Date.now() - start} ms (${orders.length} orders, 1 query)`);
     }
 
     return NextResponse.json({
