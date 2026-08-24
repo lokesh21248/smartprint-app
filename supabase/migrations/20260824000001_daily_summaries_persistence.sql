@@ -3,9 +3,34 @@
 -- Run in Supabase SQL Editor: Dashboard → SQL Editor → New Query
 -- ============================================================
 
--- ── Step 1: Ensure unique constraint ───────────────────────────────────────
--- This is necessary to allow UPSERT (ON CONFLICT DO UPDATE).
-ALTER TABLE daily_summaries ADD CONSTRAINT IF NOT EXISTS daily_summaries_shop_id_date_key UNIQUE (shop_id, date);
+-- ── Step 1: Replace Materialized View with Standard Table ──────────────────
+-- The previous implementation used a materialized view, which cannot be UPSERTed
+-- and is too expensive to refresh on every single order update.
+-- We drop it and recreate it as a standard table with a unique constraint.
+
+DROP MATERIALIZED VIEW IF EXISTS daily_summaries;
+DROP TABLE IF EXISTS daily_summaries;
+
+CREATE TABLE daily_summaries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id uuid NOT NULL,
+  date date NOT NULL,
+  total_orders integer NOT NULL DEFAULT 0,
+  completed_orders integer NOT NULL DEFAULT 0,
+  cancelled_orders integer NOT NULL DEFAULT 0,
+  total_pages_printed integer NOT NULL DEFAULT 0,
+  total_revenue_paise bigint NOT NULL DEFAULT 0,
+  avg_accept_mins numeric(10,2) NOT NULL DEFAULT 0,
+  avg_print_mins numeric(10,2) NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Ensure unique constraint to allow UPSERT (ON CONFLICT DO UPDATE)
+ALTER TABLE daily_summaries ADD CONSTRAINT daily_summaries_shop_id_date_key UNIQUE (shop_id, date);
+
+-- Add indexes for fast dashboard querying
+CREATE INDEX idx_daily_summaries_shop_id ON daily_summaries(shop_id);
+CREATE INDEX idx_daily_summaries_date ON daily_summaries(date);
 
 -- ── Step 2: Create the RPC function ───────────────────────────────────────
 -- This function computes the daily summary for a specific shop and date directly from

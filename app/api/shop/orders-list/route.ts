@@ -105,14 +105,9 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    // ── PERFORMANCE FIX ─────────────────────────────────────────────────────
-    // Previous: 2 serial queries (orders → collect IDs → order_files IN (...))
-    // Now:      1 relational query with embedded order_files — single round-trip
-    //
-    // Supabase PostgREST resolves the foreign key order_files(order_id) → orders(id)
-    // and returns order_files as a nested array on each order row. This eliminates
-    // a ~300ms serial wait for the second query.
-    // ────────────────────────────────────────────────────────────────────────
+    // ── ORDERS QUERY ─────────────────────────────────────────────────────
+    // Separate from order_files to avoid PostgREST embedded-join requiring a
+    // FK constraint that may not exist. We batch-fetch files by order IDs instead.
     let query = supabase
       .from("orders")
       .select(
@@ -132,21 +127,15 @@ export async function GET(request: Request) {
           "status",
           "created_at",
           "updated_at",
-          // Embedded join — one DB round-trip total instead of two serial queries
-          "order_files(id, scan_status, infected)",
         ].join(", "),
         { count: "estimated" }
       )
       .eq("shop_id", shopId);
 
-    // Optional status filter — PLACED maps to all 'new/pending order' variants.
-    // After the status normalization fix, new orders are stored as lowercase 'new'
-    // while legacy orders may still have 'PLACED' or 'placed'. We query all variants
-    // so both old and new orders appear correctly in the dashboard feed.
+    // Optional status filter
     if (statusParam === "PLACED") {
       query = query.in("status", ["PLACED", "placed", "new", "NEW"]);
     } else if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
-      // For other statuses, match both original case and lowercase
       query = query.in("status", [statusParam, statusParam.toLowerCase()]);
     }
 
@@ -154,20 +143,44 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-    const { data, error, count } = await query;
+    const { data: ordersData, error: ordersError, count } = await query;
 
-    if (error) {
+    if (ordersError) {
       console.error("[orders-list] DB error:", {
-        code: error.code,
-        message: error.message,
-        hint: error.hint,
+        code: ordersError.code,
+        message: ordersError.message,
+        hint: ordersError.hint,
         shopId,
         page,
       });
       return NextResponse.json({ success: false, error: "Failed to load orders" }, { status: 500 });
     }
 
-    const rows = (data ?? []) as unknown as OrderRow[];
+    const orderRows = (ordersData ?? []) as unknown as Omit<OrderRow, "order_files">[];
+    const orderIds = orderRows.map((o) => o.id);
+
+    // ── BATCH FETCH ORDER FILES ──────────────────────────────────────────────
+    // Separate query using IN clause — no FK needed, uses idx_order_files_order_id
+    let filesMap = new Map<string, OrderFileRow[]>();
+    if (orderIds.length > 0) {
+      const { data: filesData } = await supabase
+        .from("order_files")
+        .select("id, order_id, scan_status, infected")
+        .in("order_id", orderIds);
+
+      if (filesData) {
+        for (const f of filesData as (OrderFileRow & { order_id: string })[]) {
+          const arr = filesMap.get(f.order_id) ?? [];
+          arr.push(f);
+          filesMap.set(f.order_id, arr);
+        }
+      }
+    }
+
+    const data = ordersData;
+    const error = null;
+
+    const rows = orderRows;
 
     // Map DB column names → client field names
     const orders = rows.map((ord) => ({
@@ -186,8 +199,8 @@ export async function GET(request: Request) {
       total_amount: ord.total_amount,
       created_at: ord.created_at,
       updated_at: ord.updated_at,
-      // Embedded order_files array — no second query needed
-      file_scan_status: worstScanStatus(ord.order_files),
+      // Merged order_files from the batch query
+      file_scan_status: worstScanStatus(filesMap.get(ord.id) ?? null),
     }));
 
     if (process.env.NODE_ENV !== "production") {
