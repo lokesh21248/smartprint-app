@@ -161,7 +161,7 @@ export async function GET(request: Request) {
 
     // ── BATCH FETCH ORDER FILES ──────────────────────────────────────────────
     // Separate query using IN clause — no FK needed, uses idx_order_files_order_id
-    let filesMap = new Map<string, OrderFileRow[]>();
+    const filesMap = new Map<string, OrderFileRow[]>();
     if (orderIds.length > 0) {
       const { data: filesData } = await supabase
         .from("order_files")
@@ -177,13 +177,9 @@ export async function GET(request: Request) {
       }
     }
 
-    const data = ordersData;
-    const error = null;
-
-    const rows = orderRows;
 
     // Map DB column names → client field names
-    const orders = rows.map((ord) => ({
+    const orders = orderRows.map((ord) => ({
       id: ord.id,
       short_token: ord.short_token,
       shop_id: ord.shop_id,
