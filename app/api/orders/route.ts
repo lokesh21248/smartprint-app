@@ -539,6 +539,19 @@ export async function POST(request: Request) {
           }));
         },
       },
+      {
+        name: "refresh-daily-summary",
+        fn: async () => {
+          // Asynchronously update the daily_summaries table for this shop/date
+          const orderDate = new Date().toISOString().split("T")[0];
+          await supabase.rpc("refresh_daily_summary", {
+            p_shop_id: shopId,
+            p_date: orderDate,
+          }).then(({ error }) => {
+            if (error) console.error("[orders:POST] refresh_daily_summary failed:", error.message);
+          });
+        },
+      },
     ]);
 
     perfEnd("[orders:POST:total]");

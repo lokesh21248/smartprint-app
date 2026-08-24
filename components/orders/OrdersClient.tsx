@@ -117,18 +117,18 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     });
 
     if (hasUnread) {
-      markShopNotificationsAsRead(shopId).catch((err) => {
+      markShopNotificationsAsRead(shopId).catch((err: unknown) => {
         console.error("[OrdersClient] Failed to mark shop notifications as read:", err);
       });
     }
   }, [mounted, shopId]); // initialOrders removed — guard handles idempotency
 
-  // Hydrate store on mount if not yet hydrated or if SSR provided data
-  useEffect(() => {
-    if (initialOrders.length > 0 && (!isHydrated || storeOrders.length === 0)) {
-      setOrders(initialOrders);
-    }
-  }, [initialOrders, isHydrated, storeOrders.length, setOrders]);
+  // GlobalOrderCacheSeeder (in the layout) already seeds the store with initialOrders
+  // exactly once via setOrders(). A second setOrders() call here would create a race
+  // on mount: if a Realtime event has already applied a status update (e.g. CANCELLED)
+  // between the layout SSR render and this component mounting, re-seeding from the
+  // frozen initialOrders prop would resurrect the stale status.
+  // Solution: trust GlobalOrderCacheSeeder. OrdersClient only reads, never re-seeds.
 
   // ── URL-persisted filter state ────────────────────────────────────────────
   const activeTab = searchParams.get("status") ?? "ALL";
@@ -166,16 +166,23 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     refetchOnWindowFocus: false,
   });
 
-  // Source of truth is centralized orderStore + server initialOrders
+  // ── Source of truth: Zustand orderStore (live, Realtime-updated) ─────────
+  //
+  // initialOrders = SSR snapshot, frozen at page-render time. It is ONLY used
+  // as a pre-hydration fallback so the page is not blank on first paint.
+  //
+  // Once isHydrated = true (set by setOrders in GlobalOrderCacheSeeder), storeOrders
+  // is the authoritative dataset. Using initialOrders after hydration would re-insert
+  // stale SSR statuses (e.g. PLACED) for orders whose status has already been updated
+  // (e.g. to CANCELLED) via Realtime while the page was loading.
   const allOrders = useMemo(() => {
-    const mergedMap = new Map(initialOrders.map(o => [o.id, o]));
-    
-    if (mounted && storeOrders.length > 0) {
-      storeOrders.forEach(o => mergedMap.set(o.id, o));
+    if (isHydrated && storeOrders.length > 0) {
+      // Hydrated: live store is the single source of truth
+      return storeOrders;
     }
-    
-    return Array.from(mergedMap.values());
-  }, [mounted, storeOrders, initialOrders]);
+    // Pre-hydration: render the SSR snapshot so the page is not empty
+    return initialOrders;
+  }, [isHydrated, storeOrders, initialOrders]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const dateFilteredOrders = useMemo(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo, useMemo, useEffect } from "react";
+import { useState, memo, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -65,34 +65,31 @@ interface NewOrdersFeedProps {
 
 export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
   const queryClient = useQueryClient();
-  const [mounted, setMounted] = useState(false);
   const [processing, setProcessing] = useState<Record<string, boolean>>({});
   const storeOrders = useOrderStore((s) => s.orders);
   const isHydrated = useOrderStore((s) => s.isHydrated);
   const updateOrder = useOrderStore((s) => s.updateOrder);
   const { clearNotifications } = useShopStore();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Derive new/placed orders from the centralized global store + server initialOrders
+  // Source of truth: Zustand orderStore (live, Realtime-updated).
+  //
+  // initialOrders = SSR snapshot frozen at server-render time. After hydration
+  // it MUST NOT be used as a data source because it contains statuses from
+  // the moment of the SSR request — orders that were PLACED at SSR time may
+  // already be ACCEPTED/CANCELLED by the time the component renders.
+  //
+  // Pattern mirrors OrdersClient.tsx (lines 178-185):
+  //   - Pre-hydration: render SSR snapshot so the widget isn't empty
+  //   - Post-hydration: storeOrders is the single source of truth
   const orders = useMemo(() => {
-    // We want the most up-to-date data.
-    // storeOrders might contain new realtime events, while initialOrders contains server data.
-    // By merging them, we ensure we don't lose initialOrders if storeOrders was cleared,
-    // while still prioritizing any fresh updates from storeOrders.
-    const mergedMap = new Map(initialOrders.map(o => [o.id, o]));
-    
-    if (mounted && storeOrders.length > 0) {
-      storeOrders.forEach(o => mergedMap.set(o.id, o));
-    }
-    
-    return Array.from(mergedMap.values())
+    const source =
+      isHydrated && storeOrders.length > 0 ? storeOrders : initialOrders;
+
+    return source
       .filter((o) => o.order_status?.toUpperCase() === "PLACED")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 5);
-  }, [mounted, storeOrders, initialOrders]);
+  }, [isHydrated, storeOrders, initialOrders]);
 
   const handleAction = async (
     orderId: string,

@@ -45,18 +45,33 @@ export const useOrderStore = create<OrderState>()((set, get) => ({
   realtimeStatus: "disconnected",
 
   setOrders: (orders) => {
-    // Preserve any live realtime orders that arrived and might not be in the initial batch
+    // Preserve any live realtime orders that arrived and might not be in the initial batch.
+    // RACE-CONDITION GUARD: When merging, only overwrite an existing order if the incoming
+    // record is the same age or newer (by updated_at). This prevents a stale background
+    // fetch response from resurrecting a Cancelled order back to Placed/New.
     const existingOrders = get().orders;
     let mergedOrders: Order[];
 
     if (existingOrders.length === 0) {
       mergedOrders = orders;
     } else {
-      // Merge: Keep all new orders from incoming batch + append older ones from existing state if missing
       const existingMap = new Map(existingOrders.map((o) => [o.id, o]));
       orders.forEach((o) => {
-        // Always overwrite with the fresher incoming order data
-        existingMap.set(o.id, o);
+        const existing = existingMap.get(o.id);
+        if (!existing) {
+          // New order not yet in the store — add it
+          existingMap.set(o.id, o);
+        } else {
+          // Only overwrite if the incoming record is as fresh or fresher than what we have.
+          // This guards against the race: fetch starts before cancellation, finishes after —
+          // the stale fetch result must NOT overwrite the live Realtime-applied CANCELLED state.
+          const incomingTs = new Date(o.updated_at ?? o.created_at).getTime();
+          const existingTs = new Date(existing.updated_at ?? existing.created_at).getTime();
+          if (incomingTs >= existingTs) {
+            existingMap.set(o.id, o);
+          }
+          // If incoming is older, silently discard — existing Realtime state wins
+        }
       });
       mergedOrders = Array.from(existingMap.values()).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

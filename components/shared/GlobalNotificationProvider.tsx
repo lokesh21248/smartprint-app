@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useOrderStore } from "@/stores/orderStore";
-import { useNotificationStore } from "@/stores/notificationStore";
+import { useNotificationStore, seedProcessedSoundIds } from "@/stores/notificationStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { Order } from "@/types";
@@ -437,6 +437,11 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
     if (!hasSeededNotificationsRef.current) {
       hasSeededNotificationsRef.current = true;
       useNotificationStore.getState().setNotifications(initialNotifications);
+      // setNotifications already calls seedProcessedSoundIds internally,
+      // but we call it explicitly here as well for defence-in-depth in case
+      // the store's setNotifications was already called with a different list
+      // before this effect ran.
+      seedProcessedSoundIds(initialNotifications.map((n) => n.id));
       if (isDev) {
         console.log(
           "[ORDER_SYNC] 🌱 Seeded notification store with",
@@ -447,10 +452,13 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
     }
 
     // ── Start API polling (reliable fallback) ──────────────────────────────
-    // startPolling() is idempotent — safe to call even if already running
-    // for the same shopId. If shopId changed, it tears down the old interval
-    // and starts a new one.
-    startPolling(shopId);
+    // Deferred by ONE microtask so that GlobalOrderCacheSeeder's sibling
+    // useEffect (which runs immediately after ours in DOM order) has already
+    // populated `knownOrderIds` before the first poll fires.
+    // Without this defer, startPolling() → fetchUnreadNotifications() executes
+    // before markOrdersAsKnown() — creating a window where Realtime INSERTs
+    // for pre-existing orders are treated as genuinely new arrivals.
+    Promise.resolve().then(() => startPolling(shopId));
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
     if (!url || url.includes("your-project")) return;

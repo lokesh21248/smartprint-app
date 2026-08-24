@@ -47,6 +47,25 @@ function markSoundProcessed(id: string): boolean {
   return true; // newly processed
 }
 
+/**
+ * seedProcessedSoundIds — pre-populate the dedup set with IDs that are
+ * already known (e.g. loaded from SSR / initial DB fetch) so they NEVER
+ * trigger sound playback. Call this before the first notification poll or
+ * realtime event can fire.
+ *
+ * Safe to call multiple times — idempotent.
+ */
+export function seedProcessedSoundIds(ids: string[]): void {
+  for (const id of ids) {
+    if (processedSoundIds.has(id)) continue;
+    if (processedSoundIds.size >= MAX_PROCESSED_IDS) {
+      const firstKey = processedSoundIds.values().next().value;
+      if (firstKey !== undefined) processedSoundIds.delete(firstKey);
+    }
+    processedSoundIds.add(id);
+  }
+}
+
 interface NotificationState {
   notifications: AppNotification[];
   unreadCount: number;
@@ -66,6 +85,11 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
   lastNotificationId: null,
 
   setNotifications: (notifs) => {
+    // Pre-seed the sound-dedup set so these historical notifications
+    // never trigger sound playback, even if the polling delivers them
+    // again before the user has interacted with the page.
+    seedProcessedSoundIds(notifs.map((n) => n.id));
+
     // Only count 'new_order' notifications that are unread
     const unreadCount = notifs.filter((n) => !n.is_read && n.type === "new_order").length;
     set({

@@ -5,7 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getShopByUserId } from "@/lib/data/shop";
 import { OrdersClient } from "@/components/orders/OrdersClient";
 import { OrdersSkeleton } from "@/components/orders/OrdersSkeleton";
-import { PendingCountSeeder } from "@/components/dashboard/PendingCountSeeder";
 import type { Order } from "@/types";
 
 export const metadata: Metadata = {
@@ -72,20 +71,13 @@ export default async function OrdersPage() {
     ? await getInitialOrders(userId)
     : { orders: [], shopId: "" };
 
-  const placedCount = orders.filter(
-    (o) => o.order_status?.toUpperCase() === "PLACED"
-  ).length;
-
   if (process.env.NODE_ENV !== "production") {
     console.log(`[PERF] Orders page render: ${Date.now() - start} ms (${orders.length} orders)`);
   }
 
   return (
-    <>
-      <PendingCountSeeder count={placedCount} />
-      <Suspense fallback={<OrdersSkeleton />}>
-        <OrdersClient initialOrders={orders} shopId={shopId} />
-      </Suspense>
-    </>
+    <Suspense fallback={<OrdersSkeleton />}>
+      <OrdersClient initialOrders={orders} shopId={shopId} />
+    </Suspense>
   );
 }

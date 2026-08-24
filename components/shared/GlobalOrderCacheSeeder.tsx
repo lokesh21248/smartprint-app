@@ -21,11 +21,10 @@ export function GlobalOrderCacheSeeder({
   shopId,
   initialOrders,
   initialNewOrders,
-  pendingCount,
+  pendingCount: _pendingCount, // kept for prop API compatibility; setOrders() derives the count
 }: GlobalOrderCacheSeedProps) {
   const queryClient = useQueryClient();
   const setOrders = useOrderStore((s) => s.setOrders);
-  const setPendingCount = useOrderStore((s) => s.setPendingCount);
 
   useEffect(() => {
     if (!shopId) return;
@@ -37,7 +36,9 @@ export function GlobalOrderCacheSeeder({
       markNotificationsAsSeen(ids);
     }
 
-    // 2. Hydrate the centralized Zustand orderStore
+    // 2. Hydrate the centralized Zustand orderStore.
+    // setOrders() internally calls calculatePendingCount() which sets
+    // pendingCount from the orders array — no separate setPendingCount call needed.
     setOrders(initialOrders);
 
     // 3. Seed React Query caches
@@ -50,8 +51,6 @@ export function GlobalOrderCacheSeeder({
     if (!existingNew || existingNew.length === 0) {
       queryClient.setQueryData<Order[]>(["new-orders", shopId], initialNewOrders);
     }
-
-    setPendingCount(pendingCount);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);

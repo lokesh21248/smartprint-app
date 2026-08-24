@@ -69,7 +69,7 @@ export async function PATCH(
       const tFetch0 = performance.now();
       const { data: order, error: fetchError } = await supabase
         .from("orders")
-        .select("id, status, shop_id, status_history, customer_name, customer_phone, short_token")
+        .select("id, status, shop_id, status_history, customer_name, customer_phone, short_token, created_at")
         .eq("id", params.id)
         .single();
 
@@ -174,12 +174,19 @@ export async function PATCH(
         return NextResponse.json({ error: "Failed to update order status" }, { status: 500 });
       }
 
-      // If the order is moving out of NEW/PLACED, automatically mark its new_order notification as read
+      // If the order is moving out of NEW/PLACED, automatically mark its new_order notification as read.
+      // We filter by data->>'order_id' because that JSONB field stores the order reference.
+      // The previous code used .eq("id", params.id) which matched the ORDER UUID against the
+      // notification primary key — notifications have their own separate UUIDs so that query
+      // always matched zero rows. This is the corrected version.
       if (currentStatus === "placed" && normalizedTarget !== "placed") {
         await supabase
           .from("notifications")
           .update({ is_read: true })
-          .eq("id", params.id); // Notification ID matches Order ID for new orders
+          .eq("shop_id", order.shop_id)
+          .eq("type", "new_order")
+          .eq("is_read", false)
+          .filter("data->>'order_id'", "eq", params.id);
       }
 
       const tUpdate = performance.now() - tUpdate0;
@@ -191,6 +198,15 @@ export async function PATCH(
         customerName: order.customer_name,
         status: newStatus,
         shortToken: order.short_token,
+      });
+
+      // 8. Fire-and-forget daily summary update
+      const orderDate = new Date(order.created_at).toISOString().split("T")[0];
+      supabase.rpc("refresh_daily_summary", {
+        p_shop_id: order.shop_id,
+        p_date: orderDate,
+      }).then(({ error }) => {
+        if (error) console.error("[ORDER STATUS] refresh_daily_summary failed:", error.message);
       });
 
       const totalTime = performance.now() - t0;
