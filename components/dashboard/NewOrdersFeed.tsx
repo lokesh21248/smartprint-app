@@ -134,10 +134,12 @@ export function NewOrdersFeed({ initialOrders, shopId }: NewOrdersFeedProps) {
         newStatus === "accepted" ? "✅ Order accepted!" : "Order rejected"
       );
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
+      queryClient.invalidateQueries({ queryKey: ["order-counts", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
     } catch (err) {
       queryClient.invalidateQueries({ queryKey: ["new-orders", shopId] });
       queryClient.invalidateQueries({ queryKey: ["orders", shopId] });
+      queryClient.invalidateQueries({ queryKey: ["order-counts", shopId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats", shopId] });
       const message = err instanceof Error ? err.message : "Action failed. Please try again.";
       toast.error(message);

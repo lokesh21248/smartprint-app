@@ -583,6 +583,7 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
       if (document.visibilityState === "visible") {
         const { queryClient: qc, shopId: sid } = stateRef.current;
         qc.invalidateQueries({ queryKey: ["orders", sid] });
+        qc.invalidateQueries({ queryKey: ["order-counts", sid] });
         qc.invalidateQueries({ queryKey: ["new-orders", sid] });
         // Also fetch notifications immediately on tab focus
         void fetchUnreadNotifications();

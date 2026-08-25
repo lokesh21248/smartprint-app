@@ -9,6 +9,10 @@
 -- No extra table scan — identical cost to the existing function.
 -- ============================================================
 
+-- PostgreSQL does not allow CREATE OR REPLACE to change a function's
+-- return type. We must drop and recreate.
+DROP FUNCTION IF EXISTS get_shop_stats(uuid, timestamptz);
+
 CREATE OR REPLACE FUNCTION get_shop_stats(
   p_shop_id uuid,
   p_today   timestamptz
