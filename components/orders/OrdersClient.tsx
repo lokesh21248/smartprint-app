@@ -87,13 +87,6 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const queryClient = useQueryClient();
 
   const [mounted, setMounted] = useState(false);
-  // dbCounts = accurate per-status order counts from the database.
-  // Populated after mount by /api/shop/order-counts (backed by get_shop_stats RPC).
-  // Prevents "All 30" (page size) showing instead of "All 43" (true total).
-  const [dbCounts, setDbCounts] = useState<{
-    total: number; placed: number; accepted: number;
-    printing: number; ready: number; completed: number; cancelled: number;
-  } | null>(null);
   const storeOrders = useOrderStore((s) => s.orders);
   const isHydrated = useOrderStore((s) => s.isHydrated);
   const setOrders = useOrderStore((s) => s.setOrders);
@@ -182,7 +175,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   // Uses /api/shop/order-counts which calls get_shop_stats RPC.
   // Fires once on mount, then revalidates every 60s.
   // Does NOT affect order display, notifications, or any other flow.
-  useQuery({
+  const { data: dbCounts } = useQuery({
     queryKey: ["order-counts", shopId],
     queryFn: async () => {
       if (!shopId) return null;
@@ -191,9 +184,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
         { credentials: "include", cache: "no-store" }
       );
       if (!res.ok) return null;
-      const counts = await res.json();
-      setDbCounts(counts);
-      return counts;
+      return res.json();
     },
     enabled: !!shopId,
     staleTime: 30000,
@@ -253,7 +244,9 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   // from the order-counts API to avoid counts being capped at the 30-order page size.
   // When a filter IS active, fall back to the local filtered array length.
   const tabCounts = useMemo(() => {
-    const useDb = !search && dateFilter === "all" && dbCounts !== null;
+    // Guarded with `mounted` to prevent hydration mismatches: SSR and the very
+    // first client render will use the array length, then it safely switches to DB counts.
+    const useDb = mounted && !search && dateFilter === "all" && !!dbCounts;
     return TABS.reduce(
       (acc, tab) => {
         if (useDb) {
