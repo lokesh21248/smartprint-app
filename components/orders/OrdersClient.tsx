@@ -49,8 +49,8 @@ const TAB_ICONS: Partial<Record<OrderStatus | "ALL", string>> = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Fetch function — no-store so it always hits fresh
 // ─────────────────────────────────────────────────────────────────────────────
-async function fetchOrders(shopId: string): Promise<Order[]> {
-  if (!shopId) return [];
+async function fetchOrders(shopId: string): Promise<{ orders: Order[]; total: number }> {
+  if (!shopId) return { orders: [], total: 0 };
   const res = await fetch(
     `/api/shop/orders-list?shopId=${encodeURIComponent(shopId)}`,
     {
@@ -61,10 +61,15 @@ async function fetchOrders(shopId: string): Promise<Order[]> {
   );
   if (!res.ok) {
     console.error("[fetchOrders] API returned", res.status);
-    return [];
+    return { orders: [], total: 0 };
   }
   const data = await res.json();
-  return Array.isArray(data.orders) ? data.orders : [];
+  return {
+    orders: Array.isArray(data.orders) ? data.orders : [],
+    // API returns pagination.total = the real Supabase count for this shop.
+    // Previously this was discarded, causing All = 30 (page size) instead of All = 43 (true total).
+    total: data.pagination?.total ?? 0,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +87,9 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const queryClient = useQueryClient();
 
   const [mounted, setMounted] = useState(false);
+  // serverTotal = real DB count from the API's pagination.total.
+  // Initialized to 0; populated after the first fetchOrders resolves.
+  const [serverTotal, setServerTotal] = useState(0);
   const storeOrders = useOrderStore((s) => s.orders);
   const isHydrated = useOrderStore((s) => s.isHydrated);
   const setOrders = useOrderStore((s) => s.setOrders);
@@ -152,11 +160,15 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
   const { isFetching } = useQuery({
     queryKey: ["orders", shopId],
     queryFn: async () => {
-      const fetched = await fetchOrders(shopId);
-      if (fetched && fetched.length > 0) {
-        setOrders(fetched);
+      const result = await fetchOrders(shopId);
+      if (result.orders.length > 0) {
+        setOrders(result.orders);
       }
-      return fetched;
+      // Capture real total from server so the ALL tab shows the true count.
+      if (result.total > 0) {
+        setServerTotal(result.total);
+      }
+      return result.orders;
     },
     enabled: !!shopId,
     staleTime: 60000,
@@ -211,19 +223,29 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
     return orders;
   }, [allOrders, dateFilter, search]);
 
-  // Step 2: Count per-status from the date-filtered set
+  // Step 2: Count per-status from the date-filtered set.
+  // ALL tab: when no client-side filter is active, use serverTotal (real DB count)
+  // so "All 30" (page size) does not incorrectly replace "All 43" (true total).
+  // When a date or search filter IS active the user is viewing a subset so we
+  // fall back to the local filtered length — no extra API call needed.
   const tabCounts = useMemo(() => {
     return TABS.reduce(
       (acc, tab) => {
-        acc[tab.value] =
-          tab.value === "ALL"
-            ? dateFilteredOrders.length
-            : dateFilteredOrders.filter((o) => o.order_status === tab.value).length;
+        if (tab.value === "ALL") {
+          acc[tab.value] =
+            !search && dateFilter === "all" && serverTotal > 0
+              ? serverTotal
+              : dateFilteredOrders.length;
+        } else {
+          acc[tab.value] = dateFilteredOrders.filter(
+            (o) => o.order_status === tab.value
+          ).length;
+        }
         return acc;
       },
       {} as Record<string, number>
     );
-  }, [dateFilteredOrders]);
+  }, [dateFilteredOrders, serverTotal, search, dateFilter]);
 
   // Step 3: Apply tab (status) filter and sort on top of the date-filtered set
   const filteredOrders = useMemo(() => {

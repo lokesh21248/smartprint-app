@@ -128,7 +128,7 @@ export async function GET(request: Request) {
           "created_at",
           "updated_at",
         ].join(", "),
-        { count: "estimated" }
+        { count: "exact" }
       )
       .eq("shop_id", shopId);
 
