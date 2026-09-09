@@ -12,6 +12,53 @@ import type { AppNotification } from "@/stores/notificationStore";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// ─── Order-counts cache key helper ───────────────────────────────────────────
+// Matches the queryKey used in OrdersClient useQuery(["order-counts", shopId]).
+// Mutates the cached counts object in-memory — zero DB queries.
+type OrderCountsCache = {
+  total: number;
+  placed: number;
+  accepted: number;
+  printing: number;
+  ready: number;
+  completed: number;
+  cancelled: number;
+};
+
+function statusToBucket(status: string): keyof OrderCountsCache | null {
+  const s = String(status ?? "").trim().toUpperCase();
+  if (s === "PLACED" || s === "NEW") return "placed";
+  if (s === "ACCEPTED") return "accepted";
+  if (s === "PRINTING") return "printing";
+  if (s === "READY") return "ready";
+  if (s === "COMPLETED" || s === "SUCCESS") return "completed";
+  if (s === "CANCELLED" || s === "REJECTED") return "cancelled";
+  return null;
+}
+
+/**
+ * Mutates the ['order-counts', shopId] React Query cache entry in-place.
+ * delta = +1 or -1 applied to the given status bucket and total.
+ * Safe: if the cache entry doesn't exist yet, no-op (SSR hydration covers it).
+ */
+function patchCountsCache(
+  queryClient: import("@tanstack/react-query").QueryClient,
+  shopId: string,
+  status: string,
+  delta: 1 | -1,
+  alsoChangeTotal: boolean
+): void {
+  queryClient.setQueryData<OrderCountsCache>(["order-counts", shopId], (prev) => {
+    if (!prev) return prev;
+    const bucket = statusToBucket(status);
+    return {
+      ...prev,
+      total: alsoChangeTotal ? Math.max(0, prev.total + delta) : prev.total,
+      ...(bucket ? { [bucket]: Math.max(0, (prev[bucket] as number) + delta) } : {}),
+    };
+  });
+}
+
 // ─── Module-level singleton state ────────────────────────────────────────────
 // These live outside the component so they survive route changes (the component
 // re-renders but module scope is stable for the lifetime of the page session).
@@ -346,6 +393,15 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
 
     // ── Orders table changes ───────────────────────────────────────────────
     if (payload.table === "orders") {
+      if (isDev) {
+        console.log(
+          `[REALTIME] EVENT RECEIVED: ${payload.eventType} orders`,
+          (payload.new as { id?: string })?.id ?? (payload.old as { id?: string })?.id,
+          "status:",
+          (payload.new as { status?: string })?.status ?? "n/a"
+        );
+      }
+
       if (payload.eventType === "INSERT") {
         const order = mapRawToOrder(payload.new);
 
@@ -355,6 +411,13 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
             console.log("[ORDER_SYNC] ⏭ Skipping known order INSERT:", order.id);
           }
           return;
+        }
+
+        // ── Instant count update: total+1, placed+1 ────────────────────────
+        // New orders always arrive as PLACED. No DB query needed.
+        patchCountsCache(qClient, currentShopId, "PLACED", 1, true);
+        if (isDev) {
+          console.log("[REALTIME] Counts cache: +1 total, +1 placed (INSERT)");
         }
 
         pendingInserts.current.push(order);
@@ -388,6 +451,9 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
         }, 150);
       } else if (payload.eventType === "UPDATE") {
         const updated = mapRawToOrder(payload.new);
+        const oldStatus = String((payload.old as { status?: string })?.status ?? "");
+        const newStatus = String((payload.new as { status?: string })?.status ?? "");
+
         storeUpdateOrder(updated.id, updated);
 
         qClient.setQueryData<Order[]>(["orders", currentShopId], (prev) =>
@@ -406,9 +472,23 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
           return prev.filter((o) => o.id !== updated.id);
         });
 
+        // ── Instant count update: decrement old bucket, increment new bucket ──
+        // No DB query — pure in-memory mutation of the React Query cache.
+        // Example: PLACED→ACCEPTED: placed-1, accepted+1 (total unchanged)
+        if (oldStatus && newStatus && oldStatus.toUpperCase() !== newStatus.toUpperCase()) {
+          patchCountsCache(qClient, currentShopId, oldStatus, -1, false);
+          patchCountsCache(qClient, currentShopId, newStatus, 1, false);
+          if (isDev) {
+            console.log(
+              `[REALTIME] Counts cache: ${oldStatus.toUpperCase()}-1, ${newStatus.toUpperCase()}+1 (UPDATE)`
+            );
+          }
+        }
+
         qClient.invalidateQueries({ queryKey: ["dashboard-stats", currentShopId] });
       } else if (payload.eventType === "DELETE") {
         const id = (payload.old as { id: string }).id;
+        const deletedStatus = String((payload.old as { status?: string })?.status ?? "");
         storeRemoveOrder(id);
         qClient.setQueryData<Order[]>(["orders", currentShopId], (prev) =>
           (prev ?? []).filter((o) => o.id !== id)
@@ -416,6 +496,13 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
         qClient.setQueryData<Order[]>(["new-orders", currentShopId], (prev) =>
           (prev ?? []).filter((o) => o.id !== id)
         );
+        // ── Instant count update: total-1, bucket-1 ────────────────────────
+        if (deletedStatus) {
+          patchCountsCache(qClient, currentShopId, deletedStatus, -1, true);
+          if (isDev) {
+            console.log(`[REALTIME] Counts cache: -1 total, -1 ${deletedStatus.toUpperCase()} (DELETE)`);
+          }
+        }
       }
     }
   };
@@ -529,11 +616,16 @@ export function GlobalNotificationProvider({ shopId, initialNotifications }: Glo
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
           }
+          // Performance log: Realtime connected
           if (isDev) {
-            console.log("[ORDER_SYNC] ✅ Realtime channel subscribed for shop:", shopId);
+            console.log("[REALTIME] CONNECTED for shop:", shopId);
           }
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           stateRef.current.setRealtimeStatus("disconnected");
+          // Performance log: Realtime disconnected
+          if (isDev) {
+            console.log("[REALTIME] DISCONNECTED for shop:", shopId, "status:", status);
+          }
           // API polling continues — Realtime disconnect does NOT stop notifications
           handleReconnect();
         }

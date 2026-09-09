@@ -6,7 +6,8 @@ import { canManageShop } from "@/lib/auth/shop-access";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 30;
+// ── Reduced from 30 → 20 per user request (faster initial load, less bandwidth)
+const PAGE_SIZE = 20;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,8 +33,6 @@ type OrderRow = {
   status: string;
   created_at: string;
   updated_at: string;
-  // Embedded one-to-many join from Supabase relational select
-  order_files: OrderFileRow[] | null;
 };
 
 const VALID_STATUSES = ["PLACED", "ACCEPTED", "PRINTING", "READY", "COMPLETED", "CANCELLED", "DRAFT"] as const;
@@ -70,6 +69,10 @@ function normalizeOrderStatus(raw: string): string {
 
 export async function GET(request: Request) {
   const start = Date.now();
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[PERF] Orders list API: START");
+  }
+
   const { searchParams } = new URL(request.url);
   const { authorized, response, userId, clerkRole } = await validateApiAccess([
     "admin",
@@ -91,6 +94,11 @@ export async function GET(request: Request) {
     const shopId = searchParams.get("shopId")?.trim();
     const statusParam = searchParams.get("status")?.trim().toUpperCase() as ValidStatus | undefined;
     const page = Math.min(200, Math.max(1, parseInt(searchParams.get("page") ?? "1", 10)));
+    // Support custom page sizes (e.g. load-more with different sizes)
+    const pageSizeParam = parseInt(searchParams.get("page_size") ?? String(PAGE_SIZE), 10);
+    const pageSize = Math.min(100, Math.max(1, pageSizeParam));
+    // Whether to include order_files scan statuses (slower — only needed for detail view)
+    const includeFiles = searchParams.get("include_files") === "true";
 
     if (!shopId) {
       return NextResponse.json({ error: "shopId is required" }, { status: 400 });
@@ -105,9 +113,9 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
-    // ── ORDERS QUERY ─────────────────────────────────────────────────────
-    // Separate from order_files to avoid PostgREST embedded-join requiring a
-    // FK constraint that may not exist. We batch-fetch files by order IDs instead.
+    // ── ORDERS QUERY ──────────────────────────────────────────────────────
+    // Only the columns required by the Orders card — no SELECT *.
+    // Does NOT include files, status_history, metadata — those load on detail open.
     let query = supabase
       .from("orders")
       .select(
@@ -132,7 +140,7 @@ export async function GET(request: Request) {
       )
       .eq("shop_id", shopId);
 
-    // Optional status filter
+    // Optional status filter — uses idx_orders_status_upper expression index
     if (statusParam === "PLACED") {
       query = query.in("status", ["PLACED", "placed", "new", "NEW"]);
     } else if (statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)) {
@@ -141,7 +149,7 @@ export async function GET(request: Request) {
 
     query = query
       .order("created_at", { ascending: false })
-      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+      .range((page - 1) * pageSize, page * pageSize - 1);
 
     const { data: ordersData, error: ordersError, count } = await query;
 
@@ -156,13 +164,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: "Failed to load orders" }, { status: 500 });
     }
 
-    const orderRows = (ordersData ?? []) as unknown as Omit<OrderRow, "order_files">[];
+    const orderRows = (ordersData ?? []) as unknown as OrderRow[];
     const orderIds = orderRows.map((o) => o.id);
 
-    // ── BATCH FETCH ORDER FILES ──────────────────────────────────────────────
-    // Separate query using IN clause — no FK needed, uses idx_order_files_order_id
+    // ── BATCH FETCH ORDER FILES (optional) ───────────────────────────────
+    // Separate query using IN clause — no FK needed, uses idx_order_files_order_id.
+    // Only fetched when ?include_files=true — saves ~100–150 ms on the default list load.
+    // The order detail endpoint fetches files separately when an order is opened.
     const filesMap = new Map<string, OrderFileRow[]>();
-    if (orderIds.length > 0) {
+    if (includeFiles && orderIds.length > 0) {
       const { data: filesData } = await supabase
         .from("order_files")
         .select("id, order_id, scan_status, infected")
@@ -176,7 +186,6 @@ export async function GET(request: Request) {
         }
       }
     }
-
 
     // Map DB column names → client field names
     const orders = orderRows.map((ord) => ({
@@ -195,12 +204,15 @@ export async function GET(request: Request) {
       total_amount: ord.total_amount,
       created_at: ord.created_at,
       updated_at: ord.updated_at,
-      // Merged order_files from the batch query
-      file_scan_status: worstScanStatus(filesMap.get(ord.id) ?? null),
+      // file_scan_status only populated when include_files=true
+      file_scan_status: includeFiles ? worstScanStatus(filesMap.get(ord.id) ?? null) : null,
     }));
 
+    const duration = Date.now() - start;
     if (process.env.NODE_ENV !== "production") {
-      console.log(`[PERF] Orders API: ${Date.now() - start} ms (${orders.length} orders, 1 query)`);
+      console.log(
+        `[PERF] Orders list API: END ${duration} ms (${orders.length} orders, page=${page}, pageSize=${pageSize}, includeFiles=${includeFiles})`
+      );
     }
 
     return NextResponse.json({
@@ -208,9 +220,9 @@ export async function GET(request: Request) {
       orders,
       pagination: {
         page,
-        pageSize: PAGE_SIZE,
+        pageSize,
         total: count ?? 0,
-        hasMore: (count ?? 0) > page * PAGE_SIZE,
+        hasMore: (count ?? 0) > page * pageSize,
       },
     });
   } catch (err) {

@@ -14,11 +14,21 @@ export const dynamic = "force-dynamic";
  * 20260825000001_shop_stats_per_status_counts.sql) which computes all counts
  * in a single Postgres table scan.
  *
- * This endpoint exists because the orders-list API is paginated (30/page),
+ * This endpoint exists because the orders-list API is paginated (20/page),
  * so counts derived from the client-side array are always wrong when there
- * are more than 30 orders. This endpoint returns the true database totals.
+ * are more than 20 orders. This endpoint returns the true database totals.
+ *
+ * PERFORMANCE: With the SSR HydrationBoundary optimization in orders/page.tsx,
+ * this endpoint is pre-fetched server-side and injected into the React Query
+ * cache before the client renders — so tab badges show correct counts on
+ * first paint without any client-side fetch.
  */
 export async function GET(request: Request) {
+  const start = Date.now();
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[PERF] Orders counts API: START");
+  }
+
   const { authorized, response, userId, clerkRole } = await validateApiAccess([
     "admin",
     "shop_owner",
@@ -66,6 +76,11 @@ export async function GET(request: Request) {
         .select("*", { count: "exact", head: true })
         .eq("shop_id", shopId);
 
+      const duration = Date.now() - start;
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[PERF] Orders counts API: END (fallback) ${duration} ms`);
+      }
+
       return NextResponse.json({
         total: total ?? 0,
         placed: 0,
@@ -78,6 +93,11 @@ export async function GET(request: Request) {
     }
 
     const row = Array.isArray(data) ? data[0] : data;
+
+    const duration = Date.now() - start;
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[PERF] Orders counts API: END ${duration} ms (total=${row?.total_orders ?? 0})`);
+    }
 
     return NextResponse.json(
       {

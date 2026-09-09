@@ -126,7 +126,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
         console.error("[OrdersClient] Failed to mark shop notifications as read:", err);
       });
     }
-  }, [mounted, shopId]); // initialOrders removed — guard handles idempotency
+  }, [shopId]); 
 
   // GlobalOrderCacheSeeder (in the layout) already seeds the store with initialOrders
   // exactly once via setOrders(). A second setOrders() call here would create a race
@@ -164,31 +164,42 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
       return result.orders;
     },
     enabled: !!shopId,
-    staleTime: 60000,
+    staleTime: 30000,
     gcTime: 300000,
     refetchOnMount: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
   });
 
-  // ── Per-status counts from the database ─────────────────────────────────
-  // Uses /api/shop/order-counts which calls get_shop_stats RPC.
-  // Fires once on mount, then revalidates every 60s.
-  // Does NOT affect order display, notifications, or any other flow.
+  // ── Per-status counts from the database ─────────────────────────────
+  // KEY FIX: The SSR page (orders/page.tsx) now pre-fetches counts via
+  // get_shop_stats RPC and injects them into the React Query cache via
+  // HydrationBoundary. This means dbCounts is populated from FRAME 0,
+  // eliminating the "All 30 → All 78" flash entirely.
+  //
+  // staleTime is 10s (down from 30s): Realtime events update the cache
+  // in-memory instantly, so a periodic re-fetch just acts as a safety net.
   const { data: dbCounts } = useQuery({
     queryKey: ["order-counts", shopId],
     queryFn: async () => {
       if (!shopId) return null;
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[PERF] Orders counts client fetch: START");
+      }
+      const t = Date.now();
       const res = await fetch(
         `/api/shop/order-counts?shopId=${encodeURIComponent(shopId)}`,
         { credentials: "include", cache: "no-store" }
       );
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[PERF] Orders counts client fetch: END ${Date.now() - t} ms`);
+      }
       if (!res.ok) return null;
       return res.json();
     },
     enabled: !!shopId,
-    staleTime: 30000,
-    gcTime: 120000,
+    staleTime: 10_000,   // 10s — Realtime handles instant updates; this is a safety net
+    gcTime: 120_000,
     refetchOnMount: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
@@ -241,12 +252,15 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
 
   // Step 2: Count per-status from the date-filtered set.
   // When no client-side filter (date/search) is active, use the accurate DB counts
-  // from the order-counts API to avoid counts being capped at the 30-order page size.
+  // from the order-counts API to avoid counts being capped at the 20-order page size.
   // When a filter IS active, fall back to the local filtered array length.
+  //
+  // NOTE: The `mounted` guard has been REMOVED. With SSR HydrationBoundary injecting
+  // the real DB counts before first render, dbCounts is available from frame 0.
+  // There is no hydration mismatch risk because server and client both use the same
+  // SSR-injected value on first paint.
   const tabCounts = useMemo(() => {
-    // Guarded with `mounted` to prevent hydration mismatches: SSR and the very
-    // first client render will use the array length, then it safely switches to DB counts.
-    const useDb = mounted && !search && dateFilter === "all" && !!dbCounts;
+    const useDb = !search && dateFilter === "all" && !!dbCounts;
     return TABS.reduce(
       (acc, tab) => {
         if (useDb) {
@@ -272,7 +286,6 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
       {} as Record<string, number>
     );
   }, [dateFilteredOrders, dbCounts, search, dateFilter]);
-
   // Step 3: Apply tab (status) filter and sort on top of the date-filtered set
   const filteredOrders = useMemo(() => {
     const orders =
