@@ -126,7 +126,7 @@ export function OrdersClient({ initialOrders, shopId }: OrdersClientProps) {
         console.error("[OrdersClient] Failed to mark shop notifications as read:", err);
       });
     }
-  }, [shopId]); 
+  }, [mounted, shopId]); 
 
   // GlobalOrderCacheSeeder (in the layout) already seeds the store with initialOrders
   // exactly once via setOrders(). A second setOrders() call here would create a race
