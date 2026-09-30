@@ -19,8 +19,8 @@ export interface Shop {
   pincode?: string;
   lat?: number;
   lng?: number;
-  price_bw_per_page?: number;
-  price_color_per_page?: number;
+  price_bw_per_page?: number | null;
+  price_color_per_page?: number | null;
   price_double_sided_discount_pct?: number;
   shop_photo_url?: string;
   qr_code_url?: string;

@@ -133,8 +133,9 @@ export async function PATCH(request: Request) {
       console.error("[PATCH /api/shop/update] DB error:", {
         code: updateError.code,
         message: updateError.message,
+        details: updateError.details,
       });
-      return NextResponse.json({ error: "Failed to update shop" }, { status: 500 });
+      return NextResponse.json({ error: "Unable to save pricing. Please try again." }, { status: 500 });
     }
 
     if (!updatedShop) {

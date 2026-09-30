@@ -57,8 +57,8 @@ export default async function QRLandingPage({ params }: PageProps) {
       .join(", "),
     phone: rawShop.owner_phone,
     is_open: rawShop.is_open,
-    price_bw_per_page: Number(rawShop.price_bw_per_page) || 0,
-    price_color_per_page: Number(rawShop.price_color_per_page) || 0,
+    price_bw_per_page: rawShop.price_bw_per_page != null ? Number(rawShop.price_bw_per_page) : null,
+    price_color_per_page: rawShop.price_color_per_page != null ? Number(rawShop.price_color_per_page) : null,
     opening_time: bh?.opening_time || "09:00",
     closing_time: bh?.closing_time || "21:00",
     services: bh?.services || [],
@@ -113,8 +113,8 @@ export default async function QRLandingPage({ params }: PageProps) {
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Black & White</span>
               <p className="text-3xl font-black text-slate-800 mt-1">
-                {formatCurrency(Number(shop.price_bw_per_page))}
-                <span className="text-xs font-semibold text-slate-400 ml-0.5">/page</span>
+                {shop.price_bw_per_page != null ? formatCurrency(Number(shop.price_bw_per_page)) : "—"}
+                {shop.price_bw_per_page != null && <span className="text-xs font-semibold text-slate-400 ml-0.5">/page</span>}
               </p>
             </div>
             <div className="mt-4 text-[10px] font-bold text-slate-400 uppercase">Standard Laser Print</div>
@@ -124,8 +124,8 @@ export default async function QRLandingPage({ params }: PageProps) {
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Color Print</span>
               <p className="text-3xl font-black text-emerald-600 mt-1">
-                {formatCurrency(Number(shop.price_color_per_page))}
-                <span className="text-xs font-semibold text-slate-400 ml-0.5">/page</span>
+                {shop.price_color_per_page != null ? formatCurrency(Number(shop.price_color_per_page)) : "—"}
+                {shop.price_color_per_page != null && <span className="text-xs font-semibold text-slate-400 ml-0.5">/page</span>}
               </p>
             </div>
             <div className="mt-4 text-[10px] font-bold text-emerald-600 uppercase">Vivid High-Ink</div>

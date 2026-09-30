@@ -78,6 +78,8 @@ export async function POST(req: Request) {
         pincode,
         shop_code: shopCode,
         slug,
+        price_bw_per_page: null,
+        price_color_per_page: null,
         is_approved: true,
         is_active: true,
         is_open: true,

@@ -61,16 +61,45 @@ const ShopCode = z
   .toUpperCase()
   .regex(/^[A-Z0-9]{6}$/, "Shop code must be exactly 6 alphanumeric characters");
 
+export const ShopPricingSchema = z.object({
+  shopId: z.string().uuid("shopId must be a valid UUID").optional(),
+  price_bw_per_page: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? NaN : Number(v)),
+    z.number({
+      message: "Please enter a valid Black & White price.",
+    }).gt(0, "Please enter a valid Black & White price.")
+  ),
+  price_color_per_page: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? NaN : Number(v)),
+    z.number({
+      message: "Please enter a valid Full Color price.",
+    }).gt(0, "Please enter a valid Full Color price.")
+  ),
+});
+export type ShopPricingInput = z.infer<typeof ShopPricingSchema>;
+
 // ─── Shop Profile (full — used by ShopProfileForm / Settings tab) ─────────────
 
 export const ShopProfileSchema = z.object({
-  name: z.string().trim().min(3, "Shop name must be at least 3 characters").max(100),
-  address: z.string().trim().min(10, "Address must be at least 10 characters").max(300),
+  shopId: z.string().uuid().optional(),
+  name: z.string().trim().min(2, "Shop name must be at least 2 characters").max(100),
+  address: z.string().trim().min(3, "Address must be at least 3 characters").max(300),
   phone: IndianPhone,
   owner_email: z.string().email(),
-  // Minimum 0.01 — prevents free pricing that would create zero-amount orders
-  price_bw_per_page: z.coerce.number().min(0.01, "B&W price must be at least ₹0.01"),
-  price_color_per_page: z.coerce.number().min(0.01, "Color price must be at least ₹0.01"),
+  price_bw_per_page: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
+    z.number({ message: "Please enter a valid Black & White price." })
+      .gt(0, "Please enter a valid Black & White price.")
+      .nullable()
+      .optional()
+  ),
+  price_color_per_page: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
+    z.number({ message: "Please enter a valid Full Color price." })
+      .gt(0, "Please enter a valid Full Color price.")
+      .nullable()
+      .optional()
+  ),
   opening_time: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM format").optional(),
   closing_time: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM format").optional(),
   working_days: z.array(z.string()).max(7).optional(),

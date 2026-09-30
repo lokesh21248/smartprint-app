@@ -66,8 +66,8 @@ export default function OrderFlowPage() {
     if (!shop) return 0;
     const totalPages = files.reduce((sum, f) => sum + f.pages, 0);
     const rate = config.color === "bw"
-      ? (shop.price_bw_per_page ?? 2)
-      : (shop.price_color_per_page ?? 10);
+      ? (shop.price_bw_per_page ?? 0)
+      : (shop.price_color_per_page ?? 0);
 
     let total = totalPages * config.copies * rate;
 

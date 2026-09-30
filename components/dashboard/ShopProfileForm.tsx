@@ -1,18 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Store, IndianRupee, Clock, Wrench, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useShopStore } from "@/stores/shopStore";
-import { ShopProfileSchema, type ShopProfileInput } from "@/lib/validators";
 import type { Shop } from "@/types";
-import type { z } from "zod";
-
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
@@ -26,19 +23,39 @@ interface ShopProfileFormProps {
   shop: Shop;
 }
 
-type ShopProfileFormValues = z.input<typeof ShopProfileSchema>;
+interface FormValues {
+  name: string;
+  address: string;
+  phone: string;
+  owner_email: string;
+  price_bw_per_page: string | number;
+  price_color_per_page: string | number;
+  opening_time: string;
+  closing_time: string;
+  working_days: string[];
+  services: string[];
+}
 
 export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
+  const router = useRouter();
   const { shop: storeShop, setShop, toggleShopOpen } = useShopStore();
-  const shop = storeShop ?? initialShop;
+
+  // Sync store with incoming fresh server shop
+  useEffect(() => {
+    if (initialShop) {
+      setShop(initialShop);
+    }
+  }, [initialShop, setShop]);
+
+  const shop = (storeShop && storeShop.id === initialShop.id) ? storeShop : initialShop;
   const shopRecord = shop as unknown as {
     id: string;
     name?: string;
     address_line1?: string;
     owner_phone?: string;
     owner_email?: string;
-    price_bw_per_page?: number;
-    price_color_per_page?: number;
+    price_bw_per_page?: number | null;
+    price_color_per_page?: number | null;
     business_hours?: {
       opening_time?: string;
       closing_time?: string;
@@ -52,21 +69,31 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const [toggling, setToggling] = useState(false);
   const [activeSection, setActiveSection] = useState<"info" | "pricing" | "timings" | "services">("info");
 
+  // Format pricing: start EMPTY if unconfigured or null — never fallback to 200/1000/1/5
+  const initialBwPrice = (shopRecord.price_bw_per_page != null && Number(shopRecord.price_bw_per_page) > 0)
+    ? String(shopRecord.price_bw_per_page)
+    : "";
+  const initialColorPrice = (shopRecord.price_color_per_page != null && Number(shopRecord.price_color_per_page) > 0)
+    ? String(shopRecord.price_color_per_page)
+    : "";
+
   const {
     register,
-    handleSubmit,
     formState: { errors },
     setValue,
+    setError,
+    clearErrors,
     watch,
-  } = useForm<ShopProfileFormValues>({
-    resolver: zodResolver(ShopProfileSchema),
+    getValues,
+    reset,
+  } = useForm<FormValues>({
     defaultValues: {
       name: shopRecord.name || "",
       address: shopRecord.address_line1 || "",
       phone: shopRecord.owner_phone || "",
       owner_email: shopRecord.owner_email || "",
-      price_bw_per_page: shopRecord.price_bw_per_page || 1,
-      price_color_per_page: shopRecord.price_color_per_page || 5,
+      price_bw_per_page: initialBwPrice,
+      price_color_per_page: initialColorPrice,
       opening_time: shopRecord.business_hours?.opening_time || "09:00",
       closing_time: shopRecord.business_hours?.closing_time || "21:00",
       working_days: shopRecord.business_hours?.working_days || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
@@ -74,49 +101,253 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
     },
   });
 
+  // Re-sync form fields if initialShop changes from server
+  useEffect(() => {
+    reset({
+      name: initialShop.name || "",
+      address: initialShop.address_line1 || "",
+      phone: initialShop.owner_phone || "",
+      owner_email: initialShop.owner_email || "",
+      price_bw_per_page: (initialShop.price_bw_per_page != null && Number(initialShop.price_bw_per_page) > 0)
+        ? String(initialShop.price_bw_per_page)
+        : "",
+      price_color_per_page: (initialShop.price_color_per_page != null && Number(initialShop.price_color_per_page) > 0)
+        ? String(initialShop.price_color_per_page)
+        : "",
+      opening_time: (initialShop.business_hours as Record<string, unknown> | undefined)?.opening_time as string || "09:00",
+      closing_time: (initialShop.business_hours as Record<string, unknown> | undefined)?.closing_time as string || "21:00",
+      working_days: ((initialShop.business_hours as Record<string, unknown> | undefined)?.working_days as string[]) || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+      services: ((initialShop.business_hours as Record<string, unknown> | undefined)?.services as string[]) || [],
+    });
+  }, [initialShop, reset]);
+
   const currentServices = watch("services") || [];
   const currentDays = watch("working_days") || [];
 
-  const handleSave = async (data: ShopProfileFormValues) => {
-    setSaving(true);
-    try {
-      const normalizedData = ShopProfileSchema.parse(data) as ShopProfileInput;
-      const res = await fetch("/api/shop/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(normalizedData),
-      });
+  const handleSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (saving) return;
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        throw new Error(errData?.error || "Failed to save profile");
+    clearErrors();
+    const data = getValues();
+
+    if (activeSection === "pricing") {
+      setSaving(true);
+      try {
+        const rawBw = String(data.price_bw_per_page ?? "").trim();
+        const rawColor = String(data.price_color_per_page ?? "").trim();
+
+        // 1. Validate Black & White price
+        if (!rawBw || isNaN(Number(rawBw)) || Number(rawBw) <= 0) {
+          setError("price_bw_per_page", { message: "Please enter a valid Black & White price." });
+          toast.error("Please enter a valid Black & White price.");
+          setSaving(false);
+          return;
+        }
+
+        // 2. Validate Full Color price
+        if (!rawColor || isNaN(Number(rawColor)) || Number(rawColor) <= 0) {
+          setError("price_color_per_page", { message: "Please enter a valid Full Color price." });
+          toast.error("Please enter a valid Full Color price.");
+          setSaving(false);
+          return;
+        }
+
+        const numBw = Number(rawBw);
+        const numColor = Number(rawColor);
+
+        // 3. API request to update pricing for the authenticated shop
+        const res = await fetch("/api/shop/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shopId: shop.id,
+            price_bw_per_page: numBw,
+            price_color_per_page: numColor,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          const devMessage = errData?.error || "Failed to save pricing. Please try again.";
+          console.error("[Shop Pricing Save] API error:", devMessage, errData);
+          throw new Error(devMessage);
+        }
+
+        // 4. Update frontend store and state
+        const updatedShop = {
+          ...shop,
+          price_bw_per_page: numBw,
+          price_color_per_page: numColor,
+        };
+
+        setShop(updatedShop as Shop);
+        setValue("price_bw_per_page", String(numBw));
+        setValue("price_color_per_page", String(numColor));
+        toast.success("Pricing saved successfully");
+        router.refresh();
+      } catch (err) {
+        console.error("[Shop Pricing Save] Unhandled error:", err);
+        const errorMessage = err instanceof Error ? err.message : "Failed to save pricing. Please try again.";
+        toast.error(errorMessage);
+      } finally {
+        setSaving(false);
       }
-      
-      // Map payload back to frontend Shop interface before updating store
-      const updatedShop = {
-        ...shop,
-        name: normalizedData.name,
-        address_line1: normalizedData.address,
-        owner_phone: normalizedData.phone,
-        owner_email: normalizedData.owner_email,
-        price_bw_per_page: normalizedData.price_bw_per_page,
-        price_color_per_page: normalizedData.price_color_per_page,
-        business_hours: {
-          opening_time: normalizedData.opening_time,
-          closing_time: normalizedData.closing_time,
-          working_days: normalizedData.working_days,
-          services: normalizedData.services,
-        },
-      };
-      
-      setShop(updatedShop as Shop);
-      toast.success("✅ Shop profile updated!");
-    } catch (err) {
-      console.error("Shop Profile Save Error:", err);
-      const errorMessage = err instanceof Error ? err.message : "Failed to save. Please try again.";
-      toast.error(errorMessage);
-    } finally {
-      setSaving(false);
+      return;
+    }
+
+    if (activeSection === "info") {
+      setSaving(true);
+      try {
+        const name = String(data.name ?? "").trim();
+        const address = String(data.address ?? "").trim();
+        const phone = String(data.phone ?? "").trim();
+        const email = String(data.owner_email ?? "").trim();
+
+        if (name.length < 2) {
+          setError("name", { message: "Shop name must be at least 2 characters." });
+          toast.error("Shop name must be at least 2 characters.");
+          setSaving(false);
+          return;
+        }
+        if (address.length < 3) {
+          setError("address", { message: "Address must be at least 3 characters." });
+          toast.error("Address must be at least 3 characters.");
+          setSaving(false);
+          return;
+        }
+        if (!/^[6-9]\d{9}$/.test(phone)) {
+          setError("phone", { message: "Enter a valid 10-digit mobile number." });
+          toast.error("Enter a valid 10-digit mobile number.");
+          setSaving(false);
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          setError("owner_email", { message: "Enter a valid email address." });
+          toast.error("Enter a valid email address.");
+          setSaving(false);
+          return;
+        }
+
+        const res = await fetch("/api/shop/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shopId: shop.id,
+            name,
+            address,
+            phone,
+            owner_email: email,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          throw new Error(errData?.error || "Failed to save profile. Please try again.");
+        }
+
+        const updatedShop = {
+          ...shop,
+          name,
+          address_line1: address,
+          owner_phone: phone,
+          owner_email: email,
+        };
+        setShop(updatedShop as Shop);
+        toast.success("✅ Shop profile updated!");
+        router.refresh();
+      } catch (err) {
+        console.error("[Shop Profile Save] Error:", err);
+        const errorMessage = err instanceof Error ? err.message : "Failed to save. Please try again.";
+        toast.error(errorMessage);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (activeSection === "timings") {
+      setSaving(true);
+      try {
+        const opening_time = data.opening_time;
+        const closing_time = data.closing_time;
+        const working_days = data.working_days;
+
+        const res = await fetch("/api/shop/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shopId: shop.id,
+            opening_time,
+            closing_time,
+            working_days,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          throw new Error(errData?.error || "Failed to save timings. Please try again.");
+        }
+
+        const updatedShop = {
+          ...shop,
+          business_hours: {
+            ...((shop.business_hours as Record<string, unknown>) || {}),
+            opening_time,
+            closing_time,
+            working_days,
+          },
+        };
+        setShop(updatedShop as Shop);
+        toast.success("✅ Shop timings updated!");
+        router.refresh();
+      } catch (err) {
+        console.error("[Shop Timings Save] Error:", err);
+        const errorMessage = err instanceof Error ? err.message : "Failed to save. Please try again.";
+        toast.error(errorMessage);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (activeSection === "services") {
+      setSaving(true);
+      try {
+        const services = data.services;
+
+        const res = await fetch("/api/shop/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shopId: shop.id,
+            services,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          throw new Error(errData?.error || "Failed to save services. Please try again.");
+        }
+
+        const updatedShop = {
+          ...shop,
+          business_hours: {
+            ...((shop.business_hours as Record<string, unknown>) || {}),
+            services,
+          },
+        };
+        setShop(updatedShop as Shop);
+        toast.success("✅ Services updated!");
+        router.refresh();
+      } catch (err) {
+        console.error("[Shop Services Save] Error:", err);
+        const errorMessage = err instanceof Error ? err.message : "Failed to save. Please try again.";
+        toast.error(errorMessage);
+      } finally {
+        setSaving(false);
+      }
+      return;
     }
   };
 
@@ -180,7 +411,10 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
             return (
               <button
                 key={s.id}
-                onClick={() => setActiveSection(s.id)}
+                onClick={() => {
+                  clearErrors();
+                  setActiveSection(s.id);
+                }}
                 className={`flex items-center gap-3 w-full p-4 rounded-xl text-sm font-medium transition-all ${
                   activeSection === s.id 
                     ? "bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-100" 
@@ -196,7 +430,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
 
         {/* Content */}
         <div className="lg:col-span-3">
-          <form onSubmit={handleSubmit(handleSave)} className="space-y-6">
+          <form onSubmit={handleSave} className="space-y-6">
             {/* Basic Info */}
             {activeSection === "info" && (
               <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
@@ -236,6 +470,8 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
                       <Input 
                         type="number" 
                         step="0.5" 
+                        min="0.01"
+                        placeholder="Enter price"
                         className="bg-white" 
                         error={errors.price_bw_per_page?.message} 
                         {...register("price_bw_per_page")} 
@@ -249,6 +485,8 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
                       <Input 
                         type="number" 
                         step="0.5" 
+                        min="0.01"
+                        placeholder="Enter price"
                         className="bg-white" 
                         error={errors.price_color_per_page?.message} 
                         {...register("price_color_per_page")} 
@@ -318,7 +556,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
                           const next = isChecked 
                             ? currentServices.filter(s => s !== svc)
                             : [...currentServices, svc];
-                          setValue("services", next);
+                            setValue("services", next);
                         }}
                         className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left ${
                           isChecked
@@ -340,8 +578,14 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
             )}
 
             <div className="flex justify-end">
-              <Button type="submit" loading={saving} size="lg" className="px-8 shadow-md">
-                <Save className="h-4 w-4" /> Save All Changes
+              <Button 
+                type="submit" 
+                loading={saving} 
+                disabled={saving} 
+                size="lg" 
+                className="px-8 shadow-md"
+              >
+                <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save All Changes"}
               </Button>
             </div>
           </form>
