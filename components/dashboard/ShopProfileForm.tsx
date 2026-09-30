@@ -69,12 +69,12 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const [toggling, setToggling] = useState(false);
   const [activeSection, setActiveSection] = useState<"info" | "pricing" | "timings" | "services">("info");
 
-  // Format pricing: start EMPTY if unconfigured or null — never fallback to 200/1000/1/5
+  // Format pricing: start EMPTY if unconfigured or null — display whole number digits only
   const initialBwPrice = (shopRecord.price_bw_per_page != null && Number(shopRecord.price_bw_per_page) > 0)
-    ? String(shopRecord.price_bw_per_page)
+    ? String(Math.round(Number(shopRecord.price_bw_per_page)))
     : "";
   const initialColorPrice = (shopRecord.price_color_per_page != null && Number(shopRecord.price_color_per_page) > 0)
-    ? String(shopRecord.price_color_per_page)
+    ? String(Math.round(Number(shopRecord.price_color_per_page)))
     : "";
 
   const {
@@ -109,10 +109,10 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
       phone: initialShop.owner_phone || "",
       owner_email: initialShop.owner_email || "",
       price_bw_per_page: (initialShop.price_bw_per_page != null && Number(initialShop.price_bw_per_page) > 0)
-        ? String(initialShop.price_bw_per_page)
+        ? String(Math.round(Number(initialShop.price_bw_per_page)))
         : "",
       price_color_per_page: (initialShop.price_color_per_page != null && Number(initialShop.price_color_per_page) > 0)
-        ? String(initialShop.price_color_per_page)
+        ? String(Math.round(Number(initialShop.price_color_per_page)))
         : "",
       opening_time: (initialShop.business_hours as Record<string, unknown> | undefined)?.opening_time as string || "09:00",
       closing_time: (initialShop.business_hours as Record<string, unknown> | undefined)?.closing_time as string || "21:00",
@@ -137,24 +137,24 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
         const rawBw = String(data.price_bw_per_page ?? "").trim();
         const rawColor = String(data.price_color_per_page ?? "").trim();
 
-        // 1. Validate Black & White price
-        if (!rawBw || isNaN(Number(rawBw)) || Number(rawBw) <= 0) {
-          setError("price_bw_per_page", { message: "Please enter a valid Black & White price." });
-          toast.error("Please enter a valid Black & White price.");
+        // 1. Validate Black & White price (whole digits only, no decimals)
+        if (!rawBw || !/^\d+$/.test(rawBw) || parseInt(rawBw, 10) <= 0) {
+          setError("price_bw_per_page", { message: "Please enter a whole number price without decimals." });
+          toast.error("Please enter a whole number without decimals for Black & White price.");
           setSaving(false);
           return;
         }
 
-        // 2. Validate Full Color price
-        if (!rawColor || isNaN(Number(rawColor)) || Number(rawColor) <= 0) {
-          setError("price_color_per_page", { message: "Please enter a valid Full Color price." });
-          toast.error("Please enter a valid Full Color price.");
+        // 2. Validate Full Color price (whole digits only, no decimals)
+        if (!rawColor || !/^\d+$/.test(rawColor) || parseInt(rawColor, 10) <= 0) {
+          setError("price_color_per_page", { message: "Please enter a whole number price without decimals." });
+          toast.error("Please enter a whole number without decimals for Full Color price.");
           setSaving(false);
           return;
         }
 
-        const numBw = Number(rawBw);
-        const numColor = Number(rawColor);
+        const numBw = parseInt(rawBw, 10);
+        const numColor = parseInt(rawColor, 10);
 
         // 3. API request to update pricing for the authenticated shop
         const res = await fetch("/api/shop/update", {
@@ -468,30 +468,114 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-emerald-600 font-bold">₹</span>
                       <Input 
-                        type="number" 
-                        step="0.5" 
-                        min="0.01"
+                        type="text" 
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         placeholder="Enter price"
-                        className="bg-white" 
+                        className="bg-white font-medium" 
                         error={errors.price_bw_per_page?.message} 
-                        {...register("price_bw_per_page")} 
+                        {...register("price_bw_per_page", {
+                          onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                            const digitsOnly = e.target.value.replace(/\D/g, "");
+                            setValue("price_bw_per_page", digitsOnly, { shouldValidate: true });
+                          },
+                        })}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === "Backspace" ||
+                            e.key === "Delete" ||
+                            e.key === "Tab" ||
+                            e.key === "Escape" ||
+                            e.key === "Enter" ||
+                            e.key === "ArrowLeft" ||
+                            e.key === "ArrowRight" ||
+                            e.key === "ArrowUp" ||
+                            e.key === "ArrowDown" ||
+                            e.key === "Home" ||
+                            e.key === "End" ||
+                            ((e.ctrlKey || e.metaKey) && ["a", "c", "v", "x", "z", "A", "C", "V", "X", "Z"].includes(e.key))
+                          ) {
+                            return;
+                          }
+                          // Strictly prevent decimal points, commas, minus signs, letters, etc.
+                          if (!/^\d$/.test(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          const pasted = e.clipboardData.getData("text").replace(/\D/g, "");
+                          if (pasted) {
+                            setValue("price_bw_per_page", pasted, { shouldValidate: true });
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const clean = e.target.value.replace(/\D/g, "");
+                          if (clean) {
+                            const num = parseInt(clean, 10);
+                            setValue("price_bw_per_page", num > 0 ? String(num) : "");
+                          }
+                        }}
                       />
                     </div>
+                    <p className="text-xs text-emerald-700 mt-1.5 font-medium">Whole rupee digits only (no decimals)</p>
                   </div>
                   <div className="p-4 bg-orange-50 rounded-xl border border-orange-100">
                     <label className="block text-sm font-bold text-orange-800 mb-2">Full Color</label>
                     <div className="flex items-center gap-2">
                       <span className="text-orange-600 font-bold">₹</span>
                       <Input 
-                        type="number" 
-                        step="0.5" 
-                        min="0.01"
+                        type="text" 
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         placeholder="Enter price"
-                        className="bg-white" 
+                        className="bg-white font-medium" 
                         error={errors.price_color_per_page?.message} 
-                        {...register("price_color_per_page")} 
+                        {...register("price_color_per_page", {
+                          onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                            const digitsOnly = e.target.value.replace(/\D/g, "");
+                            setValue("price_color_per_page", digitsOnly, { shouldValidate: true });
+                          },
+                        })}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === "Backspace" ||
+                            e.key === "Delete" ||
+                            e.key === "Tab" ||
+                            e.key === "Escape" ||
+                            e.key === "Enter" ||
+                            e.key === "ArrowLeft" ||
+                            e.key === "ArrowRight" ||
+                            e.key === "ArrowUp" ||
+                            e.key === "ArrowDown" ||
+                            e.key === "Home" ||
+                            e.key === "End" ||
+                            ((e.ctrlKey || e.metaKey) && ["a", "c", "v", "x", "z", "A", "C", "V", "X", "Z"].includes(e.key))
+                          ) {
+                            return;
+                          }
+                          // Strictly prevent decimal points, commas, minus signs, letters, etc.
+                          if (!/^\d$/.test(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          const pasted = e.clipboardData.getData("text").replace(/\D/g, "");
+                          if (pasted) {
+                            setValue("price_color_per_page", pasted, { shouldValidate: true });
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const clean = e.target.value.replace(/\D/g, "");
+                          if (clean) {
+                            const num = parseInt(clean, 10);
+                            setValue("price_color_per_page", num > 0 ? String(num) : "");
+                          }
+                        }}
                       />
                     </div>
+                    <p className="text-xs text-orange-700 mt-1.5 font-medium">Whole rupee digits only (no decimals)</p>
                   </div>
                 </div>
               </div>

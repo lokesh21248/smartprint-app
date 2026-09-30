@@ -67,13 +67,17 @@ export const ShopPricingSchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? NaN : Number(v)),
     z.number({
       message: "Please enter a valid Black & White price.",
-    }).gt(0, "Please enter a valid Black & White price.")
+    })
+      .int("Please enter a whole number without decimals.")
+      .gt(0, "Please enter a valid Black & White price.")
   ),
   price_color_per_page: z.preprocess(
     (v) => (v === "" || v === null || v === undefined ? NaN : Number(v)),
     z.number({
       message: "Please enter a valid Full Color price.",
-    }).gt(0, "Please enter a valid Full Color price.")
+    })
+      .int("Please enter a whole number without decimals.")
+      .gt(0, "Please enter a valid Full Color price.")
   ),
 });
 export type ShopPricingInput = z.infer<typeof ShopPricingSchema>;
@@ -89,6 +93,7 @@ export const ShopProfileSchema = z.object({
   price_bw_per_page: z.preprocess(
     (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
     z.number({ message: "Please enter a valid Black & White price." })
+      .int("Please enter a whole number without decimals.")
       .gt(0, "Please enter a valid Black & White price.")
       .nullable()
       .optional()
@@ -96,6 +101,7 @@ export const ShopProfileSchema = z.object({
   price_color_per_page: z.preprocess(
     (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
     z.number({ message: "Please enter a valid Full Color price." })
+      .int("Please enter a whole number without decimals.")
       .gt(0, "Please enter a valid Full Color price.")
       .nullable()
       .optional()
