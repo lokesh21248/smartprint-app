@@ -269,7 +269,13 @@ const nextConfig = {
       },
       // ── Public static marketing assets and brand icons ────────────────────────
       {
-        source: "/(logo.webp|logo.png|favicon.ico|icon.png|icon-192.png|icon-512.png|apple-touch-icon.png|blog-(.*).webp)",
+        source: "/(logo.webp|logo.png|favicon.ico|icon.png|icon-192.png|icon-512.png|apple-touch-icon.png)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+        ],
+      },
+      {
+        source: "/blog-:file*",
         headers: [
           { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
         ],

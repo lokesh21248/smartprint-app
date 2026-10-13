@@ -11,7 +11,8 @@
     "push": "git add . && git commit -m \"feat: production push\" && git push -f",
     "verify:auth": "node scripts/verify-auth.js",
     "check:admin-leak": "node scripts/check-admin-leak.js",
-    "db:validate": "npx tsx scripts/validate-db.ts"
+    "db:validate": "npx tsx scripts/validate-db.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.0.0",
