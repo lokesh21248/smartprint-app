@@ -82,8 +82,8 @@ const nextConfig = {
       };
     }
 
-    // ── PRODUCTION ONLY: stable chunk IDs ─────────────────────────────────
-    if (!dev) {
+    // ── PRODUCTION ONLY (Client bundles): stable chunk IDs & vendor splitting ──
+    if (!dev && !isServer) {
       config.optimization.moduleIds = 'deterministic';
       config.optimization.chunkIds = 'deterministic';
 
@@ -259,13 +259,24 @@ const nextConfig = {
         source: "/s/:slug*",
         headers: [{ key: "Cache-Control", value: "public, s-maxage=300, stale-while-revalidate=600" }],
       },
+      // ── Never publicly cache authenticated, customer, or storage APIs ────────
       {
-        source: "/api/orders",
-        headers: [{ key: "Cache-Control", value: "public, s-maxage=10, stale-while-revalidate=30" }],
+        source: "/(api/orders|api/storage|api/shop|api/staff|api/admin|api/sessions|api/auth)(.*)",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, no-cache, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+        ],
+      },
+      // ── Public static marketing assets and brand icons ────────────────────────
+      {
+        source: "/(logo.webp|logo.png|favicon.ico|icon.png|icon-192.png|icon-512.png|apple-touch-icon.png|blog-(.*).webp)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+        ],
       },
       {
-        source: "/(dashboard|admin|api/admin)(.*)",
-        headers: [{ key: "Cache-Control", value: "no-store" }],
+        source: "/(dashboard|admin)(.*)",
+        headers: [{ key: "Cache-Control", value: "private, no-store, no-cache, must-revalidate" }],
       },
       // ── SEO: noindex HTTP header for auth routes ─────────────────────────────
       // X-Robots-Tag is the most reliable noindex signal — it works before JS

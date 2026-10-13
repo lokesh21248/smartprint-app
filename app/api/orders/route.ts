@@ -657,14 +657,11 @@ export async function GET(request: Request) {
       },
     };
 
-    const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "REJECTED"];
-    const isTerminal = TERMINAL_STATUSES.includes(data.status as string);
-    const cacheHeader = isTerminal
-      ? "public, s-maxage=86400, immutable"
-      : "public, s-maxage=10, stale-while-revalidate=30";
-
     return NextResponse.json(mappedOrder, {
-      headers: { "Cache-Control": cacheHeader },
+      headers: {
+        "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+      },
     });
   } catch (err) {
     console.error("[orders:GET] error:", err);

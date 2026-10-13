@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Upload, FileText, Settings, User, CheckCircle2, 
   ArrowRight, ArrowLeft, Loader2,
@@ -22,8 +23,25 @@ export default function OrderFlowPage() {
   const shopId = params.shopId as string;
   
   const [currentStep, setCurrentStep] = useState<Step>("upload");
-  const [shop, setShop] = useState<Shop | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+
+  // Cached via TanStack Query — 5m staleTime prevents re-fetching during ordering flow
+  const { data: shop = null, isLoading } = useQuery<Shop | null>({
+    queryKey: ["shop", "public", "id", shopId],
+    queryFn: async () => {
+      const shopRes = await fetch(`/api/shop/public?id=${encodeURIComponent(shopId)}`); 
+      const data = await shopRes.json();
+      if (!shopRes.ok || data.error) {
+        toast.error("Shop not found");
+        router.push("/");
+        return null;
+      }
+      return data as unknown as Shop;
+    },
+    enabled: !!shopId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
   
   // Order State
   const [files, setFiles] = useState<{ file: File; pages: number }[]>([]);
@@ -39,28 +57,6 @@ export default function OrderFlowPage() {
   const [notes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState<{ id: string; token: string } | null>(null);
-
-  // Fetch shop details via Public API (No direct DB access)
-  useEffect(() => {
-    async function loadShop() {
-      try {
-        const shopRes = await fetch(`/api/shop/public?id=${shopId}`); 
-        const data = await shopRes.json();
-        
-        if (!shopRes.ok || data.error) {
-          toast.error("Shop not found");
-          router.push("/");
-          return;
-        }
-        setShop(data as unknown as Shop);
-      } catch {
-        toast.error("Failed to load shop details");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadShop();
-  }, [shopId, router]);
 
   const calculateTotal = useCallback(() => {
     if (!shop) return 0;

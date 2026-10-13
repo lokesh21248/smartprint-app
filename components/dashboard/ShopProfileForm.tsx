@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useShopStore } from "@/stores/shopStore";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Shop } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -38,7 +39,14 @@ interface FormValues {
 
 export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { shop: storeShop, setShop, toggleShopOpen } = useShopStore();
+
+  const invalidateShopQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["shop"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["partner-shops"] });
+  };
 
   // Sync store with incoming fresh server shop
   useEffect(() => {
@@ -184,6 +192,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
         setShop(updatedShop as Shop);
         setValue("price_bw_per_page", String(numBw));
         setValue("price_color_per_page", String(numColor));
+        invalidateShopQueries();
         toast.success("Pricing saved successfully");
         router.refresh();
       } catch (err) {
@@ -254,6 +263,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
           owner_email: email,
         };
         setShop(updatedShop as Shop);
+        invalidateShopQueries();
         toast.success("✅ Shop profile updated!");
         router.refresh();
       } catch (err) {
@@ -299,6 +309,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
           },
         };
         setShop(updatedShop as Shop);
+        invalidateShopQueries();
         toast.success("✅ Shop timings updated!");
         router.refresh();
       } catch (err) {
@@ -338,6 +349,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
           },
         };
         setShop(updatedShop as Shop);
+        invalidateShopQueries();
         toast.success("✅ Services updated!");
         router.refresh();
       } catch (err) {
@@ -357,6 +369,7 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
       const res = await fetch("/api/shop/toggle-open", { method: "POST" });
       if (res.ok) {
         toggleShopOpen();
+        invalidateShopQueries();
         toast.success(shop.is_open ? "🔴 Shop is now closed" : "🟢 Shop is now open");
       }
     } finally {

@@ -1287,7 +1287,7 @@ export const allPosts: BlogPost[] = [
     date: "2025-05-20",
     readingTime: "10 min read",
     category: "Business Growth",
-    coverImage: "/blog-revenue-growth.png",
+    coverImage: "/blog-revenue-growth.webp",
     coverImageAlt: "Revenue growth chart for an Indian print shop business",
     content: increaseRevenueContent,
   },

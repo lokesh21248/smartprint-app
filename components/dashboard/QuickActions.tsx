@@ -7,13 +7,14 @@ import { useShopStore } from "@/stores/shopStore";
 import { toast } from "sonner";
 import { useState } from "react";
 import type { Shop } from "@/types";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface QuickActionsProps {
   shop: Shop;
 }
 
 export function QuickActions({ shop: initialShop }: QuickActionsProps) {
+  const queryClient = useQueryClient();
   const { shop, toggleShopOpen } = useShopStore();
   const currentShop = shop ?? initialShop;
   const [toggling, setToggling] = useState(false);
@@ -44,6 +45,8 @@ export function QuickActions({ shop: initialShop }: QuickActionsProps) {
       const res = await fetch("/api/shop/toggle-open", { method: "POST" });
       if (res.ok) {
         toggleShopOpen();
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["shop"] });
         toast.success(
           currentShop.is_open
             ? "🔴 Shop is now closed"

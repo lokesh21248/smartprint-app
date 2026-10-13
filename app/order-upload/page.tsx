@@ -26,6 +26,7 @@ import { UploadProgressBar } from "@/components/upload/UploadProgressBar";
 import type { UploadPhase } from "@/components/upload/UploadProgressBar";
 import { fetchWithRetry } from "@/lib/utils/fetchWithRetry";
 import { createOrderTracker } from "@/lib/monitoring/orderMetrics";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UploadedFile } from "@/types";
 import type { MultiFileUploaderRef } from "@/components/upload/MultiFileUploader";
 import { Scan2PaperLogo } from "@/components/shared/Scan2PaperLogo";
@@ -52,16 +53,6 @@ interface ShopDisplay {
   price_bw_per_page?: number;
   price_color_per_page?: number;
 }
-
-// ─── Module-level shop cache ──────────────────────────────────────────────────
-// Caches shop details in memory for 5 minutes so repeat visits within the same
-// browser session never pay a network round-trip.
-interface ShopCacheEntry {
-  data: ShopDisplay;
-  expiresAt: number;
-}
-const shopCache = new Map<string, ShopCacheEntry>();
-const SHOP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ─── Generate idempotency key ─────────────────────────────────────────────────
 function generateIdempotencyKey(shopId: string, phone: string, fileNames: string): string {
@@ -270,14 +261,40 @@ const CheckoutBarCard = memo(function CheckoutBarCard({
 
 // ─── Inner Page Component ─────────────────────────────────────────────────────
 function OrderUploadPageInner() {
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
   const shopSlug = searchParams.get("shopSlug");
   const nameParam = searchParams.get("name") ?? "";
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [shop, setShop] = useState<ShopDisplay | null>(null);
-  const [isLoadingShop, setIsLoadingShop] = useState(true);
+  // Cached via TanStack Query — 5m staleTime prevents re-fetching on back-forward nav
+  const { data: shop = null, isLoading: isLoadingShop } = useQuery<ShopDisplay | null>({
+    queryKey: ["shop", "public", shopSlug],
+    queryFn: async () => {
+      if (!shopSlug) return null;
+      const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
+      if (!res.ok) {
+        toast.error("Shop not found or unavailable");
+        router.replace("/");
+        return null;
+      }
+      const data = await res.json();
+      return {
+        id: data.id,
+        name: data.name,
+        address: data.address,
+        phone: data.phone,
+        price_bw_per_page: data.price_bw_per_page,
+        price_color_per_page: data.price_color_per_page,
+        is_open: data.is_open,
+      };
+    },
+    enabled: !!shopSlug,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
   const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [uploaderResetKey] = useState(() => {
@@ -436,52 +453,12 @@ function OrderUploadPageInner() {
     idempotencyKeyRef.current = null;
   }, [orderConfigSignature]);
 
-  // ── Load shop ──────────────────────────────────────────────────────────────
+  // ── Validate shopSlug ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!shopSlug) {
       toast.error("Invalid URL: Shop missing");
       router.replace("/");
-      return;
     }
-
-    const loadShop = async () => {
-      // Check module-level cache first — avoids network round-trip within same session
-      const now = Date.now();
-      const cached = shopCache.get(shopSlug);
-      if (cached && cached.expiresAt > now) {
-        setShop(cached.data);
-        setIsLoadingShop(false);
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/shop/public?slug=${encodeURIComponent(shopSlug)}`);
-        if (!res.ok) {
-          toast.error("Shop not found or unavailable");
-          router.replace("/");
-          return;
-        }
-        const data = await res.json();
-        const shopData: ShopDisplay = {
-          id: data.id,
-          name: data.name,
-          address: data.address,
-          phone: data.phone,
-          price_bw_per_page: data.price_bw_per_page,
-          price_color_per_page: data.price_color_per_page,
-          is_open: data.is_open,
-        };
-        // Store in module-level cache
-        shopCache.set(shopSlug, { data: shopData, expiresAt: now + SHOP_CACHE_TTL_MS });
-        setShop(shopData);
-        setIsLoadingShop(false);
-      } catch {
-        toast.error("Failed to load shop. Check your connection.");
-        setIsLoadingShop(false);
-      }
-    };
-
-    loadShop();
   }, [shopSlug, router]);
 
   // ── Aggregated Price and Volume Calculations ──────────────────────────────
@@ -700,6 +677,11 @@ function OrderUploadPageInner() {
         } catch {
           // Storage unavailable — silent fail
         }
+
+        // Invalidate orders and stats caches across the application
+        queryClient.invalidateQueries({ queryKey: ["orders"] });
+        queryClient.invalidateQueries({ queryKey: ["order-counts"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
 
         // Use replace() so the upload page is removed from the browser history stack.
         // Pressing back from /order/[token] will go to the page BEFORE the upload form,

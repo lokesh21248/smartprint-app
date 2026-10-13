@@ -61,7 +61,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Scan2Paper — Digital Print Shop Management",
     description: "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
-    images: ["/logo.png"],
+    images: ["/logo.webp"],
   },
   robots: {
     index: true,

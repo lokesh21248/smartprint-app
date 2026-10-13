@@ -36,6 +36,12 @@ async function convertToWebP({ src, quality }) {
   const destPath = join(PUBLIC_DIR, destName);
 
   try {
+    try {
+      await stat(srcPath);
+    } catch {
+      // Source image does not exist; skip
+      return;
+    }
     const srcStat = await stat(srcPath);
     const srcSize = srcStat.size;
 

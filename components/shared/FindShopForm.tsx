@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -17,42 +18,33 @@ type ShopEntry = {
 
 /**
  * FindShopForm — client-only interactive part of /find-shop.
- *
- * Extracted so the parent Server Component can render static H1/description
- * that Googlebot indexes without executing JS.
- *
- * Performance notes:
- * - Shop list is lazy-fetched on first input focus via a ref guard (no re-render
- *   on the guard itself, unlike a boolean state).
- * - handleSearch and fetchShops are wrapped in useCallback to keep the referential
- *   identity stable across re-renders (important if this component is ever wrapped
- *   in React.memo or passed as a prop).
+ * Uses TanStack Query to cache partner shops across screen navigation.
  */
 export function FindShopForm() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [shops, setShops] = useState<ShopEntry[]>([]);
   const router = useRouter();
 
-  // useRef instead of useState — the fetch guard does not need to trigger a
-  // re-render when it flips from false to true.
-  const hasFetchedRef = useRef(false);
-
-  const fetchShops = useCallback(async () => {
-    if (hasFetchedRef.current) return;
-    hasFetchedRef.current = true;
-    try {
+  // Cached via TanStack Query — 5m staleTime prevents re-querying DB on re-focus
+  const { data: shops = [] } = useQuery<ShopEntry[]>({
+    queryKey: ["partner-shops"],
+    queryFn: async () => {
       const supabase = createClient();
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("shops")
         .select("name, slug, address_line1, city")
         .eq("is_approved", true)
         .limit(10);
-      if (data) setShops(data);
-    } catch (err) {
-      console.error("[FindShopForm] Failed to fetch partner shops:", err);
-    }
-  }, []); // stable — no deps
+      if (error) {
+        console.error("[FindShopForm] Failed to fetch partner shops:", error);
+        return [];
+      }
+      return (data || []) as ShopEntry[];
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   const handleSearch = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -109,7 +101,6 @@ export function FindShopForm() {
           placeholder="ABC123"
           value={code}
           onChange={handleCodeChange}
-          onFocus={fetchShops}
           maxLength={6}
           autoFocus
           autoComplete="off"

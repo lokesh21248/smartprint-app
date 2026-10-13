@@ -139,10 +139,26 @@ export async function GET(req: NextRequest) {
     // Generate signed URL — 1 hour TTL (lib/storage handles in-memory TTL caching!)
     const signedUrl = await createSignedUrl(bucket, path, 3600);
 
-    return NextResponse.json({ signedUrl });
+    return NextResponse.json(
+      { signedUrl },
+      {
+        headers: {
+          "Cache-Control": "private, no-store, no-cache, must-revalidate",
+          "Pragma": "no-cache",
+        },
+      }
+    );
   } catch (err) {
     console.error("[SIGNED_URL_FATAL]", err);
     const errMsg = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: errMsg }, { status: 500 });
+    return NextResponse.json(
+      { error: errMsg },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "private, no-store, no-cache, must-revalidate",
+        },
+      }
+    );
   }
 }
