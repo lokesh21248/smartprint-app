@@ -24,6 +24,7 @@ interface AnalyticsChartsProps {
 const DATE_RANGES = [
   { label: "7 Days", value: "7d" },
   { label: "30 Days", value: "30d" },
+  { label: "90 Days", value: "90d" },
   { label: "This Month", value: "month" },
 ];
 
@@ -67,6 +68,9 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
     } else if (dateRange === "30d") {
       start.setDate(now.getDate() - 29);
       start.setHours(0, 0, 0, 0);
+    } else if (dateRange === "90d") {
+      start.setDate(now.getDate() - 89);
+      start.setHours(0, 0, 0, 0);
     } else if (dateRange === "month") {
       start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     }
@@ -79,28 +83,25 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
     [orders, startDate]
   );
 
-  const completedOrders = useMemo(
-    () =>
-      filteredOrders.filter((o) => {
-        const s = o.status?.toUpperCase();
-        return s === "COMPLETED" || s === "SUCCESS";
-      }),
-    [filteredOrders]
-  );
-
   // ── Summary stats (memoized) ──────────────────────────────────────────────
   const { totalRevenue, totalOrders, avgOrderValue, avgCompletionMins } = useMemo(() => {
-    const revenue = completedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-    const aov = completedOrders.length > 0 ? revenue / completedOrders.length : 0;
+    // Revenue counts ALL orders (including cancelled)
+    const revenue = filteredOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+    const aov = filteredOrders.length > 0 ? revenue / filteredOrders.length : 0;
+
+    // Avg completion time uses orders that have a completed_at or updated_at
     let totalMins = 0;
     let count = 0;
-    for (const o of completedOrders) {
-      const createdTime = new Date(o.created_at).getTime();
-      const completedTime = o.completed_at
-        ? new Date(o.completed_at).getTime()
-        : new Date(o.updated_at).getTime();
-      const diff = (completedTime - createdTime) / 60000;
-      if (diff >= 0) { totalMins += diff; count++; }
+    for (const o of filteredOrders) {
+      const s = o.status?.toUpperCase();
+      if (s === "COMPLETED" || s === "SUCCESS") {
+        const createdTime = new Date(o.created_at).getTime();
+        const completedTime = o.completed_at
+          ? new Date(o.completed_at).getTime()
+          : new Date(o.updated_at).getTime();
+        const diff = (completedTime - createdTime) / 60000;
+        if (diff >= 0) { totalMins += diff; count++; }
+      }
     }
     return {
       totalRevenue: revenue,
@@ -108,7 +109,7 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
       avgOrderValue: aov,
       avgCompletionMins: count > 0 ? Math.round(totalMins / count) : 0,
     };
-  }, [completedOrders, filteredOrders.length]);
+  }, [filteredOrders]);
 
   // ── Revenue trend (memoized) ──────────────────────────────────────────────
   const revenueTrend = useMemo(() => {
@@ -127,8 +128,8 @@ export default function AnalyticsCharts({ orders }: AnalyticsChartsProps) {
       const ds = toLocalDateString(new Date(o.created_at));
       if (revenueByDate[ds]) {
         revenueByDate[ds].orders++;
-        const s = o.status?.toUpperCase();
-        if (s === "COMPLETED" || s === "SUCCESS") revenueByDate[ds].revenue += Number(o.total_amount) || 0;
+        // Count revenue from ALL orders
+        revenueByDate[ds].revenue += Number(o.total_amount) || 0;
       }
     }
     return Object.entries(revenueByDate)

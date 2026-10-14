@@ -86,6 +86,7 @@ export function QuickActions({ shop: initialShop }: QuickActionsProps) {
 
       {/* Other quick links */}
       <div className="grid grid-cols-1 gap-2">
+      
         <Link href="/dashboard/orders">
           <Button
             id="view-all-orders-btn"

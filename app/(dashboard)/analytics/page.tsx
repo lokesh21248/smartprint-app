@@ -35,12 +35,10 @@ export default async function AnalyticsPage() {
 
   const supabase = createAdminClient();
 
-  // Fetch orders for the last 30 days or start of month (whichever is earlier)
+  // Fetch orders for the last 90 days to provide enough data for all date range views
   const now = new Date();
-  const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const earliestDate = startOfCurrentMonth < thirtyDaysAgo ? startOfCurrentMonth : thirtyDaysAgo;
-  const rangeStartIso = earliestDate.toISOString();
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const rangeStartIso = ninetyDaysAgo.toISOString();
 
   const { data: ordersData } = await supabase
     .from("orders")
@@ -48,7 +46,7 @@ export default async function AnalyticsPage() {
     .eq("shop_id", shop.id)
     .gte("created_at", rangeStartIso)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(1000);
 
   type RawOrder = {
     total_amount: number;
