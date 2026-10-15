@@ -122,7 +122,7 @@ function ForgotPasswordForm() {
             id="email"
             label="Email Address"
             type="email"
-            placeholder="owner@example.com"
+            placeholder="Enter your email address"
             required
             leftIcon={<Mail className="h-4 w-4" />}
             value={email}

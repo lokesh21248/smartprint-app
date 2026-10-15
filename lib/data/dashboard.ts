@@ -47,6 +47,7 @@ export const getDashboardInitialState = cache(
           "id, short_token, shop_id, customer_name, customer_phone, file_name, page_count, copies, is_color, is_double_sided, notes, total_amount, status, created_at, updated_at"
         )
         .eq("shop_id", shopId)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(30),
       supabase

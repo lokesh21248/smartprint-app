@@ -502,11 +502,11 @@ export default function OrderFlowPage() {
                     <span className="absolute left-6 top-1/2 -translate-y-1/2 font-bold text-gray-400">+91</span>
                     <input 
                       type="tel" 
-                      placeholder="9876543210"
+                      placeholder="10-digit mobile number"
                       maxLength={10}
                       value={customer.phone}
                       onChange={e => setCustomer(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
-                      className="w-full pl-16 pr-6 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-600 focus:outline-none font-medium text-lg tracking-widest transition-all"
+                      className="w-full pl-16 pr-6 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-600 focus:outline-none font-medium text-base tracking-normal transition-all"
                     />
                   </div>
                   <p className="text-xs text-gray-400 ml-1 flex items-center gap-1">

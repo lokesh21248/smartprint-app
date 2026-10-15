@@ -44,6 +44,7 @@ export default async function AnalyticsPage() {
     .from("orders")
     .select("total_amount, status, created_at, updated_at, completed_at, customer_phone, is_color")
     .eq("shop_id", shop.id)
+    .is("deleted_at", null)
     .gte("created_at", rangeStartIso)
     .order("created_at", { ascending: false })
     .limit(1000);

@@ -76,7 +76,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
       <Input
         id="shopName"
         label="Shop Name"
-        placeholder="Quick Print Solutions"
+        placeholder="Enter your shop name"
         required
         leftIcon={<Store className="h-4 w-4" />}
         value={formData.shopName}
@@ -85,7 +85,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
       <Input
         id="ownerName"
         label="Owner Name"
-        placeholder="John Doe"
+        placeholder="Enter owner name"
         required
         leftIcon={<User className="h-4 w-4" />}
         value={formData.ownerName}
@@ -95,7 +95,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
         id="phone"
         label="Phone (10 digits)"
         type="tel"
-        placeholder="9876543210"
+        placeholder="Enter 10-digit mobile number"
         required
         maxLength={10}
         leftIcon={<Phone className="h-4 w-4" />}
@@ -105,7 +105,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
       <Input
         id="addressLine1"
         label="Address"
-        placeholder="123 Main St"
+        placeholder="Enter shop address"
         required
         leftIcon={<MapPin className="h-4 w-4" />}
         value={formData.addressLine1}
@@ -115,7 +115,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
         <Input
           id="city"
           label="City"
-          placeholder="Mumbai"
+          placeholder="Enter city"
           required
           leftIcon={<Building2 className="h-4 w-4" />}
           value={formData.city}
@@ -124,7 +124,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
         <Input
           id="state"
           label="State"
-          placeholder="Maharashtra"
+          placeholder="Enter state"
           required
           value={formData.state}
           onChange={handleChange}
@@ -133,7 +133,7 @@ export function CreateShopForm({ initialOwnerName, ownerEmail }: CreateShopFormP
       <Input
         id="pincode"
         label="Pincode (6 digits)"
-        placeholder="400001"
+        placeholder="Enter 6-digit pincode"
         required
         maxLength={6}
         value={formData.pincode}

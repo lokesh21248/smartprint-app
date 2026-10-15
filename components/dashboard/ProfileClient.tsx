@@ -351,7 +351,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
                       setForm({ ...form, name: e.target.value });
                       if (fieldErrors.name) setFieldErrors((p) => ({ ...p, name: "" }));
                     }}
-                    placeholder="My Print Shop"
+                    placeholder="Enter shop name"
                     error={fieldErrors.name}
                     aria-invalid={!!fieldErrors.name}
                   />
@@ -366,7 +366,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
                       setForm({ ...form, phone: e.target.value });
                       if (fieldErrors.phone) setFieldErrors((p) => ({ ...p, phone: "" }));
                     }}
-                    placeholder="9876543210"
+                    placeholder="Enter 10-digit mobile number"
                     inputMode="tel"
                     error={fieldErrors.phone}
                     aria-invalid={!!fieldErrors.phone}
@@ -382,7 +382,7 @@ export function ProfileClient({ shop: initialShop, appUrl }: Props) {
                       setForm({ ...form, address: e.target.value });
                       if (fieldErrors.address) setFieldErrors((p) => ({ ...p, address: "" }));
                     }}
-                    placeholder="Street, City"
+                    placeholder="Enter shop address"
                     error={fieldErrors.address}
                     aria-invalid={!!fieldErrors.address}
                   />

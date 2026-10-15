@@ -41,16 +41,22 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico?v=2",
     apple: "/apple-touch-icon.png?v=2",
   },
+  applicationName: "Scan2Paper",
+  authors: [{ name: "Scan2Paper Team", url: "https://scan2paper.com" }],
+  creator: "Scan2Paper",
+  publisher: "Scan2Paper",
+  category: "Business & Document Printing",
   manifest: "/manifest.json",
   // Default Open Graph — overridden per-page; acts as fallback for social sharing
   openGraph: {
     type: "website",
+    locale: "en_IN",
     siteName: "Scan2Paper",
-    title: "Scan2Paper — Digital Print Shop Management",
+    title: "Scan2Paper — Digital Print Shop Management Platform",
     description: "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
     images: [
       {
-        url: "/logo.webp",
+        url: "/logo.png",
         width: 512,
         height: 512,
         alt: "Scan2Paper logo",
@@ -59,9 +65,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Scan2Paper — Digital Print Shop Management",
+    title: "Scan2Paper — Digital Print Shop Management Platform",
     description: "Manage your print shop orders, staff, and analytics from one powerful dashboard.",
-    images: ["/logo.webp"],
+    images: ["/logo.png"],
   },
   robots: {
     index: true,
@@ -69,6 +75,9 @@ export const metadata: Metadata = {
     googleBot: {
       index: true,
       follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
 };

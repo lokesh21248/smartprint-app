@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PublicNavbar } from "@/components/shared/PublicNavbar";
+import { PublicFooter } from "@/components/shared/PublicFooter";
+import { ShieldCheck, Target, Heart, Store, ArrowRight } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "About Scan2Paper – Print Shop Management Software",
@@ -42,10 +45,16 @@ const jsonLd = {
       "@id": "https://scan2paper.com/about#webpage",
       url: "https://scan2paper.com/about",
       name: "About Scan2Paper – Print Shop Management Software",
-      description:
-        "Scan2Paper is a digital platform purpose-built for print shop owners across India.",
+      description: "Scan2Paper is a digital platform purpose-built for print shop owners across India.",
       isPartOf: { "@id": "https://scan2paper.com/#website" },
       about: { "@id": "https://scan2paper.com/#organization" },
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: "https://scan2paper.com/" },
+        { "@type": "ListItem", position: 2, name: "About", item: "https://scan2paper.com/about" },
+      ],
     },
     {
       "@type": "Organization",
@@ -66,7 +75,7 @@ const jsonLd = {
         "@type": "ContactPoint",
         email: "support@scan2paper.com",
         contactType: "customer support",
-        availableLanguage: ["English"],
+        availableLanguage: ["English", "Hindi", "Telugu"],
       },
       areaServed: {
         "@type": "Country",
@@ -84,43 +93,76 @@ export default function AboutPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 px-4 py-16">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold text-gray-900 mb-6 text-center">
-          About Scan2Paper
-        </h1>
 
-        <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm space-y-6 text-gray-700">
-          <p>
-            <strong>Scan2Paper</strong> is a digital platform purpose-built for
-            print shop owners across India. We help xerox shops, copy centres,
-            and printing businesses modernise their operations — replacing manual
-            queues and cash-only counters with a seamless digital workflow.
-          </p>
-          <p>
-            With Scan2Paper, customers can upload their documents online, choose
-            their print settings, and receive real-time status updates — all
-            before they walk into the shop. Shop owners get instant order
-            notifications, a live dashboard, and the ability to manage staff
-            from anywhere.
-          </p>
-          <p>
-            Our mission is to make every print shop in India as easy to use as
-            ordering food online. We believe small business owners deserve
-            enterprise-grade tools without the enterprise price tag.
-          </p>
-        </div>
+      <PublicNavbar />
 
-        <div className="mt-10 text-center">
-          <Link
-            href="/contact"
-            className="inline-block px-8 py-3 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition"
-          >
-            Get in Touch
-          </Link>
-        </div>
-      </div>
+      <main className="min-h-screen bg-slate-50 text-slate-800 antialiased pb-20">
+        <section className="pt-14 pb-16 px-4 sm:px-6 bg-gradient-to-b from-emerald-50/70 via-white to-slate-50 text-center">
+          <div className="max-w-3xl mx-auto space-y-4">
+            <span className="text-xs font-black uppercase tracking-widest text-emerald-700 bg-emerald-100/70 px-3.5 py-1.5 rounded-full border border-emerald-200">
+              Our Story &amp; Mission
+            </span>
+            <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight">
+              About Scan2Paper
+            </h1>
+            <p className="text-slate-600 text-base sm:text-lg max-w-xl mx-auto leading-relaxed">
+              Empowering local xerox shops and copy centres across India with enterprise-grade cloud printing technology.
+            </p>
+          </div>
+        </section>
+
+        <section className="max-w-3xl mx-auto px-4 sm:px-6 -mt-4 space-y-8">
+          <div className="bg-white rounded-3xl p-8 sm:p-10 border border-slate-100 shadow-sm space-y-6 text-slate-600 leading-relaxed text-base">
+            <p>
+              <strong>Scan2Paper</strong> was born from a simple observation: millions of students, professionals, and citizens in India stand in long queues at xerox shops every single day. Counter operators struggle to manage multiple pen drives, virus-infected USBs, endless WhatsApp files, and cash calculations simultaneously.
+            </p>
+            <p>
+              We built Scan2Paper to digitalise the entire print journey. With our platform, customers simply scan a counter QR code or enter a 6-letter shop code to upload their PDF documents, configure print settings, and pay. The shop owner receives an instant notification, prints the job, and has it ready before the customer reaches the counter.
+            </p>
+            <p>
+              Our mission is to make every neighbourhood xerox shop in India as convenient and fast as ordering food online. We believe local small business owners deserve powerful software without expensive upfront hardware or complicated setups.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm text-center space-y-2">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+                <Target className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-base">Zero Queues</h3>
+              <p className="text-xs text-slate-500">Eliminating crowded counters and wait times.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm text-center space-y-2">
+              <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-base">Privacy First</h3>
+              <p className="text-xs text-slate-500">2-hour automatic file deletion guarantee.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm text-center space-y-2">
+              <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+                <Store className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-base">Local Growth</h3>
+              <p className="text-xs text-slate-500">Helping neighbourhood xerox shops scale.</p>
+            </div>
+          </div>
+
+          <div className="text-center pt-4">
+            <Link
+              href="/contact"
+              className="inline-flex items-center gap-2 px-8 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm hover:bg-emerald-700 transition shadow-sm hover:shadow"
+            >
+              Get in Touch with Our Team
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </section>
       </main>
+
+      <PublicFooter />
     </>
   );
 }

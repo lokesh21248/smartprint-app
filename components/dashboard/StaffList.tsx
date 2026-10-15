@@ -96,7 +96,7 @@ export function StaffList({ initialStaff }: StaffListProps) {
                 id="invite-email"
                 label="Email Address"
                 type="email"
-                placeholder="staff@yourshop.com"
+                placeholder="Enter staff email address"
                 error={errors.email?.message}
                 {...register("email")}
               />

@@ -34,6 +34,7 @@ export function FindShopForm() {
         .from("shops")
         .select("name, slug, address_line1, city")
         .eq("is_approved", true)
+        .eq("is_active", true)
         .limit(10);
       if (error) {
         console.error("[FindShopForm] Failed to fetch partner shops:", error);

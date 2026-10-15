@@ -138,7 +138,8 @@ export async function GET(request: Request) {
         ].join(", "),
         { count: "exact" }
       )
-      .eq("shop_id", shopId);
+      .eq("shop_id", shopId)
+      .is("deleted_at", null);
 
     // Optional status filter — uses idx_orders_status_upper expression index
     if (statusParam === "PLACED") {

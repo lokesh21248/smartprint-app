@@ -293,7 +293,7 @@ export default function SignupPage() {
           <Input
             id="ownerName"
             label="Full Name"
-            placeholder="John Doe"
+            placeholder="Enter your full name"
             required
             leftIcon={<User className="h-4 w-4" />}
             value={formData.ownerName}
@@ -302,7 +302,7 @@ export default function SignupPage() {
           <Input
             id="shopName"
             label="Shop Name"
-            placeholder="Quick Print Solutions"
+            placeholder="Enter your shop name"
             required
             leftIcon={<Store className="h-4 w-4" />}
             value={formData.shopName}
@@ -312,7 +312,7 @@ export default function SignupPage() {
             id="phone"
             label="Phone Number (10 digits)"
             type="tel"
-            placeholder="9876543210"
+            placeholder="Enter 10-digit mobile number"
             required
             maxLength={10}
             leftIcon={<Phone className="h-4 w-4" />}
@@ -322,7 +322,7 @@ export default function SignupPage() {
           <Input
             id="address"
             label="Address"
-            placeholder="123 Main St"
+            placeholder="Enter street address"
             required
             leftIcon={<MapPin className="h-4 w-4" />}
             value={formData.address}
@@ -332,7 +332,7 @@ export default function SignupPage() {
             <Input
               id="city"
               label="City"
-              placeholder="Mumbai"
+              placeholder="Enter city"
               required
               leftIcon={<Building2 className="h-4 w-4" />}
               value={formData.city}
@@ -341,7 +341,7 @@ export default function SignupPage() {
             <Input
               id="state"
               label="State"
-              placeholder="Maharashtra"
+              placeholder="Enter state"
               required
               value={formData.state}
               onChange={handleChange}
@@ -350,7 +350,7 @@ export default function SignupPage() {
           <Input
             id="pincode"
             label="Pincode (6 digits)"
-            placeholder="400001"
+            placeholder="Enter 6-digit pincode"
             required
             maxLength={6}
             value={formData.pincode}
@@ -360,7 +360,7 @@ export default function SignupPage() {
             id="email"
             label="Email Address"
             type="email"
-            placeholder="owner@example.com"
+            placeholder="Enter your email address"
             required
             leftIcon={<Mail className="h-4 w-4" />}
             value={formData.email}
