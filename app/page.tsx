@@ -9,7 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { 
   FileText, QrCode, Printer, ShieldCheck, 
   ArrowRight, Sparkles, Smartphone, Clock, 
-  CheckCircle2, Search, Store, HelpCircle
+  CheckCircle2, Store, HelpCircle, LayoutDashboard
 } from "lucide-react";
 
 // Static page rendered at build time, revalidated every hour (ISR).
@@ -225,11 +225,11 @@ export default async function Home() {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-4">
               <Link
-                href="/find-shop"
+                href="/login"
                 className="w-full sm:w-auto px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-extrabold text-base flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/20 hover:shadow-xl transition-all active:scale-95"
               >
-                <Search className="w-5 h-5" />
-                Find a Print Shop Near You
+                <LayoutDashboard className="w-5 h-5" />
+                Sign in to Dashboard
               </Link>
               <Link
                 href="/signup"
