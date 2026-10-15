@@ -44,6 +44,8 @@ export function ShopProfileForm({ shop: initialShop }: ShopProfileFormProps) {
 
   const invalidateShopQueries = () => {
     queryClient.invalidateQueries({ queryKey: ["shop"] });
+    queryClient.invalidateQueries({ queryKey: ["shop", "public"] });
+    queryClient.invalidateQueries({ queryKey: ["pricing"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     queryClient.invalidateQueries({ queryKey: ["partner-shops"] });
   };

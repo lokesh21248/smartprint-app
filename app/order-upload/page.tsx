@@ -291,8 +291,8 @@ function OrderUploadPageInner() {
       };
     },
     enabled: !!shopSlug,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
+    staleTime: 15 * 1000,
+    gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const [step, setStep] = useState(1); // Step 1: Upload & Config, Step 2: Checkout Info

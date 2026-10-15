@@ -38,8 +38,8 @@ export default function OrderFlowPage() {
       return data as unknown as Shop;
     },
     enabled: !!shopId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
+    staleTime: 15 * 1000,
+    gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   

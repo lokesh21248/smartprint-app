@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopProfileSchema } from "@/lib/validators";
@@ -126,7 +127,7 @@ export async function PATCH(request: Request) {
       .from("shops")
       .update(payload)
       .eq("id", shopId)
-      .select("id")
+      .select("id, slug")
       .maybeSingle();
 
     if (updateError) {
@@ -148,8 +149,27 @@ export async function PATCH(request: Request) {
       void invalidateShopPricingCache(shopId);
     }
 
+    // Immediately purge and revalidate customer-facing pages and public APIs
+    if (updatedShop.slug) {
+      try {
+        revalidatePath(`/s/${updatedShop.slug}`);
+        revalidatePath(`/s/${updatedShop.slug}`, "page");
+        revalidatePath(`/s/${updatedShop.slug}`, "layout");
+      } catch (err) {
+        console.error("[PATCH /api/shop/update] revalidatePath error:", err);
+      }
+    }
+    try {
+      revalidatePath("/api/shop/public");
+      revalidatePath("/order-upload");
+      revalidatePath("/find-shop");
+      revalidatePath("/shop-profile");
+    } catch (err) {
+      console.error("[PATCH /api/shop/update] general revalidatePath error:", err);
+    }
+
     return NextResponse.json(
-      { success: true, shopId: updatedShop.id },
+      { success: true, shopId: updatedShop.id, slug: updatedShop.slug },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (err) {

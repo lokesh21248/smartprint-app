@@ -4,10 +4,9 @@ import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ShopStructuredData } from "@/components/seo/ShopStructuredData";
 
-// ISR: revalidate shop layout data every 5 minutes.
-// Vercel Edge will serve the cached HTML to ALL customers globally
-// without hitting Supabase on every request.
-export const revalidate = 300;
+// ISR: revalidate shop layout data with 60-second window.
+// Vercel Edge serves cached HTML to customers while on-demand revalidation purges immediately.
+export const revalidate = 60;
 
 const BASE_URL = "https://scan2paper.com";
 

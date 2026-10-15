@@ -95,9 +95,9 @@ export async function GET(request: Request) {
       working_days: bh?.working_days || [],
     };
 
-    // Cache for 30 seconds — short enough to reflect shop status changes
+    // Cache for 10 seconds — short enough to reflect shop status and pricing changes promptly
     return NextResponse.json(shop, {
-      headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" },
+      headers: { "Cache-Control": "public, s-maxage=10, stale-while-revalidate=30" },
     });
   } catch (err) {
     console.error("[GET /api/shop/public]", err);

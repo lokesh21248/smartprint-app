@@ -257,7 +257,7 @@ const nextConfig = {
       },
       {
         source: "/s/:slug*",
-        headers: [{ key: "Cache-Control", value: "public, s-maxage=300, stale-while-revalidate=600" }],
+        headers: [{ key: "Cache-Control", value: "public, s-maxage=10, stale-while-revalidate=30" }],
       },
       // ── Never publicly cache authenticated, customer, or storage APIs ────────
       {
