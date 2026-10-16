@@ -15,9 +15,12 @@
  * when the store grows beyond MAX_STORE_SIZE entries. O(1) amortized.
  */
 
+import { createAdminClient } from "@/lib/supabase/admin";
+
 interface WindowEntry {
   count: number;
   resetAt: number; // epoch ms when the window expires
+  windowStart: number; // epoch ms when the window started
 }
 
 // Module-level store — lives for the lifetime of the serverless function instance
@@ -27,6 +30,144 @@ const store = new Map<string, WindowEntry>();
 const MAX_STORE_SIZE = 10_000;
 // Number of expired entries to evict per cleanup pass (amortized cost)
 const EVICT_BATCH = 1_000;
+
+// ─── Identifier Parser ────────────────────────────────────────────────────────
+function parseIdentifier(rawKey: string): {
+  identifier: string;
+  identifier_type: "ip" | "phone" | "clerk_id";
+  action: string;
+} {
+  if (rawKey.startsWith("otp_send_phone_")) {
+    return {
+      action: "otp_send_phone",
+      identifier_type: "phone",
+      identifier: rawKey.replace("otp_send_phone_", ""),
+    };
+  }
+  if (rawKey.startsWith("otp_send_ip_")) {
+    return {
+      action: "otp_send_ip",
+      identifier_type: "ip",
+      identifier: rawKey.replace("otp_send_ip_", ""),
+    };
+  }
+  if (rawKey.startsWith("otp_verify_")) {
+    return {
+      action: "otp_verify",
+      identifier_type: "phone",
+      identifier: rawKey.replace("otp_verify_", ""),
+    };
+  }
+
+  if (rawKey.includes("_user_")) {
+    const idx = rawKey.indexOf("_user_");
+    return {
+      action: rawKey.substring(0, idx),
+      identifier_type: "clerk_id",
+      identifier: rawKey.substring(idx + 1),
+    };
+  }
+
+  const prefixes = [
+    "orders_post_",
+    "orders_get_",
+    "sessions_post_",
+    "presign_post_",
+    "shop_public_",
+    "shop_find_",
+    "orders_list_",
+    "order_counts_",
+    "order_status_update_",
+    "shop_update_",
+    "toggle_open_",
+    "shop_stats_",
+    "staff_delete_",
+    "staff_invite_",
+    "signed_url_",
+    "admin_jobs_",
+    "admin_cleanup_logs_",
+  ];
+
+  for (const prefix of prefixes) {
+    if (rawKey.startsWith(prefix)) {
+      const action = prefix.slice(0, -1);
+      const identifier = rawKey.slice(prefix.length);
+      let identifier_type: "ip" | "phone" | "clerk_id" = "ip";
+      if (
+        identifier.startsWith("user_") ||
+        action.includes("staff") ||
+        action.includes("admin") ||
+        action.includes("shop_update") ||
+        action.includes("stats")
+      ) {
+        identifier_type = "clerk_id";
+      } else if (/^\d{10}$/.test(identifier)) {
+        identifier_type = "phone";
+      }
+      return { action, identifier_type, identifier };
+    }
+  }
+
+  const lastUnderscore = rawKey.lastIndexOf("_");
+  if (lastUnderscore !== -1) {
+    const action = rawKey.substring(0, lastUnderscore);
+    const identifier = rawKey.substring(lastUnderscore + 1);
+    let identifier_type: "ip" | "phone" | "clerk_id" = "ip";
+    if (identifier.startsWith("user_")) identifier_type = "clerk_id";
+    else if (/^\d{10}$/.test(identifier)) identifier_type = "phone";
+    return { action, identifier_type, identifier };
+  }
+
+  return {
+    action: "general",
+    identifier_type: "ip",
+    identifier: rawKey,
+  };
+}
+
+/**
+ * Fire-and-forget asynchronous persistence to Supabase `rate_limits` table.
+ * Does NOT block HTTP responses and never throws.
+ */
+function recordRateLimitToDb(
+  rawIdentifier: string,
+  count: number,
+  windowStartMs: number,
+  windowEndMs: number
+): void {
+  try {
+    const { action, identifier_type, identifier } = parseIdentifier(rawIdentifier);
+    const supabase = createAdminClient();
+
+    void (async () => {
+      try {
+        const { error } = await supabase
+          .from("rate_limits")
+          .upsert(
+            {
+              identifier,
+              identifier_type,
+              action,
+              count,
+              window_start: new Date(windowStartMs).toISOString(),
+              window_end: new Date(windowEndMs).toISOString(),
+            },
+            {
+              onConflict: "identifier,identifier_type,action,window_start",
+            }
+          );
+
+        if (error && process.env.NODE_ENV === "development") {
+          console.debug("[rateLimit] DB sync note:", error.message);
+        }
+      } catch {
+        // Silent catch for resilience
+      }
+    })();
+  } catch {
+    // Fail gracefully without affecting request
+  }
+}
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
@@ -42,9 +183,9 @@ export interface RateLimitResult {
 // ─── Core function ────────────────────────────────────────────────────────────
 
 /**
- * Sliding-window rate limiter (in-memory, zero DB cost).
+ * Sliding-window rate limiter with in-memory fast-path and Supabase table persistence.
  *
- * @param identifier  - Unique key, e.g. `"orders_POST_192.168.1.1"`
+ * @param identifier  - Unique key, e.g. `"orders_post_192.168.1.1"`
  * @param limit       - Max requests allowed in the window
  * @param windowSecs  - Window size in seconds
  */
@@ -60,7 +201,6 @@ export function rateLimit(
     // Window expired or first request — start a fresh window
     if (!existing || existing.resetAt <= now) {
       // Lazy eviction: when the store is full, sweep expired entries before adding new ones.
-      // This is O(EVICT_BATCH) amortized — avoids unbounded Map growth under unique-IP floods.
       if (store.size >= MAX_STORE_SIZE) {
         let evicted = 0;
         for (const [k, v] of store) {
@@ -69,8 +209,6 @@ export function rateLimit(
             if (++evicted >= EVICT_BATCH) break;
           }
         }
-        // If we still can't fit (all entries are live — genuine traffic spike),
-        // fail open and let the request through rather than crashing.
         if (store.size >= MAX_STORE_SIZE) {
           console.warn("[rateLimit] Store at capacity; eviction found no expired entries. Failing open.");
           return { success: true, remaining: 1, retryAfter: 0 };
@@ -78,17 +216,25 @@ export function rateLimit(
       }
 
       const resetAt = now + windowSecs * 1000;
-      store.set(identifier, { count: 1, resetAt });
+      const entry: WindowEntry = { count: 1, resetAt, windowStart: now };
+      store.set(identifier, entry);
+
+      // Record to Supabase rate_limits table
+      recordRateLimitToDb(identifier, 1, now, resetAt);
+
       return { success: true, remaining: limit - 1, retryAfter: 0 };
     }
 
     // Within window — check count
     if (existing.count >= limit) {
       const retryAfter = Math.ceil((existing.resetAt - now) / 1000);
+      recordRateLimitToDb(identifier, existing.count + 1, existing.windowStart, existing.resetAt);
       return { success: false, remaining: 0, retryAfter };
     }
 
     existing.count += 1;
+    recordRateLimitToDb(identifier, existing.count, existing.windowStart, existing.resetAt);
+
     return {
       success: true,
       remaining: limit - existing.count,

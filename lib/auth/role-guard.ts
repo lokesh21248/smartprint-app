@@ -41,15 +41,30 @@ export async function getServerRole(
   if (clerkRole === "manager") return "manager";
   if (clerkRole === "staff") return "staff";
 
-  // ── 2. Slow-path: DB lookup (2 parallel queries) ──────────────────────────
+  // ── 2. Slow-path: DB lookup (3 parallel queries) ──────────────────────────
   // Only reached when session claims don't have a recognized role.
   try {
     const supabase = createAdminClient();
 
-    const [ownerRes, staffRes] = await Promise.all([
+    const [adminRes, ownerRes, staffRes] = await Promise.all([
+      supabase
+        .from("shop_admins")
+        .select("role")
+        .eq("clerk_user_id", userId)
+        .eq("is_active", true)
+        .maybeSingle(),
       supabase.from("shops").select("id").eq("clerk_owner_id", userId).maybeSingle(),
       supabase.from("shop_staff").select("role").eq("user_id", userId).maybeSingle(),
     ]);
+
+    if (adminRes.data) {
+      // Async update last_login_at in background
+      void supabase
+        .from("shop_admins")
+        .update({ last_login_at: new Date().toISOString() })
+        .eq("clerk_user_id", userId);
+      return "admin";
+    }
 
     if (ownerRes.data) {
       return "shop_owner";
