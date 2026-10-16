@@ -35,9 +35,12 @@ const ContentSecurityPolicy = `
     https://cloudflareinsights.com
     https://vitals.vercel-insights.com
     https://va.vercel-scripts.com;
-  frame-src https://challenges.cloudflare.com
+  frame-src 'self' blob: data:
+    https://challenges.cloudflare.com
     https://*.clerk.com
-    https://clerk.scan2paper.com;
+    https://clerk.scan2paper.com
+    https://*.supabase.co
+    https://*.supabase.in;
   media-src 'self'
     https://*.supabase.co
     https://*.supabase.in;
@@ -67,10 +70,11 @@ const nextConfig = {
 
   // ── Webpack ────────────────────────────────────────────────────────────────
   webpack: (config, { dev, isServer }) => {
-    // Fix p-limit / @supabase async_hooks compatibility in all envs.
+    // Fix p-limit / @supabase async_hooks compatibility in all envs, and canvas for pdfjs-dist.
     config.resolve.fallback = {
       ...config.resolve.fallback,
       '#async_hooks': false,
+      canvas: false,
     };
 
     // Block legacy `qrcode` (Node.js canvas) from entering client bundles.

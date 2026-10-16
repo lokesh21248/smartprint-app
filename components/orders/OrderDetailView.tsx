@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   ArrowLeft, FileText, Phone, Download, Printer,
   Check, Package, Circle, X, AlertTriangle, IndianRupee,
-  User, Calendar, Loader2
+  User, Calendar, Loader2, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import {
 import { useOrderStatus } from "@/lib/hooks/useOrderStatus";
 import { TimeAgo } from "@/components/dashboard/TimeAgo";
 import type { Order, OrderStatus } from "@/types";
+import { PdfViewer } from "@/components/orders/PdfViewer";
 
 interface OrderDetailViewProps {
   order: Order;
@@ -42,13 +43,18 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
     onSuccess: (newStatus) => setOrder((o) => ({ ...o, order_status: newStatus })),
   });
 
-  const loadPreview = useCallback(async (path: string) => {
+  const loadPreview = useCallback(async (path: string, forceFresh = false) => {
     if (!path) return;
     setPreviewLoading(true);
     setPreviewError(null);
 
+    // If forcing fresh (e.g. on retry), invalidate cache
+    if (forceFresh) {
+      signedUrlCache.current.delete(path);
+    }
+
     // Check client-side cache
-    if (signedUrlCache.current.has(path)) {
+    if (!forceFresh && signedUrlCache.current.has(path)) {
       if (process.env.NODE_ENV !== "production") {
         console.log(`[OrderDetailView] Cache hit for preview: ${path}`);
       }
@@ -60,25 +66,22 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
     setPreviewUrl(null);
     if (process.env.NODE_ENV !== "production") {
       console.log(`[OrderDetailView] Starting preview load. Bucket: order-files, Path: ${path}`);
-      console.time("signed-url");
-      console.time("preview-load");
     }
 
     try {
-      const extension = path.split(".").pop()?.toLowerCase() || "";
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[OrderDetailView] File type identified: ${extension}`);
-      }
-
       // Generate signed URL (expires in 1 hour)
-      const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${path}`);
+      const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${encodeURIComponent(path)}`);
       if (!res.ok) {
-        throw new Error(`Failed to generate signed URL (HTTP ${res.status})`);
+        let errText = `Failed to generate signed URL (HTTP ${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData.error) errText = errData.error;
+        } catch {
+          // ignore
+        }
+        throw new Error(errText);
       }
       const data = await res.json();
-      if (process.env.NODE_ENV !== "production") {
-        console.timeEnd("signed-url");
-      }
 
       if (!data.signedUrl) {
         throw new Error(data.error || "No signed URL returned from server");
@@ -97,24 +100,17 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       setPreviewError(errMsg);
     } finally {
       setPreviewLoading(false);
-      if (process.env.NODE_ENV !== "production") {
-        console.timeEnd("preview-load");
-      }
     }
   }, []);
 
   const handleDownloadFile = useCallback(async (path: string, fileName: string) => {
     if (!path) return;
     setDownloadingFileUrl(path);
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[OrderDetailView] Starting download for path: ${path}`);
-      console.time("download");
-    }
     try {
       let downloadUrl = signedUrlCache.current.get(path);
 
       if (!downloadUrl) {
-        const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${path}`);
+        const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${encodeURIComponent(path)}`);
         if (!res.ok) {
           throw new Error(`Failed to generate download URL (HTTP ${res.status})`);
         }
@@ -124,13 +120,6 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
         }
         downloadUrl = data.signedUrl as string;
         signedUrlCache.current.set(path, downloadUrl);
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[OrderDetailView] Signed URL generated for download: success`);
-        }
-      } else {
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[OrderDetailView] Download Cache hit for: ${path}`);
-        }
       }
 
       if (!downloadUrl) {
@@ -145,19 +134,12 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[OrderDetailView] Download initiated for: ${fileName}`);
-      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown download error";
       console.error("[OrderDetailView] Download error:", errMsg);
       toast.error(`Error downloading file: ${errMsg}`);
     } finally {
       setDownloadingFileUrl(null);
-      if (process.env.NODE_ENV !== "production") {
-        console.timeEnd("download");
-      }
     }
   }, []);
 
@@ -183,7 +165,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
       let docUrl = signedUrlCache.current.get(s3Path);
 
       if (!docUrl) {
-        const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${s3Path}`);
+        const res = await fetch(`/api/storage/signed-url?bucket=order-files&path=${encodeURIComponent(s3Path)}`);
         const data = await res.json();
         if (data.signedUrl) {
           docUrl = data.signedUrl as string;
@@ -488,32 +470,43 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                     )}
                   </div>
                 </div>
-                <div className="bg-[#F3F4F6] flex items-center justify-center p-4" style={{ height: "450px" }}>
+                <div className="bg-[#F3F4F6] flex items-center justify-center p-2 sm:p-4 min-h-[460px]">
                   {previewLoading ? (
-                    <div className="text-center">
+                    <div className="text-center py-12">
                       <Loader2 className="w-10 h-10 animate-spin text-[#2E8B57] mx-auto mb-3" />
                       <p className="text-sm text-[#6B7280] font-semibold">Loading document preview...</p>
+                      <p className="text-xs text-[#9CA3AF] mt-1">Generating secure document link</p>
                     </div>
                   ) : previewError ? (
-                    <div className="text-center px-4">
+                    <div className="text-center px-4 py-8 max-w-sm mx-auto">
                       <AlertTriangle className="w-12 h-12 text-[#EF4444] mx-auto mb-3 animate-pulse" />
                       <p className="text-[#374151] font-semibold text-sm">Preview unavailable</p>
-                      <p className="text-xs text-[#9CA3AF] mt-1 max-w-xs mx-auto break-words">{previewError}</p>
-                      <Button
-                        variant="outline"
-                        className="mt-4 gap-2"
-                        loading={downloadingFileUrl === currentFile?.url}
-                        onClick={() => handleDownloadFile(currentFile?.url, currentFile?.name || "Document")}
-                      >
-                        <Download className="h-4 w-4" /> Download File
-                      </Button>
+                      <p className="text-xs text-[#9CA3AF] mt-1 break-words">{previewError}</p>
+                      <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                        <Button
+                          size="sm"
+                          className="bg-[#2E8B57] hover:bg-[#1F6B42] text-xs h-8 gap-1.5"
+                          onClick={() => loadPreview(currentFile?.url, true)}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" /> Retry
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-8 gap-1.5"
+                          loading={downloadingFileUrl === currentFile?.url}
+                          onClick={() => handleDownloadFile(currentFile?.url, currentFile?.name || "Document")}
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download File
+                        </Button>
+                      </div>
                     </div>
                   ) : previewUrl ? (
                     (() => {
                       const ext = currentFile?.name?.split(".").pop()?.toLowerCase() || "";
                       if (["png", "jpg", "jpeg", "webp"].includes(ext)) {
                         return (
-                          <div className="w-full h-full flex items-center justify-center relative bg-white rounded-lg p-2 border border-[#E5E7EB]">
+                          <div className="w-full h-full min-h-[420px] flex items-center justify-center relative bg-white rounded-lg p-2 border border-[#E5E7EB]">
                             <Image
                               src={previewUrl}
                               alt={currentFile?.name || "Image preview"}
@@ -531,22 +524,19 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                         );
                       } else if (ext === "pdf") {
                         return (
-                          <div className="w-full h-full bg-white rounded-lg overflow-hidden border border-[#E5E7EB]">
-                            <iframe
-                              src={`${previewUrl}#toolbar=0`}
-                              className="w-full h-full border-0"
-                              title="PDF Preview"
-                              onLoad={() => {
-                                if (process.env.NODE_ENV !== "production") {
-                                  console.log(`[OrderDetailView] PDF preview iframe loaded`);
-                                }
-                              }}
+                          <div className="w-full h-full min-h-[440px]">
+                            <PdfViewer
+                              url={previewUrl}
+                              fileName={currentFile?.name}
+                              onRetry={() => loadPreview(currentFile?.url, true)}
+                              onDownload={() => handleDownloadFile(currentFile?.url, currentFile?.name || "Document")}
+                              onOpenNewTab={() => handleOpenPdf(currentFile?.url)}
                             />
                           </div>
                         );
                       } else {
                         return (
-                          <div className="text-center px-4">
+                          <div className="text-center px-4 py-8">
                             <FileText className="w-16 h-16 text-[#6B7280] mx-auto mb-3" />
                             <p className="text-[#374151] font-semibold text-sm">Preview unavailable for this file type</p>
                             <p className="text-xs text-[#9CA3AF] mt-1">Direct download is available below</p>
@@ -563,7 +553,7 @@ export function OrderDetailView({ order: initialOrder }: OrderDetailViewProps) {
                       }
                     })()
                   ) : (
-                    <div className="text-center">
+                    <div className="text-center py-8">
                       <FileText className="w-12 h-12 text-[#9CA3AF] mx-auto mb-2" />
                       <p className="text-sm text-[#6B7280]">No preview available</p>
                     </div>
